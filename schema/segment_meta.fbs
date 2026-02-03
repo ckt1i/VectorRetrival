@@ -1,0 +1,324 @@
+// =============================================================================
+// VDB Segment Metadata Schema
+// =============================================================================
+// 定义向量索引段的元数据结构
+// 包括 IVF 参数、PQ 参数、文件引用等
+// =============================================================================
+
+namespace vdb.schema;
+
+// ============================================================
+// 距离度量类型
+// ============================================================
+
+/// 向量距离度量类型
+enum MetricType : byte {
+    L2 = 0,                      // 欧氏距离 (平方)
+    IP = 1,                      // 内积 (越大越相似)
+    COSINE = 2                   // 余弦相似度
+}
+
+// ============================================================
+// 向量数据类型
+// ============================================================
+
+/// 向量元素类型
+enum VectorDType : byte {
+    FLOAT32 = 0,                 // 32-bit float
+    FLOAT16 = 1,                 // 16-bit float (half precision)
+    INT8 = 2,                    // 8-bit signed integer
+    UINT8 = 3,                   // 8-bit unsigned integer
+    BINARY = 4                   // binary vectr
+}
+
+// ============================================================
+// IVF 索引参数
+// ============================================================
+
+/// IVF (Inverted File) 索引参数
+table IvfParams {
+    nlist: uint32;               // 聚类数量
+    nprobe: uint32;              // 默认搜索的 list 数量
+    
+    // 聚类中心
+    centroids_offset: uint64;    // 中心向量数据偏移
+    centroids_length: uint32;    // 中心向量数据长度
+    
+    // 训练参数
+    training_vectors: uint64;    // 训练使用的向量数
+    kmeans_iterations: uint32;   // K-means 迭代次数
+    
+    // 聚类统计
+    min_list_size: uint32;       // 最小 list 大小
+    max_list_size: uint32;       // 最大 list 大小
+    avg_list_size: float;        // 平均 list 大小
+}
+
+// ============================================================
+// PQ 量化参数
+// ============================================================
+
+/// PQ (Product Quantization) 量化参数
+table PqParams {
+    m: uint32;                   // 子空间数量 (通常 8/16/32/64)
+    ks: uint32;                  // 每个子空间的聚类数 (通常 256)
+    nbits: uint8;                // 每个码字位数 (通常 8)
+    
+    // 码本
+    codebook_offset: uint64;     // 码本数据偏移
+    codebook_length: uint32;     // 码本数据长度
+    
+    // 训练参数
+    training_vectors: uint64;    // 训练使用的向量数
+    
+    // 子空间维度
+    subvector_dim: uint32;       // dim / m
+}
+
+// ============================================================
+// OPQ 优化参数 (可选)
+// ============================================================
+
+/// OPQ (Optimized Product Quantization) 参数
+table OpqParams {
+    rotation_matrix_offset: uint64;  // 旋转矩阵偏移
+    rotation_matrix_length: uint32;  // 旋转矩阵长度
+    training_iterations: uint32;     // OPQ 训练迭代次数
+}
+
+// ============================================================
+// HNSW 参数 (可选，用于 IVF 中心快速搜索)
+// ============================================================ 
+
+/// HNSW 图索引参数 (用于加速 IVF 中心搜索)
+table HnswParams {
+    m: uint32;                   // 每节点最大边数
+    ef_construction: uint32;     // 构建时扩展因子
+    ef_search: uint32;           // 默认搜索扩展因子
+    max_level: uint32;           // 最大层数
+    
+    // 图数据
+    graph_offset: uint64;        // 图数据偏移
+    graph_length: uint32;        // 图数据长度
+}
+
+// ============================================================
+// Inverted List 元数据
+// ============================================================
+
+/// 单个倒排列表的元数据
+table InvertedListMeta {
+    list_id: uint32;             // List ID
+    size: uint32;                // 向量数量
+    
+    // ID 数据位置
+    ids_offset: uint64;
+    ids_length: uint32;
+    
+    // PQ 码数据位置
+    codes_offset: uint64;
+    codes_length: uint32;
+    
+    // 原始向量数据位置 (用于精排, 可选)
+    raw_offset: uint64;
+    raw_length: uint32;
+    
+    // 校验
+    checksum: uint32;
+}
+
+// ============================================================
+// Segment 状态
+// ============================================================
+
+/// Segment 状态
+enum SegmentState : byte {
+    BUILDING = 0,                // 构建中
+    ACTIVE = 1,                  // 活跃可用
+    MERGING = 2,                 // 合并中
+    SEALED = 3,                  // 已封存
+    DELETED = 4                  // 已删除
+}
+
+// ============================================================
+// 文件引用
+// ============================================================
+
+/// 文件引用类型
+enum FileType : byte {
+    COLUMNS = 0,                 // 列存文件 (.cols)
+    VECTOR_RAW = 1,              // 原始向量文件 (.vraw)
+    VECTOR_INDEX = 2,            // 向量索引文件 (.vidx)
+    IVF_CENTROIDS = 3,           // IVF 中心向量 (.cent)
+    PQ_CODEBOOK = 4,             // PQ 码本 (.pqcb)
+    INVERTED_LISTS = 5,          // 倒排列表 (.ivl)
+    DELETE_BITMAP = 6,           // 删除位图 (.del)
+    WAL = 7,                     // WAL 文件 (.wal)
+    CHECKPOINT = 8               // Checkpoint 文件 (.ckpt)
+}
+
+/// 文件引用
+table FileRef {
+    file_type: FileType;
+    file_name: string;           // 相对路径
+    file_size: uint64;
+    checksum: uint32;
+    create_time: uint64;
+}
+
+// ============================================================
+// 删除位图元数据
+// ============================================================
+
+/// 删除位图元数据
+table DeleteBitmapMeta {
+    deleted_count: uint64;       // 已删除向量数
+    bitmap_offset: uint64;       // 位图数据偏移
+    bitmap_length: uint32;       // 位图数据长度
+    last_update_time: uint64;    // 最后更新时间
+}
+
+// ============================================================
+// Segment 统计信息
+// ============================================================
+
+/// Segment 统计
+table SegmentStats {
+    // 向量统计
+    total_vectors: uint64;       // 总向量数
+    deleted_vectors: uint64;     // 已删除向量数
+    active_vectors: uint64;      // 有效向量数
+    
+    // 存储统计
+    raw_vector_bytes: uint64;    // 原始向量大小
+    index_bytes: uint64;         // 索引大小
+    column_bytes: uint64;        // 列存大小
+    total_bytes: uint64;         // 总大小
+    
+    // 压缩率
+    compression_ratio: float;
+    
+    // 查询统计 (运行时更新)
+    query_count: uint64;
+    avg_query_latency_us: float;
+    p99_query_latency_us: float;
+}
+
+// ============================================================
+// LSN (Log Sequence Number)
+// ============================================================
+
+/// WAL 相关的 LSN 信息
+table LsnInfo {
+    min_lsn: uint64;             // 最小 LSN
+    max_lsn: uint64;             // 最大 LSN
+    flushed_lsn: uint64;         // 已持久化 LSN
+    checkpoint_lsn: uint64;      // Checkpoint LSN
+}
+
+// ============================================================
+// Segment 元数据主表
+// ============================================================
+
+/// Segment 元数据
+table SegmentMeta {
+    // 基本标识
+    segment_id: uint64;          // Segment ID
+    version: uint32;             // 元数据版本号
+    
+    // 状态
+    state: SegmentState;
+    
+    // 向量参数
+    dimension: uint32;           // 向量维度
+    metric_type: MetricType;     // 距离度量
+    vector_dtype: VectorDType;   // 向量数据类型
+    
+    // 索引参数
+    ivf_params: IvfParams;
+    pq_params: PqParams;
+    opq_params: OpqParams;       // 可选
+    hnsw_params: HnswParams;     // 可选 (用于中心快速搜索)
+    
+    // Inverted Lists
+    inverted_lists: [InvertedListMeta];
+    
+    // 文件引用
+    files: [FileRef];
+    
+    // 删除位图
+    delete_bitmap: DeleteBitmapMeta;
+    
+    // 统计信息
+    stats: SegmentStats;
+    
+    // LSN 信息 (用于 WAL 恢复)
+    lsn_info: LsnInfo;
+    
+    // 时间戳
+    create_time: uint64;
+    last_update_time: uint64;
+    last_compact_time: uint64;
+    
+    // Level (用于 LSM-tree 式分层)
+    level: uint32;
+    
+    // 父 Segment (合并来源)
+    parent_segments: [uint64];
+    
+    // 校验
+    checksum: uint32;
+}
+
+// ============================================================
+// Segment 目录 (全局索引)
+// ============================================================
+
+/// Segment 目录条目
+table SegmentDirectoryEntry {
+    segment_id: uint64;
+    state: SegmentState;
+    level: uint32;
+    vector_count: uint64;
+    meta_file: string;           // 元数据文件路径
+    create_time: uint64;
+}
+
+/// 数据库级 Segment 目录
+table SegmentDirectory {
+    // 目录标识
+    magic: uint32;               // 0x56444253 ("VDBS")
+    version: uint32;
+    
+    // Segment 列表
+    segments: [SegmentDirectoryEntry];
+    
+    // 全局参数
+    dimension: uint32;
+    metric_type: MetricType;
+    
+    // 当前活跃 Segment
+    active_segment_id: uint64;
+    
+    // Compaction 信息
+    last_compact_time: uint64;
+    compact_generation: uint32;
+    
+    // 全局统计
+    total_vectors: uint64;
+    total_segments: uint32;
+    
+    // LSN 信息
+    global_lsn: uint64;
+    
+    // 校验
+    checksum: uint32;
+}
+
+root_type SegmentMeta;
+
+// 文件标识符
+file_identifier "VSEG";
+
+// 文件扩展名
+file_extension "vseg";

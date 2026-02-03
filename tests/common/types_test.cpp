@@ -13,7 +13,7 @@ TEST(TypesTest, InvalidSentinelValues) {
 
 TEST(TypesTest, MetricTypeName) {
   EXPECT_EQ(MetricTypeName(MetricType::L2), "L2");
-  EXPECT_EQ(MetricTypeName(MetricType::IP), "IP");
+  EXPECT_EQ(MetricTypeName(MetricType::InnerProduct), "InnerProduct");
   EXPECT_EQ(MetricTypeName(MetricType::COSINE), "COSINE");
 }
 

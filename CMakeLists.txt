@@ -9,8 +9,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(VDB_BUILD_TESTS "Build tests" ON)
-option(VDB_BUILD_BENCHMARKS "Build benchmarks" ON)
-option(VDB_BUILD_TOOLS "Build tools" ON)
+option(VDB_BUILD_BENCHMARKS "Build benchmarks" OFF)
+option(VDB_BUILD_TOOLS "Build tools" OFF)
 option(VDB_USE_AVX2 "Enable AVX2 SIMD" ON)
 option(VDB_USE_AVX512 "Enable AVX-512 SIMD" OFF)
 
@@ -31,158 +31,79 @@ elseif(VDB_USE_AVX2)
 endif()
 
 # =============================================================================
-# Dependencies
+# Dependencies (FetchContent)
 # =============================================================================
+include(FetchContent)
 find_package(Threads REQUIRED)
 
-# FlatBuffers
-find_package(flatbuffers CONFIG QUIET)
-if(NOT flatbuffers_FOUND)
-    message(STATUS "FlatBuffers not found via CMake, will use system flatc")
-endif()
+# FlatBuffers - build from source to get flatc compiler
+FetchContent_Declare(
+    flatbuffers
+    GIT_REPOSITORY https://github.com/google/flatbuffers.git
+    GIT_TAG v24.3.25
+)
+set(FLATBUFFERS_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_INSTALL OFF CACHE BOOL "" FORCE)
+set(FLATBUFFERS_BUILD_FLATC ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(flatbuffers)
+
+# Google Test (for tests)
+FetchContent_Declare(
+    googletest
+    GIT_REPOSITORY https://github.com/google/googletest.git
+    GIT_TAG v1.14.0
+)
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(googletest)
 
 # =============================================================================
 # FlatBuffers Code Generation
 # =============================================================================
 set(FLATBUFFERS_SCHEMA_DIR ${CMAKE_SOURCE_DIR}/schema)
-set(FLATBUFFERS_GENERATED_DIR ${CMAKE_SOURCE_DIR}/schema/generated)
+set(FLATBUFFERS_GENERATED_DIR ${CMAKE_BINARY_DIR}/generated)
 
 file(MAKE_DIRECTORY ${FLATBUFFERS_GENERATED_DIR})
 
-# Find flatc compiler
-find_program(FLATC_EXECUTABLE flatc)
-if(FLATC_EXECUTABLE)
-    message(STATUS "Found flatc: ${FLATC_EXECUTABLE}")
+# Schema files
+set(FBS_FILES
+    ${FLATBUFFERS_SCHEMA_DIR}/columns.fbs
+    ${FLATBUFFERS_SCHEMA_DIR}/segment_meta.fbs
+)
+
+# Generate headers using the flatc we just built
+foreach(FBS_FILE ${FBS_FILES})
+    get_filename_component(FBS_NAME ${FBS_FILE} NAME_WE)
+    set(GENERATED_HEADER ${FLATBUFFERS_GENERATED_DIR}/${FBS_NAME}_generated.h)
     
-    # Generate headers from .fbs files
-    set(FBS_FILES
-        ${FLATBUFFERS_SCHEMA_DIR}/segment_meta.fbs
-        ${FLATBUFFERS_SCHEMA_DIR}/columns.fbs
+    add_custom_command(
+        OUTPUT ${GENERATED_HEADER}
+        COMMAND flatc --cpp --scoped-enums -o ${FLATBUFFERS_GENERATED_DIR} ${FBS_FILE}
+        DEPENDS ${FBS_FILE} flatc
+        COMMENT "Generating FlatBuffers header for ${FBS_NAME}"
     )
-    
-    foreach(FBS_FILE ${FBS_FILES})
-        get_filename_component(FBS_NAME ${FBS_FILE} NAME_WE)
-        set(GENERATED_HEADER ${FLATBUFFERS_GENERATED_DIR}/${FBS_NAME}_generated.h)
-        
-        add_custom_command(
-            OUTPUT ${GENERATED_HEADER}
-            COMMAND ${FLATC_EXECUTABLE} --cpp -o ${FLATBUFFERS_GENERATED_DIR} ${FBS_FILE}
-            DEPENDS ${FBS_FILE}
-            COMMENT "Generating FlatBuffers header for ${FBS_NAME}"
-        )
-        list(APPEND GENERATED_HEADERS ${GENERATED_HEADER})
-    endforeach()
-    
-    add_custom_target(flatbuffers_generated DEPENDS ${GENERATED_HEADERS})
-else()
-    message(WARNING "flatc not found, FlatBuffers headers must be generated manually")
-    add_custom_target(flatbuffers_generated)
-endif()
+    list(APPEND GENERATED_HEADERS ${GENERATED_HEADER})
+endforeach()
+
+add_custom_target(flatbuffers_generated DEPENDS ${GENERATED_HEADERS})
 
 # =============================================================================
-# Include Directories
+# VDB Common Library (header-only for now)
 # =============================================================================
-include_directories(
-    ${CMAKE_SOURCE_DIR}/include
-    ${FLATBUFFERS_GENERATED_DIR}
+add_library(vdb_common INTERFACE)
+target_include_directories(vdb_common INTERFACE
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 # =============================================================================
-# Source Files
+# VDB Schema Library (FlatBuffers generated headers)
 # =============================================================================
-set(VDB_COMMON_SOURCES
-    src/common/status.cpp
-    src/common/crc32.cpp
-    src/common/thread_pool.cpp
+add_library(vdb_schema INTERFACE)
+target_include_directories(vdb_schema INTERFACE
+    $<BUILD_INTERFACE:${FLATBUFFERS_GENERATED_DIR}>
 )
-
-set(VDB_STORAGE_SOURCES
-    src/storage/mmap_file.cpp
-    src/storage/io_prefetch.cpp
-    src/storage/block_cache.cpp
-    src/storage/chunk_cache.cpp
-)
-
-set(VDB_DIST_SOURCES
-    src/dist/distance.cpp
-    src/dist/distance_avx2.cpp
-    src/dist/distance_avx512.cpp
-)
-
-set(VDB_INDEX_SOURCES
-    src/index/ivf.cpp
-    src/index/pq.cpp
-    src/index/segment.cpp
-    src/index/catalog.cpp
-)
-
-set(VDB_COLUMNS_SOURCES
-    src/columns/column_store.cpp
-    src/columns/column_chunk_reader.cpp
-    src/columns/column_chunk_writer.cpp
-    src/columns/encoders/raw.cpp
-    src/columns/encoders/bitpack.cpp
-    src/columns/encoders/dict.cpp
-    src/columns/encoders/rle.cpp
-    src/columns/encoders/varint.cpp
-    src/columns/indexes/offset_index.cpp
-    src/columns/indexes/zonemap.cpp
-    src/columns/indexes/bloom.cpp
-)
-
-set(VDB_QUERY_SOURCES
-    src/query/topk_heap.cpp
-    src/query/scanner_ivf.cpp
-    src/query/prefetch_policy.cpp
-    src/query/query_engine.cpp
-)
-
-set(VDB_PAYLOAD_SOURCES
-    src/payload/payload_api.cpp
-)
-
-# =============================================================================
-# Main Library
-# =============================================================================
-add_library(vectordb STATIC
-    ${VDB_COMMON_SOURCES}
-    ${VDB_STORAGE_SOURCES}
-    ${VDB_DIST_SOURCES}
-    ${VDB_INDEX_SOURCES}
-    ${VDB_COLUMNS_SOURCES}
-    ${VDB_QUERY_SOURCES}
-    ${VDB_PAYLOAD_SOURCES}
-)
-
-add_dependencies(vectordb flatbuffers_generated)
-
-target_link_libraries(vectordb
-    PUBLIC
-        Threads::Threads
-)
-
-target_include_directories(vectordb
-    PUBLIC
-        $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
-        $<INSTALL_INTERFACE:include>
-)
-
-# =============================================================================
-# Tools
-# =============================================================================
-if(VDB_BUILD_TOOLS)
-    add_executable(vdb_ingest tools/ingest_main.cpp)
-    target_link_libraries(vdb_ingest PRIVATE vectordb)
-    
-    add_executable(vdb_build_index tools/build_index_main.cpp)
-    target_link_libraries(vdb_build_index PRIVATE vectordb)
-    
-    add_executable(vdb_query tools/query_main.cpp)
-    target_link_libraries(vdb_query PRIVATE vectordb)
-    
-    add_executable(vdb_dump_meta tools/dump_meta_main.cpp)
-    target_link_libraries(vdb_dump_meta PRIVATE vectordb)
-endif()
+target_link_libraries(vdb_schema INTERFACE flatbuffers)
+add_dependencies(vdb_schema flatbuffers_generated)
 
 # =============================================================================
 # Tests
@@ -190,76 +111,29 @@ endif()
 if(VDB_BUILD_TESTS)
     enable_testing()
     
-    # Fetch Google Test
-    include(FetchContent)
-    FetchContent_Declare(
-        googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG release-1.12.1
-    )
-    FetchContent_MakeAvailable(googletest)
+    # -------------------------------------------------------------------------
+    # Common module tests (Phase 0)
+    # -------------------------------------------------------------------------
+    add_executable(test_types tests/common/types_test.cpp)
+    target_link_libraries(test_types PRIVATE vdb_common GTest::gtest GTest::gtest_main)
+    add_test(NAME test_types COMMAND test_types)
     
-    # Unit tests - Common
-    add_executable(test_common tests/test_common.cpp)
-    target_link_libraries(test_common PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_common COMMAND test_common)
+    add_executable(test_status tests/common/status_test.cpp)
+    target_link_libraries(test_status PRIVATE vdb_common GTest::gtest GTest::gtest_main)
+    add_test(NAME test_status COMMAND test_status)
     
-    # Unit tests - TopK Heap
-    add_executable(test_topk_heap tests/test_topk_heap.cpp)
-    target_link_libraries(test_topk_heap PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_topk_heap COMMAND test_topk_heap)
+    add_executable(test_aligned_alloc tests/common/aligned_alloc_test.cpp)
+    target_link_libraries(test_aligned_alloc PRIVATE vdb_common GTest::gtest GTest::gtest_main)
+    add_test(NAME test_aligned_alloc COMMAND test_aligned_alloc)
     
-    # Unit tests - Distance
-    add_executable(test_distance tests/test_distance.cpp)
-    target_link_libraries(test_distance PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_distance COMMAND test_distance)
-    
-    # Unit tests - Column Store
-    add_executable(test_column_store tests/test_column_store.cpp)
-    target_link_libraries(test_column_store PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_column_store COMMAND test_column_store)
-    
-    # Unit tests - Encoders
-    add_executable(test_encoders tests/test_encoders.cpp)
-    target_link_libraries(test_encoders PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_encoders COMMAND test_encoders)
-    
-    # Integration tests - IVF-PQ
-    add_executable(test_ivfpq_integration tests/test_ivfpq_integration.cpp)
-    target_link_libraries(test_ivfpq_integration PRIVATE vectordb GTest::gtest GTest::gtest_main)
-    add_test(NAME test_ivfpq_integration COMMAND test_ivfpq_integration)
+    # -------------------------------------------------------------------------
+    # Schema tests (Phase 1)
+    # -------------------------------------------------------------------------
+    add_executable(test_schema tests/schema/schema_test.cpp)
+    target_link_libraries(test_schema PRIVATE vdb_common vdb_schema GTest::gtest GTest::gtest_main)
+    add_dependencies(test_schema flatbuffers_generated)
+    add_test(NAME test_schema COMMAND test_schema)
 endif()
-
-# =============================================================================
-# Benchmarks
-# =============================================================================
-if(VDB_BUILD_BENCHMARKS)
-    add_executable(vdb_benchmark benchmarks/bench_main.cpp)
-    target_link_libraries(vdb_benchmark PRIVATE vectordb)
-    
-    set_target_properties(vdb_benchmark PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/benchmarks
-    )
-endif()
-
-# =============================================================================
-# Installation
-# =============================================================================
-install(TARGETS vectordb
-    EXPORT vectordb-targets
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
-
-install(DIRECTORY include/vdb
-    DESTINATION include
-)
-
-install(EXPORT vectordb-targets
-    FILE vectordb-config.cmake
-    NAMESPACE vdb::
-    DESTINATION lib/cmake/vectordb
-)
 
 # =============================================================================
 # Summary

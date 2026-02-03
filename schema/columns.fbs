@@ -1,0 +1,316 @@
+// =============================================================================
+// VDB Column Store Schema
+// =============================================================================
+// 定义列存储的元数据结构
+// 基于 FlatStor 论文的设计: per-column adaptive chunking
+// =============================================================================
+
+namespace vdb.schema;
+
+// ============================================================
+// 数据类型
+// ============================================================
+
+/// 列数据类型
+enum DataType : byte {
+    UNKNOWN = 0,
+    INT8 = 1,
+    INT16 = 2,
+    INT32 = 3,
+    INT64 = 4,
+    UINT8 = 5,
+    UINT16 = 6,
+    UINT32 = 7,
+    UINT64 = 8,
+    FLOAT32 = 9,
+    FLOAT64 = 10,
+    STRING = 11,
+    BYTES = 12,
+    BOOL = 13,
+    TIMESTAMP = 14,     // Unix timestamp (microseconds)
+    LIST = 15,          // 嵌套列表
+    MAP = 16,           // 嵌套 Map
+    STRUCT = 17         // 嵌套结构体
+}
+
+// ============================================================
+// 编码类型
+// ============================================================
+
+/// 列编码类型
+enum EncodingType : byte {
+    RAW = 0,            // 原始编码 (无编码)
+    BITPACK = 1,        // 位压缩
+    DICT = 2,           // 字典编码
+    RLE = 3,            // 游程编码
+    VARINT = 4,         // 变长整数
+    DELTA = 5,          // 差分编码
+    FSST = 6,           // 字符串快速压缩
+    FRAME_OF_REF = 7    // 参照系编码
+}
+
+/// 压缩类型
+enum CompressionType : byte {
+    NONE = 0,
+    LZ4 = 1,
+    ZSTD = 2,
+    SNAPPY = 3
+}
+
+// ============================================================
+// 编码参数
+// ============================================================
+
+/// 原始编码参数 (无特殊参数)
+table RawEncodingParams {
+    byte_width: uint8;           // 元素字节宽度
+}
+
+/// 位压缩编码参数
+table BitpackEncodingParams {
+    bit_width: uint8;            // 每个值的位宽
+    has_null_bitmap: bool;       // 是否有 NULL 位图
+}
+
+/// 字典编码参数
+table DictEncodingParams {
+    dict_size: uint32;           // 字典大小
+    dict_offset: uint64;         // 字典数据偏移
+    index_bit_width: uint8;      // 索引位宽
+}
+
+/// 游程编码参数
+table RleEncodingParams {
+    run_count: uint32;           // Run 数量
+    value_bit_width: uint8;      // 值位宽
+    length_bit_width: uint8;     // 长度位宽
+}
+
+/// 变长整数编码参数
+table VarintEncodingParams {
+    is_signed: bool;             // 是否有符号 (zigzag)
+    max_bytes: uint8;            // 最大字节数
+}
+
+/// 差分编码参数
+table DeltaEncodingParams {
+    base_value: int64;           // 基准值
+    delta_bit_width: uint8;      // 差分位宽
+    is_for: bool;                // 是否是 Frame-of-Reference
+}
+
+/// FSST 字符串编码参数
+table FsstEncodingParams {
+    symbol_table_offset: uint64; // 符号表偏移
+    symbol_table_size: uint32;   // 符号表大小
+}
+
+/// 参照系编码参数
+table FrameOfRefEncodingParams {
+    reference_value: int64;      // 参照值
+    bit_width: uint8;            // 偏移位宽
+}
+
+/// 编码参数联合类型
+union EncodingParams {
+    RawEncodingParams,
+    BitpackEncodingParams,
+    DictEncodingParams,
+    RleEncodingParams,
+    VarintEncodingParams,
+    DeltaEncodingParams,
+    FsstEncodingParams,
+    FrameOfRefEncodingParams
+}
+
+// ============================================================
+// 索引类型
+// ============================================================
+
+/// 列索引类型
+enum IndexType : byte {
+    NONE = 0,
+    OFFSET_INDEX = 1,    // 变长列偏移索引
+    ZONEMAP = 2,         // 范围索引
+    BLOOM = 3,           // 布隆过滤器
+    SPARSE_INDEX = 4     // 稀疏索引
+}
+
+/// 偏移索引参数
+table OffsetIndexParams {
+    entry_count: uint32;         // 条目数
+    offset_bit_width: uint8;     // 偏移位宽
+    base_offset: uint64;         // 基础偏移
+}
+
+/// ZoneMap 参数
+table ZonemapParams {
+    min_value: [byte];           // 最小值 (序列化)
+    max_value: [byte];           // 最大值 (序列化)
+    null_count: uint32;          // NULL 数量
+    has_null: bool;              // 是否包含 NULL
+}
+
+/// Bloom 过滤器参数
+table BloomParams {
+    num_bits: uint32;            // 位数
+    num_hash_funcs: uint8;       // 哈希函数数量
+    fpp: float;                  // 误报率
+}
+
+/// 稀疏索引参数
+table SparseIndexParams {
+    granularity: uint32;         // 索引粒度 (每 N 行一个条目)
+    key_count: uint32;           // 键数量
+}
+
+/// 索引参数联合类型
+union IndexParams {
+    OffsetIndexParams,
+    ZonemapParams,
+    BloomParams,
+    SparseIndexParams
+}
+
+/// 索引元数据
+table IndexMeta {
+    index_type: IndexType;
+    index_offset: uint64;        // 索引数据偏移
+    index_length: uint32;        // 索引数据长度
+    params: IndexParams;
+}
+
+// ============================================================
+// Chunk 元数据
+// ============================================================
+
+/// 单个 Chunk 的元信息
+table ChunkMeta {
+    chunk_id: uint32;            // Chunk ID
+    
+    // 逻辑范围
+    row_start: uint64;           // 起始行号
+    row_count: uint32;           // 行数
+    
+    // 物理位置
+    data_offset: uint64;         // 数据偏移
+    data_length: uint32;         // 原始数据长度
+    compressed_length: uint32;   // 压缩后长度
+    
+    // 编码与压缩
+    encoding: EncodingType;
+    encoding_params: EncodingParams;
+    compression: CompressionType;
+    
+    // 局部索引
+    local_index: IndexMeta;
+    
+    // 辅助数据 (字典、符号表等)
+    aux_offset: uint64;
+    aux_length: uint32;
+    
+    // 统计信息
+    null_count: uint32;          // NULL 数量
+    distinct_count: uint32;      // 去重数量 (估计值)
+    
+    // 校验和
+    checksum: uint32;
+}
+
+// ============================================================
+// 列元数据
+// ============================================================
+
+/// 单列的元信息
+table ColumnMeta {
+    column_id: uint32;           // 列 ID
+    name: string;                // 列名
+    data_type: DataType;         // 数据类型
+    
+    // 列属性
+    nullable: bool;              // 是否可为 NULL
+    sorted: bool;                // 是否排序
+    
+    // 嵌套类型信息 (LIST/MAP/STRUCT)
+    nested_type: DataType;       // 嵌套元素类型
+    
+    // Chunk 列表
+    chunks: [ChunkMeta];
+    
+    // 列级索引
+    indexes: [IndexMeta];
+    
+    // 全列统计
+    total_rows: uint64;
+    null_count: uint64;
+    distinct_count: uint64;      // 估计值
+    
+    // 默认编码策略
+    default_encoding: EncodingType;
+    default_compression: CompressionType;
+    
+    // Chunking 策略
+    target_chunk_bytes: uint32 = 65536;  // 目标 64KB
+    max_chunk_rows: uint32 = 10000;      // 最大 10K 行
+    
+    // 排序键位置 (如果是排序列)
+    sort_order: uint32 = 0;      // 0 表示非排序键
+}
+
+// ============================================================
+// ColumnDirectory Entry
+// ============================================================
+
+/// 列目录条目 (快速定位)
+table ColumnDirectoryEntry {
+    column_id: uint32;
+    col_meta_offset: uint64;     // ColumnMeta 偏移
+    chunk_index_offset: uint64;  // ChunkIndex 偏移
+    data_region_start: uint64;   // 数据区域起始
+    data_region_size: uint64;    // 数据区域大小
+    flags: uint32;               // 标志位
+}
+
+// ============================================================
+// 文件级元数据
+// ============================================================
+
+/// 列存文件头
+table ColumnsFileHeader {
+    // 文件标识
+    magic: uint32;               // 0x434F4C53 ("COLS")
+    version: uint32;
+    
+    // 基本信息
+    num_columns: uint32;
+    total_rows: uint64;
+    
+    // 区域偏移
+    directory_offset: uint64;
+    data_region_offset: uint64;
+    metadata_region_offset: uint64;
+    
+    // 列目录
+    directory: [ColumnDirectoryEntry];
+    
+    // 列元数据
+    columns: [ColumnMeta];
+    
+    // 文件统计
+    uncompressed_size: uint64;
+    compressed_size: uint64;
+    
+    // 创建信息
+    create_time: uint64;
+    
+    // 校验
+    checksum: uint32;
+}
+
+root_type ColumnsFileHeader;
+
+// 文件标识符
+file_identifier "COLS";
+
+// 文件扩展名
+file_extension "cols";
