@@ -1,0 +1,30 @@
+# Build directories
+build/
+cmake-build-*/
+out/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Compiled files
+*.o
+*.a
+*.so
+*.dylib
+
+# Generated files
+schema/generated/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Dependency directories
+_deps/
+
+# Test outputs
+Testing/
