@@ -1,0 +1,149 @@
+// =============================================================================
+// VDB Record File Schema
+// =============================================================================
+// 定义以 offset 寻址的记录文件格式
+// ANNS 返回 (VecID, approx_dist, record_offset)，读取端直接
+// pread(fd, buf, length, record_offset) 获取完整记录
+//
+// 小于 kInlineThreshold (4KB) 的 payload 内联存储在记录中;
+// 大于等于该阈值的 payload 通过 ExternRef 引用外部 blob 文件
+// =============================================================================
+
+namespace vdb.schema;
+
+// ============================================================
+// Payload 存储模式
+// ============================================================
+
+/// Payload 存储模式
+enum PayloadMode : byte {
+    INLINE = 0,          // payload 内联在 Record 中
+    EXTERN = 1           // payload 在外部 blob 文件中
+}
+
+// ============================================================
+// 外部 Blob 引用
+// ============================================================
+
+/// 引用外部 blob 文件中的数据块
+struct ExternRef {
+    file_id: uint32;     // blob 文件 ID (FileNameDirectory 索引)
+    offset: uint64;      // blob 文件内字节偏移
+    length: uint32;      // 数据长度 (字节)
+}
+
+// ============================================================
+// Payload 联合类型
+// ============================================================
+
+/// 内联 payload (直接嵌入 Record)
+table InlinePayload {
+    data: [ubyte];       // 原始 payload 字节
+}
+
+/// 外部 payload (引用 blob 文件)
+table ExternPayload {
+    ref: ExternRef;      // blob 文件引用
+}
+
+/// Payload 联合 — 根据大小选择 Inline 或 Extern
+union Payload {
+    InlinePayload,
+    ExternPayload
+}
+
+// ============================================================
+// Record
+// ============================================================
+
+/// 单条记录 — 向量 + payload + 元信息
+/// 每条记录在文件中按 offset 直接定位
+table Record {
+    // 向量数据 (PQ 码或原始向量)
+    vector: [ubyte] (required);
+
+    // Payload 存储模式
+    mode: PayloadMode;
+
+    // Payload 数据 (内联或外部引用)
+    payload: Payload;
+
+    // 向量 ID
+    vec_id: uint64;
+
+    // 写入时间戳 (微秒级 Unix timestamp)
+    timestamp: uint64;
+
+    // payload 原始大小 (未压缩, 便于预分配)
+    payload_size: uint32;
+}
+
+// ============================================================
+// 外部 Blob 文件目录条目
+// ============================================================
+
+/// 外部 blob 文件中的一段数据
+table ExternBlobEntry {
+    file_id: uint32;     // blob 文件 ID
+    offset: uint64;      // 文件内偏移
+    length: uint32;      // 数据长度
+    checksum: uint32;    // 该段的校验和
+}
+
+// ============================================================
+// Blob 文件名目录
+// ============================================================
+
+/// file_id → 文件名 映射
+/// 存储在 segment 元数据中，避免 Record 内重复存储文件名
+table FileNameEntry {
+    file_id: uint32;
+    file_name: string;   // 相对路径，如 "segment_1/blob_0.dat"
+    file_size: uint64;
+    checksum: uint32;
+}
+
+table FileNameDirectory {
+    entries: [FileNameEntry];
+}
+
+// ============================================================
+// Record File Header
+// ============================================================
+
+/// 记录文件头 — 包含全局索引和统计信息
+table RecordFileHeader {
+    // 文件标识
+    magic: uint32;               // 0x56524543 ("VREC")
+    version: uint32;
+
+    // 记录数量
+    num_records: uint64;
+
+    // 偏移索引 (记录 offset 数组的位置)
+    offset_index_offset: uint64;
+    offset_index_length: uint64;
+
+    // Blob 文件目录 (可选)
+    blob_directory: FileNameDirectory;
+
+    // 统计
+    total_inline_bytes: uint64;
+    total_extern_bytes: uint64;
+    inline_count: uint64;
+    extern_count: uint64;
+
+    // 时间戳
+    create_time: uint64;
+
+    // 校验
+    checksum: uint32;
+}
+
+root_type Record;
+
+// 文件标识符
+file_identifier "VREC";
+
+// 文件扩展名
+file_extension "vrec";

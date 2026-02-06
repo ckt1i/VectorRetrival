@@ -41,6 +41,9 @@ TEST_F(ColumnsSchemaTest, CreateChunkMeta) {
         0,                              // chunk_id
         0,                              // row_start
         1000,                           // row_count
+        1000,                           // num_records
+        8192,                           // offset_table_offset
+        8000,                           // offset_table_length
         0,                              // data_offset
         4000,                           // data_length
         4000,                           // compressed_length (no compression)
@@ -62,6 +65,9 @@ TEST_F(ColumnsSchemaTest, CreateChunkMeta) {
     ASSERT_NE(read_chunk, nullptr);
     EXPECT_EQ(read_chunk->chunk_id(), 0);
     EXPECT_EQ(read_chunk->row_count(), 1000);
+    EXPECT_EQ(read_chunk->num_records(), 1000);
+    EXPECT_EQ(read_chunk->offset_table_offset(), 8192);
+    EXPECT_EQ(read_chunk->offset_table_length(), 8000);
     EXPECT_EQ(read_chunk->data_length(), 4000);
     EXPECT_EQ(read_chunk->encoding(), schema::EncodingType::RAW);
     EXPECT_EQ(read_chunk->compression(), schema::CompressionType::NONE);
@@ -275,6 +281,8 @@ TEST_F(SegmentMetaSchemaTest, CreateInvertedListMeta) {
         24000,      // codes_length (1500 * 16 for M=16)
         0,          // raw_offset (not stored)
         0,          // raw_length
+        131072,     // record_offsets_offset
+        12000,      // record_offsets_length (1500 * 8)
         0           // checksum
     );
     
@@ -285,6 +293,8 @@ TEST_F(SegmentMetaSchemaTest, CreateInvertedListMeta) {
     EXPECT_EQ(read_ivl->list_id(), 42);
     EXPECT_EQ(read_ivl->size(), 1500);
     EXPECT_EQ(read_ivl->codes_length(), 24000);
+    EXPECT_EQ(read_ivl->record_offsets_offset(), 131072);
+    EXPECT_EQ(read_ivl->record_offsets_length(), 12000);
 }
 
 TEST_F(SegmentMetaSchemaTest, CreateSegmentMeta) {

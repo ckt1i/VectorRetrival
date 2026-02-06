@@ -81,6 +81,70 @@ TEST(TypesTest, Constants) {
   EXPECT_EQ(kCacheLineSize, 64);
   EXPECT_EQ(kSimdWidth, 32);
   EXPECT_EQ(kSimd512Width, 64);
+  EXPECT_EQ(kInlineThreshold, 4096);
+}
+
+// ============================================================================
+// PayloadMode tests
+// ============================================================================
+
+TEST(TypesTest, PayloadModeName) {
+  EXPECT_EQ(PayloadModeName(PayloadMode::kInline), "Inline");
+  EXPECT_EQ(PayloadModeName(PayloadMode::kExtern), "Extern");
+}
+
+TEST(TypesTest, PayloadModeValues) {
+  EXPECT_EQ(static_cast<uint8_t>(PayloadMode::kInline), 0);
+  EXPECT_EQ(static_cast<uint8_t>(PayloadMode::kExtern), 1);
+}
+
+// ============================================================================
+// ExternRef tests
+// ============================================================================
+
+TEST(TypesTest, ExternRefEquality) {
+  ExternRef a{1, 4096, 2048};
+  ExternRef b{1, 4096, 2048};
+  ExternRef c{2, 4096, 2048};
+
+  EXPECT_EQ(a, b);
+  EXPECT_NE(a, c);
+}
+
+TEST(TypesTest, ExternRefFields) {
+  ExternRef ref{42, 1024000, 8192};
+  EXPECT_EQ(ref.file_id, 42);
+  EXPECT_EQ(ref.offset, 1024000);
+  EXPECT_EQ(ref.length, 8192);
+}
+
+// ============================================================================
+// RecordLocator tests
+// ============================================================================
+
+TEST(TypesTest, RecordLocatorEquality) {
+  RecordLocator a{0, 512, PayloadMode::kInline};
+  RecordLocator b{0, 512, PayloadMode::kInline};
+  RecordLocator c{0, 512, PayloadMode::kExtern};
+
+  EXPECT_EQ(a, b);
+  EXPECT_NE(a, c);
+}
+
+TEST(TypesTest, RecordLocatorFields) {
+  RecordLocator loc{65536, 4000, PayloadMode::kInline};
+  EXPECT_EQ(loc.offset, 65536);
+  EXPECT_EQ(loc.length, 4000);
+  EXPECT_EQ(loc.mode, PayloadMode::kInline);
+}
+
+TEST(TypesTest, InlineThresholdDecision) {
+  // Payloads < kInlineThreshold => inline
+  EXPECT_TRUE(100 < kInlineThreshold);
+  EXPECT_TRUE(4095 < kInlineThreshold);
+  // Payloads >= kInlineThreshold => extern
+  EXPECT_FALSE(4096 < kInlineThreshold);
+  EXPECT_FALSE(10000 < kInlineThreshold);
 }
 
 }  // namespace

@@ -188,9 +188,14 @@ table IndexMeta {
 table ChunkMeta {
     chunk_id: uint32;            // Chunk ID
     
-    // 逻辑范围
+    // 逻辑范围 (保留向后兼容)
     row_start: uint64;           // 起始行号
     row_count: uint32;           // 行数
+    
+    // Offset-based 寻址 (新增)
+    num_records: uint32;         // 本 chunk 包含的记录数
+    offset_table_offset: uint64; // 偏移索引表在文件中的位置
+    offset_table_length: uint32; // 偏移索引表字节长度
     
     // 物理位置
     data_offset: uint64;         // 数据偏移

@@ -68,6 +68,7 @@ file(MAKE_DIRECTORY ${FLATBUFFERS_GENERATED_DIR})
 set(FBS_FILES
     ${FLATBUFFERS_SCHEMA_DIR}/columns.fbs
     ${FLATBUFFERS_SCHEMA_DIR}/segment_meta.fbs
+    ${FLATBUFFERS_SCHEMA_DIR}/record.fbs
 )
 
 # Generate headers using the flatc we just built
@@ -133,6 +134,11 @@ if(VDB_BUILD_TESTS)
     target_link_libraries(test_schema PRIVATE vdb_common vdb_schema GTest::gtest GTest::gtest_main)
     add_dependencies(test_schema flatbuffers_generated)
     add_test(NAME test_schema COMMAND test_schema)
+    
+    add_executable(test_record tests/schema/record_test.cpp)
+    target_link_libraries(test_record PRIVATE vdb_common vdb_schema GTest::gtest GTest::gtest_main)
+    add_dependencies(test_record flatbuffers_generated)
+    add_test(NAME test_record COMMAND test_record)
 endif()
 
 # =============================================================================

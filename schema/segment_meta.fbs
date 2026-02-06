@@ -123,6 +123,12 @@ table InvertedListMeta {
     raw_offset: uint64;
     raw_length: uint32;
     
+    // Record offset 数组 (offset-based 寻址)
+    // 每个元素是 uint64, 指向 record 文件中的字节偏移
+    // ANNS 命中后直接 pread(fd, buf, len, record_offsets[i])
+    record_offsets_offset: uint64;
+    record_offsets_length: uint32;
+    
     // 校验
     checksum: uint32;
 }
@@ -154,7 +160,9 @@ enum FileType : byte {
     INVERTED_LISTS = 5,          // 倒排列表 (.ivl)
     DELETE_BITMAP = 6,           // 删除位图 (.del)
     WAL = 7,                     // WAL 文件 (.wal)
-    CHECKPOINT = 8               // Checkpoint 文件 (.ckpt)
+    CHECKPOINT = 8,              // Checkpoint 文件 (.ckpt)
+    RECORD = 9,                  // 记录文件 (.vrec)
+    BLOB = 10                    // 外部 Blob 文件 (.blob)
 }
 
 /// 文件引用

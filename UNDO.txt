@@ -1,1 +1,3 @@
 tpyes.h: SIMD的宽度具体要定多少
+
+2. 向量数据与原始数据分开管理，不放在Flatbuffer里

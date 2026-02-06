@@ -168,6 +168,63 @@ struct SearchResult {
 };
 
 // ============================================================================
+// Payload Mode (inline vs extern)
+// ============================================================================
+
+/// Payload storage mode — small payloads are stored inline in the record file,
+/// large payloads (>= kInlineThreshold) are stored in external blob files.
+enum class PayloadMode : uint8_t {
+  kInline = 0,   // Payload bytes embedded in record
+  kExtern = 1,   // Payload stored in external blob file
+};
+
+inline std::string_view PayloadModeName(PayloadMode mode) {
+  switch (mode) {
+    case PayloadMode::kInline: return "Inline";
+    case PayloadMode::kExtern: return "Extern";
+    default: return "UNKNOWN";
+  }
+}
+
+// ============================================================================
+// External Blob Reference
+// ============================================================================
+
+/// Reference to a payload chunk stored in an external blob file.
+struct ExternRef {
+  uint32_t file_id;   // Blob file identifier (index into FileNameDirectory)
+  uint64_t offset;     // Byte offset within the blob file
+  uint32_t length;     // Payload byte length
+
+  bool operator==(const ExternRef& other) const {
+    return file_id == other.file_id &&
+           offset  == other.offset  &&
+           length  == other.length;
+  }
+  bool operator!=(const ExternRef& other) const { return !(*this == other); }
+};
+
+// ============================================================================
+// Record Locator
+// ============================================================================
+
+/// Locates a record inside the segment's record file.
+/// ANNS returns (VecID, approx_dist, RecordLocator) so the reader can
+/// pread() directly — no row-id → offset translation needed.
+struct RecordLocator {
+  uint64_t    offset;   // Byte offset in the record file
+  uint32_t    length;   // Total serialised record length
+  PayloadMode mode;     // Inline or Extern
+
+  bool operator==(const RecordLocator& other) const {
+    return offset == other.offset &&
+           length == other.length &&
+           mode   == other.mode;
+  }
+  bool operator!=(const RecordLocator& other) const { return !(*this == other); }
+};
+
+// ============================================================================
 // Constants
 // ============================================================================
 
@@ -185,5 +242,9 @@ constexpr size_t kSimdWidth = 32;
 
 /// AVX-512 register width
 constexpr size_t kSimd512Width = 64;
+
+/// Inline/Extern threshold: payloads smaller than this are stored inline
+/// in the record file; payloads >= this size go to an external blob file.
+constexpr size_t kInlineThreshold = 4096;
 
 }  // namespace vdb
