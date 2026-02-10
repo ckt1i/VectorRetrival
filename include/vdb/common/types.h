@@ -2,9 +2,12 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <string_view>
+#include <variant>
+#include <vector>
 
 namespace vdb {
 
@@ -222,6 +225,117 @@ struct RecordLocator {
            mode   == other.mode;
   }
   bool operator!=(const RecordLocator& other) const { return !(*this == other); }
+};
+
+// ============================================================================
+// Column ID
+// ============================================================================
+
+using ColumnID = uint32_t;
+constexpr ColumnID kInvalidColumnID = std::numeric_limits<ColumnID>::max();
+
+// ============================================================================
+// Column Locator — physical address of one value within a column chunk
+// ============================================================================
+
+/// Locates a single cell within a column file.
+/// Used as the physical-address token returned by the writer and consumed by
+/// the reader (pread-style I/O).
+struct ColumnLocator {
+  uint32_t chunk_id;           // Which chunk inside the column
+  uint64_t data_offset;        // Byte offset of the value within the file
+  uint32_t data_length;        // Byte length of the value
+  uint32_t offset_table_pos;   // Slot index in the variable-length offset table
+                               //   (0 for fixed-width columns)
+
+  bool operator==(const ColumnLocator& other) const {
+    return chunk_id        == other.chunk_id &&
+           data_offset     == other.data_offset &&
+           data_length     == other.data_length &&
+           offset_table_pos == other.offset_table_pos;
+  }
+  bool operator!=(const ColumnLocator& other) const { return !(*this == other); }
+};
+
+// ============================================================================
+// Column Schema — lightweight column descriptor
+// ============================================================================
+
+struct ColumnSchema {
+  ColumnID    id;
+  std::string name;
+  DType       dtype;
+  bool        nullable = false;
+};
+
+// ============================================================================
+// Datum — a single column value (type-erased)
+// ============================================================================
+
+/// Holds one cell value.  Fixed-width types are stored inline; variable-length
+/// types carry their bytes in the string member.
+struct Datum {
+  DType dtype;
+  union {
+    int64_t  i64;
+    uint64_t u64;
+    double   f64;
+    float    f32;
+    int32_t  i32;
+    uint32_t u32;
+    int16_t  i16;
+    uint16_t u16;
+    int8_t   i8;
+    uint8_t  u8;
+    bool     b;
+  } fixed;
+  std::string var_data;   // For STRING / BYTES
+
+  Datum() : dtype(DType::INT64) { fixed.i64 = 0; }
+
+  static Datum Int64(int64_t v)  { Datum d; d.dtype = DType::INT64;  d.fixed.i64 = v; return d; }
+  static Datum UInt64(uint64_t v){ Datum d; d.dtype = DType::UINT64; d.fixed.u64 = v; return d; }
+  static Datum Int32(int32_t v)  { Datum d; d.dtype = DType::INT32;  d.fixed.i32 = v; return d; }
+  static Datum UInt32(uint32_t v){ Datum d; d.dtype = DType::UINT32; d.fixed.u32 = v; return d; }
+  static Datum Float32(float v)  { Datum d; d.dtype = DType::FLOAT32;d.fixed.f32 = v; return d; }
+  static Datum Float64(double v) { Datum d; d.dtype = DType::FLOAT64;d.fixed.f64 = v; return d; }
+  static Datum Bool(bool v)      { Datum d; d.dtype = DType::BOOL;   d.fixed.b   = v; return d; }
+  static Datum Timestamp(uint64_t v){ Datum d; d.dtype = DType::TIMESTAMP; d.fixed.u64 = v; return d; }
+  static Datum String(std::string v){
+    Datum d; d.dtype = DType::STRING; d.var_data = std::move(v); return d;
+  }
+  static Datum Bytes(std::string v) {
+    Datum d; d.dtype = DType::BYTES;  d.var_data = std::move(v); return d;
+  }
+
+  /// Returns pointer to the raw bytes of the fixed-width value.
+  const void* fixed_data() const { return &fixed; }
+
+  /// Returns byte size of the value (for serialisation).
+  size_t byte_size() const {
+    if (DTypeIsFixedWidth(dtype)) return DTypeSize(dtype);
+    return var_data.size();
+  }
+
+  /// Returns pointer to the raw bytes of the value.
+  const void* data() const {
+    if (DTypeIsFixedWidth(dtype)) return &fixed;
+    return var_data.data();
+  }
+};
+
+// ============================================================================
+// Record Physical Address — locates a full record and its per-column cells
+// ============================================================================
+
+struct RecordPhysicalAddr {
+  RecordLocator                             record;   // Record-file position
+  std::vector<std::pair<ColumnID, ColumnLocator>> columns;  // Per-column positions
+
+  bool operator==(const RecordPhysicalAddr& other) const {
+    return record == other.record && columns == other.columns;
+  }
+  bool operator!=(const RecordPhysicalAddr& other) const { return !(*this == other); }
 };
 
 // ============================================================================

@@ -107,6 +107,20 @@ target_link_libraries(vdb_schema INTERFACE flatbuffers)
 add_dependencies(vdb_schema flatbuffers_generated)
 
 # =============================================================================
+# VDB Columns Library (Phase 2)
+# =============================================================================
+add_library(vdb_columns STATIC
+    src/columns/column_chunk_writer.cpp
+    src/columns/column_chunk_reader.cpp
+    src/columns/column_store.cpp
+)
+target_include_directories(vdb_columns PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_columns PUBLIC vdb_common Threads::Threads)
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -139,6 +153,17 @@ if(VDB_BUILD_TESTS)
     target_link_libraries(test_record PRIVATE vdb_common vdb_schema GTest::gtest GTest::gtest_main)
     add_dependencies(test_record flatbuffers_generated)
     add_test(NAME test_record COMMAND test_record)
+    
+    # -------------------------------------------------------------------------
+    # Column store tests (Phase 2)
+    # -------------------------------------------------------------------------
+    add_executable(test_column_chunk tests/columns/column_chunk_test.cpp)
+    target_link_libraries(test_column_chunk PRIVATE vdb_columns GTest::gtest GTest::gtest_main)
+    add_test(NAME test_column_chunk COMMAND test_column_chunk)
+    
+    add_executable(test_column_store tests/columns/column_store_test.cpp)
+    target_link_libraries(test_column_store PRIVATE vdb_columns GTest::gtest GTest::gtest_main)
+    add_test(NAME test_column_store COMMAND test_column_store)
 endif()
 
 # =============================================================================
