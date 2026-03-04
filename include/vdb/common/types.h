@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -27,6 +28,15 @@ using SegmentID = uint32_t;
 /// List ID for IVF (cluster ID)
 using ListID = uint32_t;
 
+/// Cluster ID (semantic alias for ListID in new architecture)
+using ClusterID = uint32_t;
+
+/// DataFile ID type (1:1 with cluster, reserved for multi-shard expansion)
+using FileID = uint16_t;
+
+/// Column ID
+using ColumnID = uint32_t;
+
 /// Dimension type
 using Dim = uint32_t;
 
@@ -35,6 +45,9 @@ constexpr VecID kInvalidVecID = std::numeric_limits<VecID>::max();
 constexpr RowID kInvalidRowID = std::numeric_limits<RowID>::max();
 constexpr SegmentID kInvalidSegmentID = std::numeric_limits<SegmentID>::max();
 constexpr ListID kInvalidListID = std::numeric_limits<ListID>::max();
+constexpr ClusterID kInvalidClusterID = std::numeric_limits<ClusterID>::max();
+constexpr FileID kInvalidFileID = std::numeric_limits<FileID>::max();
+constexpr ColumnID kInvalidColumnID = std::numeric_limits<ColumnID>::max();
 
 // ============================================================================
 // Distance Metric Types
@@ -153,22 +166,10 @@ inline std::string_view DTypeName(DType dtype) {
 }
 
 // ============================================================================
-// Search Result
+// Search Result (forward declare, will be defined after Datum)
 // ============================================================================
 
-/// Single search result entry
-struct SearchResult {
-  VecID id;
-  float distance;
-  
-  bool operator<(const SearchResult& other) const {
-    return distance < other.distance;
-  }
-  
-  bool operator>(const SearchResult& other) const {
-    return distance > other.distance;
-  }
-};
+// Defined after Datum struct below
 
 // ============================================================================
 // Payload Mode (inline vs extern)
@@ -226,13 +227,6 @@ struct RecordLocator {
   }
   bool operator!=(const RecordLocator& other) const { return !(*this == other); }
 };
-
-// ============================================================================
-// Column ID
-// ============================================================================
-
-using ColumnID = uint32_t;
-constexpr ColumnID kInvalidColumnID = std::numeric_limits<ColumnID>::max();
 
 // ============================================================================
 // Column Locator — physical address of one value within a column chunk
@@ -325,10 +319,31 @@ struct Datum {
 };
 
 // ============================================================================
+// Search Result (now that Datum is defined)
+// ============================================================================
+
+/// Single search result entry (optionally includes payload columns)
+struct SearchResult {
+  VecID id;
+  float distance;
+  std::map<ColumnID, Datum> payload;  // Payload columns indexed by ColumnID
+  
+  bool operator<(const SearchResult& other) const {
+    return distance < other.distance;
+  }
+  
+  bool operator>(const SearchResult& other) const {
+    return distance > other.distance;
+  }
+};
+
+// ============================================================================
 // Record Physical Address — locates a full record and its per-column cells
 // ============================================================================
 
-struct RecordPhysicalAddr {
+/// DEPRECATED: Use AddressEntry instead.
+/// Locates a record inside the segment's record file.
+struct [[deprecated("Use AddressEntry instead for Phase 2.5+")]] RecordPhysicalAddr {
   RecordLocator                             record;   // Record-file position
   std::vector<std::pair<ColumnID, ColumnLocator>> columns;  // Per-column positions
 
@@ -336,6 +351,116 @@ struct RecordPhysicalAddr {
     return record == other.record && columns == other.columns;
   }
   bool operator!=(const RecordPhysicalAddr& other) const { return !(*this == other); }
+};
+
+// ============================================================================
+// New Types for Phase 2.5+ (IVF+ConANN+RaBitQ Architecture)
+// ============================================================================
+
+/// Result classification from ConANN (Cluster Architecture Nearest Neighbor Analysis)
+enum class ResultClass : uint8_t {
+  SafeIn = 0,      // Approx dist < tau_in: definitely in Top-K, fetch all data
+  SafeOut = 1,     // Approx dist > tau_out: definitely not in Top-K, skip
+  Uncertain = 2,   // tau_in <= approx_dist <= tau_out: need exact distance verification
+};
+
+inline std::string_view ResultClassName(ResultClass cls) {
+  switch (cls) {
+    case ResultClass::SafeIn: return "SafeIn";
+    case ResultClass::SafeOut: return "SafeOut";
+    case ResultClass::Uncertain: return "Uncertain";
+    default: return "UNKNOWN";
+  }
+}
+
+/// Physical address of a record in DataFile (offset + size)
+struct AddressEntry {
+  uint64_t offset;  // Byte offset in DataFile
+  uint32_t size;    // Record byte length
+
+  bool operator==(const AddressEntry& other) const {
+    return offset == other.offset && size == other.size;
+  }
+  bool operator!=(const AddressEntry& other) const { return !(*this == other); }
+};
+
+/// I/O task type for read queue scheduling
+enum class ReadTaskType : uint8_t {
+  ALL = 0,         // SafeIn small record: read entire record (vec + payload)
+  FRONT = 1,       // SafeIn large record: read front part (vec + partial payload)
+  VEC_ONLY = 2,    // Uncertain: read only vector for exact distance computation
+  BACK = 3,        // Rerank confirmed: read remaining payload after exact dist check
+  PAYLOAD = 4,     // Remaining payload part (for large SafeIn records)
+};
+
+inline std::string_view ReadTaskTypeName(ReadTaskType ty) {
+  switch (ty) {
+    case ReadTaskType::ALL: return "ALL";
+    case ReadTaskType::FRONT: return "FRONT";
+    case ReadTaskType::VEC_ONLY: return "VEC_ONLY";
+    case ReadTaskType::BACK: return "BACK";
+    case ReadTaskType::PAYLOAD: return "PAYLOAD";
+    default: return "UNKNOWN";
+  }
+}
+
+/// Single I/O task for read queue (before submission to io_uring)
+struct ReadTask {
+  ClusterID cluster_id;      // Which cluster to read from
+  uint32_t local_idx;        // Record index within cluster (used for logging)
+  AddressEntry addr;         // Physical address (offset, size) in DataFile
+  ReadTaskType task_type;    // How much data to read
+  uint64_t read_offset;      // Actual byte offset to read (may be offset + partial start)
+  uint32_t read_length;      // Actual byte length to read
+  uint8_t priority;          // 0=Qv (high, vector), 1=Qp (low, payload)
+
+  bool operator==(const ReadTask& other) const {
+    return cluster_id == other.cluster_id &&
+           addr == other.addr &&
+           task_type == other.task_type &&
+           read_offset == other.read_offset &&
+           read_length == other.read_length &&
+           priority == other.priority;
+  }
+  bool operator!=(const ReadTask& other) const { return !(*this == other); }
+};
+
+/// Completed I/O read result
+struct CompletedRead {
+  ReadTask task;
+  std::vector<uint8_t> buffer;  // Read data
+  // status could be added here if error handling needed
+};
+
+/// Candidate vector for progressive reranking
+struct Candidate {
+  VecID vec_id;
+  float approx_dist;         // RaBitQ estimated distance
+  ResultClass result_class;  // ConANN classification
+  ClusterID cluster_id;      // Source cluster
+  uint32_t local_idx;        // Local index in cluster
+
+  bool operator<(const Candidate& other) const {
+    // For max-heap: larger distance is "less than"
+    return approx_dist > other.approx_dist;
+  }
+  bool operator>(const Candidate& other) const {
+    return approx_dist < other.approx_dist;
+  }
+};
+
+/// RaBitQ (Reduced-Bit Quantization) configuration
+struct RaBitQConfig {
+  uint8_t bits = 1;          // Quantization bits: 1, 2, 4, or 8
+  uint32_t block_size = 64;  // Block granularity for SIMD (typically 64)
+  float c_factor = 5.75f;    // Error bound factor: epsilon = c * 2^(-B/2) / sqrt(D)
+
+  bool operator==(const RaBitQConfig& other) const {
+    return bits == other.bits &&
+           block_size == other.block_size &&
+           c_factor == other.c_factor;
+  }
+  bool operator!=(const RaBitQConfig& other) const { return !(*this == other); }
 };
 
 // ============================================================================
