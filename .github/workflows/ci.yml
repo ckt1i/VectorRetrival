@@ -50,8 +50,7 @@ jobs:
           -G Ninja \
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DVDB_BUILD_TESTS=ON \
-          -DVDB_BUILD_BENCHMARKS=OFF \
-          -DVDB_USE_BLAS=OFF
+          -DVDB_BUILD_BENCHMARKS=OFF
 
     - name: Build
       run: cmake --build build --config ${{ env.BUILD_TYPE }}
@@ -85,7 +84,6 @@ jobs:
           -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
           -DVDB_BUILD_TESTS=ON \
           -DVDB_BUILD_BENCHMARKS=OFF \
-          -DVDB_USE_BLAS=OFF \
           -DVDB_USE_AVX2=OFF \
           -DVDB_USE_AVX512=OFF
 

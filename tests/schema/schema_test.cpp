@@ -349,6 +349,9 @@ TEST_F(SegmentMetaSchemaTest, CreateSegmentMeta) {
         pq,                             // pq_params
         0,                              // opq_params (none)
         0,                              // hnsw_params (none)
+        0,                              // rabitq_params (none for legacy test)
+        0,                              // conann_params (none for legacy test)
+        0,                              // clusters (none for legacy test)
         ivl_list,                       // inverted_lists
         files,                          // files
         del_bitmap,                     // delete_bitmap
@@ -523,6 +526,7 @@ TEST(SchemaIntegrationTest, SegmentWithColumnsReference) {
         1, 1, schema::SegmentState::ACTIVE,
         128, schema::MetricType::L2, schema::VectorDType::FLOAT32,
         ivf, pq, 0, 0,
+        0, 0, 0,                    // rabitq, conann, clusters (legacy test)
         ivl_list, files, del_bitmap, stats, lsn,
         1699999000, 1699999000, 0, 0, parents, 0
     );
@@ -546,6 +550,278 @@ TEST(SchemaIntegrationTest, SegmentWithColumnsReference) {
     
     ASSERT_NE(cols_file, nullptr);
     EXPECT_STREQ(cols_file->file_name()->c_str(), "segment_1/payload.cols");
+}
+
+// =============================================================================
+// Phase 2.5: New Schema Tests (RaBitQ, ConANN, ClusterMeta, AddressColumn)
+// =============================================================================
+
+class Phase25SchemaTest : public ::testing::Test {
+protected:
+    flatbuffers::FlatBufferBuilder builder_{4096};
+};
+
+TEST_F(Phase25SchemaTest, CreateRaBitQParams) {
+    auto rabitq = schema::CreateRaBitQParams(
+        builder_,
+        1,          // bits (1-bit quantization)
+        64,         // block_size
+        5.75f,      // c_factor
+        0,          // codebook_offset
+        0           // codebook_length
+    );
+    
+    builder_.Finish(rabitq);
+    
+    auto* read = flatbuffers::GetRoot<schema::RaBitQParams>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->bits(), 1);
+    EXPECT_EQ(read->block_size(), 64);
+    EXPECT_NEAR(read->c_factor(), 5.75f, 0.001f);
+}
+
+TEST_F(Phase25SchemaTest, CreateConANNParams) {
+    auto conann = schema::CreateConANNParams(
+        builder_,
+        0.8f,       // tau_in_factor
+        1.2f        // tau_out_factor
+    );
+    
+    builder_.Finish(conann);
+    
+    auto* read = flatbuffers::GetRoot<schema::ConANNParams>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_NEAR(read->tau_in_factor(), 0.8f, 0.001f);
+    EXPECT_NEAR(read->tau_out_factor(), 1.2f, 0.001f);
+}
+
+TEST_F(Phase25SchemaTest, CreateAddressBlockMeta) {
+    auto block = schema::CreateAddressBlockMeta(
+        builder_,
+        1024,       // base_offset
+        8,          // bit_width (8 bits per size value)
+        2048,       // data_offset (in .clu file)
+        512         // data_length
+    );
+    
+    builder_.Finish(block);
+    
+    auto* read = flatbuffers::GetRoot<schema::AddressBlockMeta>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->base_offset(), 1024);
+    EXPECT_EQ(read->bit_width(), 8);
+    EXPECT_EQ(read->data_offset(), 2048);
+    EXPECT_EQ(read->data_length(), 512);
+}
+
+TEST_F(Phase25SchemaTest, CreateAddressColumnMeta) {
+    // Create some address blocks
+    std::vector<flatbuffers::Offset<schema::AddressBlockMeta>> blocks_vec;
+    blocks_vec.push_back(schema::CreateAddressBlockMeta(builder_, 0, 8, 1024, 64));
+    blocks_vec.push_back(schema::CreateAddressBlockMeta(builder_, 65536, 10, 1088, 80));
+    blocks_vec.push_back(schema::CreateAddressBlockMeta(builder_, 131072, 12, 1168, 96));
+    auto blocks = builder_.CreateVector(blocks_vec);
+    
+    auto addr_col = schema::CreateAddressColumnMeta(
+        builder_,
+        64,         // block_granularity (64 records per block)
+        3,          // num_blocks
+        blocks      // blocks
+    );
+    
+    builder_.Finish(addr_col);
+    
+    auto* read = flatbuffers::GetRoot<schema::AddressColumnMeta>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->block_granularity(), 64);
+    EXPECT_EQ(read->num_blocks(), 3);
+    ASSERT_NE(read->blocks(), nullptr);
+    EXPECT_EQ(read->blocks()->size(), 3);
+    
+    auto* blk0 = read->blocks()->Get(0);
+    EXPECT_EQ(blk0->base_offset(), 0);
+    EXPECT_EQ(blk0->bit_width(), 8);
+    
+    auto* blk2 = read->blocks()->Get(2);
+    EXPECT_EQ(blk2->base_offset(), 131072);
+    EXPECT_EQ(blk2->bit_width(), 12);
+}
+
+TEST_F(Phase25SchemaTest, CreateClusterMeta) {
+    // Build address column
+    std::vector<flatbuffers::Offset<schema::AddressBlockMeta>> blocks_vec;
+    blocks_vec.push_back(schema::CreateAddressBlockMeta(builder_, 0, 8, 4096, 64));
+    auto blocks = builder_.CreateVector(blocks_vec);
+    auto addr_col = schema::CreateAddressColumnMeta(builder_, 64, 1, blocks);
+    
+    auto data_file = builder_.CreateString("cluster_0042.dat");
+    
+    auto cluster = schema::CreateClusterMeta(
+        builder_,
+        42,         // cluster_id
+        1500,       // size (records)
+        0,          // centroid_offset
+        512,        // centroid_length (128 dim * 4 bytes)
+        512,        // rabitq_data_offset
+        24000,      // rabitq_data_length
+        addr_col,   // address_column
+        data_file,  // data_file_path
+        24512,      // norms_offset
+        6000,       // norms_length (1500 * 4 bytes)
+        0           // checksum
+    );
+    
+    builder_.Finish(cluster);
+    
+    auto* read = flatbuffers::GetRoot<schema::ClusterMeta>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->cluster_id(), 42);
+    EXPECT_EQ(read->size(), 1500);
+    EXPECT_EQ(read->centroid_length(), 512);
+    EXPECT_EQ(read->rabitq_data_length(), 24000);
+    EXPECT_STREQ(read->data_file_path()->c_str(), "cluster_0042.dat");
+    
+    // Check nested address column
+    ASSERT_NE(read->address_column(), nullptr);
+    EXPECT_EQ(read->address_column()->block_granularity(), 64);
+    EXPECT_EQ(read->address_column()->num_blocks(), 1);
+}
+
+TEST_F(Phase25SchemaTest, CreateSegmentMetaWithClusters) {
+    // Create IVF params
+    auto ivf = schema::CreateIvfParams(builder_, 256, 8, 0, 1048576, 50000, 10, 50, 1000, 195.3f);
+    
+    // Create RaBitQ params (new)
+    auto rabitq = schema::CreateRaBitQParams(builder_, 1, 64, 5.75f, 0, 0);
+    
+    // Create ConANN params (new)
+    auto conann = schema::CreateConANNParams(builder_, 0.8f, 1.2f);
+    
+    // Create cluster list (new)
+    std::vector<flatbuffers::Offset<schema::ClusterMeta>> clusters_vec;
+    for (uint32_t i = 0; i < 3; ++i) {
+        std::vector<flatbuffers::Offset<schema::AddressBlockMeta>> blks;
+        blks.push_back(schema::CreateAddressBlockMeta(builder_, i * 65536, 8, i * 100, 64));
+        auto blks_v = builder_.CreateVector(blks);
+        auto addr = schema::CreateAddressColumnMeta(builder_, 64, 1, blks_v);
+        
+        auto path = builder_.CreateString("cluster_" + std::to_string(i) + ".dat");
+        clusters_vec.push_back(schema::CreateClusterMeta(
+            builder_, i, 500, 0, 512, 512, 8000, addr, path, 8512, 2000, 0));
+    }
+    auto clusters = builder_.CreateVector(clusters_vec);
+    
+    // Empty vectors for legacy fields
+    std::vector<flatbuffers::Offset<schema::InvertedListMeta>> ivl_vec;
+    auto ivl_list = builder_.CreateVector(ivl_vec);
+    std::vector<flatbuffers::Offset<schema::FileRef>> files_vec;
+    auto files = builder_.CreateVector(files_vec);
+    
+    auto stats = schema::CreateSegmentStats(builder_, 1500, 0, 1500,
+                                      768000, 32768, 0, 800768, 0.9f, 0, 0, 0);
+    auto lsn = schema::CreateLsnInfo(builder_, 0, 1500, 1500, 1500);
+    auto del_bitmap = schema::CreateDeleteBitmapMeta(builder_, 0, 0, 0, 0);
+    
+    std::vector<uint64_t> parents_vec;
+    auto parents = builder_.CreateVector(parents_vec);
+    
+    auto segment = schema::CreateSegmentMeta(
+        builder_,
+        100,                            // segment_id
+        2,                              // version (Phase 2.5)
+        schema::SegmentState::ACTIVE,
+        128,                            // dimension
+        schema::MetricType::L2,
+        schema::VectorDType::FLOAT32,
+        ivf,                            // ivf_params
+        0,                              // pq_params (legacy, not used)
+        0,                              // opq_params (legacy, not used)
+        0,                              // hnsw_params
+        rabitq,                         // rabitq_params (new)
+        conann,                         // conann_params (new)
+        clusters,                       // clusters (new)
+        ivl_list,                       // inverted_lists (legacy, empty)
+        files,
+        del_bitmap,
+        stats,
+        lsn,
+        1699999000, 1699999999, 0, 0, parents, 0
+    );
+    
+    builder_.Finish(segment, "VSEG");
+    
+    auto* read_seg = schema::GetSegmentMeta(builder_.GetBufferPointer());
+    ASSERT_NE(read_seg, nullptr);
+    EXPECT_EQ(read_seg->segment_id(), 100);
+    EXPECT_EQ(read_seg->version(), 2);
+    
+    // Verify RaBitQ params
+    ASSERT_NE(read_seg->rabitq_params(), nullptr);
+    EXPECT_EQ(read_seg->rabitq_params()->bits(), 1);
+    EXPECT_EQ(read_seg->rabitq_params()->block_size(), 64);
+    EXPECT_NEAR(read_seg->rabitq_params()->c_factor(), 5.75f, 0.001f);
+    
+    // Verify ConANN params
+    ASSERT_NE(read_seg->conann_params(), nullptr);
+    EXPECT_NEAR(read_seg->conann_params()->tau_in_factor(), 0.8f, 0.001f);
+    EXPECT_NEAR(read_seg->conann_params()->tau_out_factor(), 1.2f, 0.001f);
+    
+    // Verify clusters
+    ASSERT_NE(read_seg->clusters(), nullptr);
+    EXPECT_EQ(read_seg->clusters()->size(), 3);
+    
+    auto* c0 = read_seg->clusters()->Get(0);
+    EXPECT_EQ(c0->cluster_id(), 0);
+    EXPECT_EQ(c0->size(), 500);
+    EXPECT_STREQ(c0->data_file_path()->c_str(), "cluster_0.dat");
+    ASSERT_NE(c0->address_column(), nullptr);
+    EXPECT_EQ(c0->address_column()->block_granularity(), 64);
+    
+    auto* c2 = read_seg->clusters()->Get(2);
+    EXPECT_EQ(c2->cluster_id(), 2);
+    EXPECT_STREQ(c2->data_file_path()->c_str(), "cluster_2.dat");
+    
+    // Legacy fields should be empty/null
+    EXPECT_EQ(read_seg->pq_params(), nullptr);
+    EXPECT_EQ(read_seg->inverted_lists()->size(), 0);
+}
+
+TEST_F(Phase25SchemaTest, RaBitQEncodingInColumns) {
+    // Test the new RaBitQ encoding type in columns.fbs
+    EXPECT_EQ(static_cast<int>(schema::EncodingType::RABITQ), 8);
+    
+    // Create a RaBitQ encoding params
+    auto rabitq_params = schema::CreateRaBitQEncodingParams(builder_, 1, 64);
+    
+    // Create a ChunkMeta with RaBitQ encoding
+    auto chunk = schema::CreateChunkMeta(
+        builder_,
+        0,                                  // chunk_id
+        0,                                  // row_start
+        1000,                               // row_count
+        1000,                               // num_records
+        0, 0,                               // offset_table_offset/length
+        0,                                  // data_offset
+        16000,                              // data_length (1000 * 128 bits / 8)
+        16000,                              // compressed_length
+        schema::EncodingType::RABITQ,       // encoding (new!)
+        schema::EncodingParams::RaBitQEncodingParams,
+        rabitq_params.Union(),
+        schema::CompressionType::NONE,
+        0, 0, 0, 0, 0                      // local_index, aux, null_count, distinct, checksum
+    );
+    
+    builder_.Finish(chunk);
+    
+    auto* read = flatbuffers::GetRoot<schema::ChunkMeta>(builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->encoding(), schema::EncodingType::RABITQ);
+    EXPECT_EQ(read->encoding_params_type(), schema::EncodingParams::RaBitQEncodingParams);
+    
+    auto* rq = read->encoding_params_as_RaBitQEncodingParams();
+    ASSERT_NE(rq, nullptr);
+    EXPECT_EQ(rq->bits(), 1);
+    EXPECT_EQ(rq->block_size(), 64);
 }
 
 }  // namespace test

@@ -305,5 +305,116 @@ TEST(RecordIntegrationTest, InlineExternBoundary) {
     }
 }
 
+// =============================================================================
+// Phase 2.5: DataFileHeader and ColumnSchemaEntry Tests
+// =============================================================================
+
+TEST_F(RecordSchemaTest, CreateColumnSchemaEntry) {
+    auto name = builder_.CreateString("user_name");
+    auto entry = schema::CreateColumnSchemaEntry(
+        builder_,
+        0,          // column_id
+        name,       // name
+        11          // data_type (STRING = 11 in columns.fbs DataType)
+    );
+    
+    builder_.Finish(entry);
+    
+    auto* read = flatbuffers::GetRoot<schema::ColumnSchemaEntry>(
+        builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->column_id(), 0);
+    EXPECT_STREQ(read->name()->c_str(), "user_name");
+    EXPECT_EQ(read->data_type(), 11);
+}
+
+TEST_F(RecordSchemaTest, CreateDataFileHeader) {
+    // Create column schemas
+    auto name0 = builder_.CreateString("user_id");
+    auto name1 = builder_.CreateString("user_name");
+    auto name2 = builder_.CreateString("embedding");
+    
+    std::vector<flatbuffers::Offset<schema::ColumnSchemaEntry>> col_entries;
+    col_entries.push_back(schema::CreateColumnSchemaEntry(builder_, 0, name0, 4));  // INT64
+    col_entries.push_back(schema::CreateColumnSchemaEntry(builder_, 1, name1, 11)); // STRING
+    col_entries.push_back(schema::CreateColumnSchemaEntry(builder_, 2, name2, 9));  // FLOAT32
+    auto col_schemas = builder_.CreateVector(col_entries);
+    
+    // Create column region offsets
+    std::vector<uint64_t> offsets = {4096, 8192, 16384};
+    auto region_offsets = builder_.CreateVector(offsets);
+    
+    auto header = schema::CreateDataFileHeader(
+        builder_,
+        0x56444154,     // magic ("VDAT")
+        1,              // version
+        42,             // cluster_id
+        10000,          // num_records
+        128,            // dimension
+        col_schemas,    // column_schemas
+        region_offsets, // column_region_offsets
+        0               // checksum
+    );
+    
+    builder_.Finish(header);
+    
+    auto* read = flatbuffers::GetRoot<schema::DataFileHeader>(
+        builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->magic(), 0x56444154);
+    EXPECT_EQ(read->version(), 1);
+    EXPECT_EQ(read->cluster_id(), 42);
+    EXPECT_EQ(read->num_records(), 10000);
+    EXPECT_EQ(read->dimension(), 128);
+    
+    // Check column schemas
+    ASSERT_NE(read->column_schemas(), nullptr);
+    EXPECT_EQ(read->column_schemas()->size(), 3);
+    
+    auto* cs0 = read->column_schemas()->Get(0);
+    EXPECT_EQ(cs0->column_id(), 0);
+    EXPECT_STREQ(cs0->name()->c_str(), "user_id");
+    EXPECT_EQ(cs0->data_type(), 4);
+    
+    auto* cs1 = read->column_schemas()->Get(1);
+    EXPECT_STREQ(cs1->name()->c_str(), "user_name");
+    EXPECT_EQ(cs1->data_type(), 11);
+    
+    // Check region offsets
+    ASSERT_NE(read->column_region_offsets(), nullptr);
+    EXPECT_EQ(read->column_region_offsets()->size(), 3);
+    EXPECT_EQ(read->column_region_offsets()->Get(0), 4096);
+    EXPECT_EQ(read->column_region_offsets()->Get(1), 8192);
+    EXPECT_EQ(read->column_region_offsets()->Get(2), 16384);
+}
+
+TEST_F(RecordSchemaTest, DataFileHeaderEmptyColumns) {
+    // DataFile with no payload columns (vector-only)
+    std::vector<flatbuffers::Offset<schema::ColumnSchemaEntry>> empty_cols;
+    auto col_schemas = builder_.CreateVector(empty_cols);
+    std::vector<uint64_t> empty_offsets;
+    auto region_offsets = builder_.CreateVector(empty_offsets);
+    
+    auto header = schema::CreateDataFileHeader(
+        builder_,
+        0x56444154, 1, 0,
+        5000,       // num_records
+        256,        // dimension (high-dim)
+        col_schemas,
+        region_offsets,
+        0
+    );
+    
+    builder_.Finish(header);
+    
+    auto* read = flatbuffers::GetRoot<schema::DataFileHeader>(
+        builder_.GetBufferPointer());
+    ASSERT_NE(read, nullptr);
+    EXPECT_EQ(read->num_records(), 5000);
+    EXPECT_EQ(read->dimension(), 256);
+    EXPECT_EQ(read->column_schemas()->size(), 0);
+    EXPECT_EQ(read->column_region_offsets()->size(), 0);
+}
+
 }  // namespace test
 }  // namespace vdb

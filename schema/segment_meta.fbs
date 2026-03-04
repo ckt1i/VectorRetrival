@@ -2,7 +2,8 @@
 // VDB Segment Metadata Schema
 // =============================================================================
 // 定义向量索引段的元数据结构
-// 包括 IVF 参数、PQ 参数、文件引用等
+// Phase 2.5: IVF + ConANN + RaBitQ 架构
+// 保留旧的 PQ/InvertedList 定义供向后兼容 (标注 DEPRECATED)
 // =============================================================================
 
 namespace vdb.schema;
@@ -103,10 +104,87 @@ table HnswParams {
 }
 
 // ============================================================
-// Inverted List 元数据
+// RaBitQ 量化参数 (Phase 2.5 新增)
+// ============================================================
+
+/// RaBitQ (Reduced-Bit Quantization) 量化参数
+table RaBitQParams {
+    bits: uint8;                 // 量化位数 (1/2/4/8, 默认 1)
+    block_size: uint32;          // SIMD 块粒度 (默认 64)
+    c_factor: float;             // 误差界因子: epsilon = c * 2^(-B/2) / sqrt(D)
+    
+    // 码本数据位置
+    codebook_offset: uint64;     // 码本数据偏移
+    codebook_length: uint32;     // 码本数据长度
+}
+
+// ============================================================
+// ConANN 三分类参数 (Phase 2.5 新增)
+// ============================================================
+
+/// ConANN (Cluster Architecture Nearest Neighbor Analysis) 参数
+table ConANNParams {
+    tau_in_factor: float;        // SafeIn 门限因子
+    tau_out_factor: float;       // SafeOut 门限因子
+}
+
+// ============================================================
+// Address Column 元数据 (Phase 2.5 新增)
+// ============================================================
+
+/// 单个 AddressBlock 的元数据
+/// 每块编码 block_granularity 条记录的 (offset, size) 信息
+table AddressBlockMeta {
+    base_offset: uint64;         // 块内第一条记录的 DataFile 字节偏移
+    bit_width: uint8;            // 每个 size 值的位宽
+    data_offset: uint64;         // 该块 bit-packed 数据在 .clu 文件中的偏移
+    data_length: uint32;         // 该块 bit-packed 数据字节长度
+}
+
+/// Address Column 整体元数据
+table AddressColumnMeta {
+    block_granularity: uint32;   // 每块记录数 (默认 64)
+    num_blocks: uint32;          // 块数量
+    blocks: [AddressBlockMeta];  // 各块元数据
+}
+
+// ============================================================
+// Cluster 元数据 (Phase 2.5 新增 — 替代 InvertedListMeta)
+// ============================================================
+
+/// 单个 Cluster 的元数据 (对应一对 .clu + .dat 文件)
+table ClusterMeta {
+    cluster_id: uint32;          // Cluster / IVF List ID
+    size: uint32;                // 该 cluster 中的向量数量
+    
+    // Centroid 数据位置 (.clu 文件内)
+    centroid_offset: uint64;
+    centroid_length: uint32;
+    
+    // RaBitQ 量化向量数据位置 (.clu 文件内)
+    rabitq_data_offset: uint64;
+    rabitq_data_length: uint32;
+    
+    // Address Column 元数据
+    address_column: AddressColumnMeta;
+    
+    // DataFile 路径 (相对路径，如 "cluster_0042.dat")
+    data_file_path: string;
+    
+    // 预计算范数数据位置 (.clu 文件内)
+    norms_offset: uint64;
+    norms_length: uint32;
+    
+    // 校验和
+    checksum: uint32;
+}
+
+// ============================================================
+// Inverted List 元数据 (DEPRECATED — 保留向后兼容)
 // ============================================================
 
 /// 单个倒排列表的元数据
+/// DEPRECATED: 新架构请使用 ClusterMeta
 table InvertedListMeta {
     list_id: uint32;             // List ID
     size: uint32;                // 向量数量
@@ -244,11 +322,29 @@ table SegmentMeta {
     
     // 索引参数
     ivf_params: IvfParams;
+    
+    // DEPRECATED: 旧 PQ 参数，新架构使用 rabitq_params
     pq_params: PqParams;
-    opq_params: OpqParams;       // 可选
+    opq_params: OpqParams;
+    
     hnsw_params: HnswParams;     // 可选 (用于中心快速搜索)
     
-    // Inverted Lists
+    // ============================================================
+    // Phase 2.5 新增: RaBitQ + ConANN + Cluster 架构
+    // ============================================================
+    
+    // RaBitQ 量化参数 (替代 pq_params)
+    rabitq_params: RaBitQParams;
+    
+    // ConANN 三分类参数
+    conann_params: ConANNParams;
+    
+    // Cluster 列表 (替代 inverted_lists)
+    clusters: [ClusterMeta];
+    
+    // ============================================================
+    // DEPRECATED: 旧的倒排列表 (保留向后兼容)
+    // ============================================================
     inverted_lists: [InvertedListMeta];
     
     // 文件引用

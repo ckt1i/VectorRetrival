@@ -140,6 +140,47 @@ table RecordFileHeader {
     checksum: uint32;
 }
 
+// ============================================================
+// DataFile Schema Entry (Phase 2.5 新增)
+// ============================================================
+
+/// DataFile 中的列定义条目
+/// 引用 columns.fbs 中的 DataType 枚举
+table ColumnSchemaEntry {
+    column_id: uint32;           // 列 ID
+    name: string;                // 列名
+    data_type: uint8;            // 数据类型 (对应 columns.fbs 的 DataType 枚举值)
+}
+
+// ============================================================
+// DataFile Header (Phase 2.5 新增)
+// ============================================================
+
+/// DataFile 文件头 — 每个 DataFile 对应一个 IVF Cluster
+/// 文件内按行存储: 每条记录 = [raw_vector | col0 | col1 | ...]
+/// 记录物理地址由 ClusterStore 中的 Address Column 编码
+table DataFileHeader {
+    // 文件标识
+    magic: uint32;               // 0x56444154 ("VDAT")
+    version: uint32;
+    
+    // Cluster 关联
+    cluster_id: uint32;          // 对应的 Cluster ID
+    
+    // 向量参数
+    num_records: uint64;         // 记录总数
+    dimension: uint32;           // 向量维度
+    
+    // 列定义
+    column_schemas: [ColumnSchemaEntry];
+    
+    // 各列数据区域偏移 (用于按列区域随机访问)
+    column_region_offsets: [uint64];
+    
+    // 校验
+    checksum: uint32;
+}
+
 root_type Record;
 
 // 文件标识符

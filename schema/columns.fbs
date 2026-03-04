@@ -46,7 +46,8 @@ enum EncodingType : byte {
     VARINT = 4,         // 变长整数
     DELTA = 5,          // 差分编码
     FSST = 6,           // 字符串快速压缩
-    FRAME_OF_REF = 7    // 参照系编码
+    FRAME_OF_REF = 7,   // 参照系编码
+    RABITQ = 8          // RaBitQ 二进制量化编码
 }
 
 /// 压缩类型
@@ -111,6 +112,12 @@ table FrameOfRefEncodingParams {
     bit_width: uint8;            // 偏移位宽
 }
 
+/// RaBitQ 量化编码参数
+table RaBitQEncodingParams {
+    bits: uint8;                 // 量化位数 (1/2/4/8)
+    block_size: uint32;          // SIMD 块粒度 (默认 64)
+}
+
 /// 编码参数联合类型
 union EncodingParams {
     RawEncodingParams,
@@ -120,7 +127,8 @@ union EncodingParams {
     VarintEncodingParams,
     DeltaEncodingParams,
     FsstEncodingParams,
-    FrameOfRefEncodingParams
+    FrameOfRefEncodingParams,
+    RaBitQEncodingParams
 }
 
 // ============================================================
