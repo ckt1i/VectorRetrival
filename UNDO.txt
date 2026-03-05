@@ -178,5 +178,94 @@ How to implement later:
     this automatically.
 
 ================================================================================
+Phase 4 Deferred Optimizations & Known Limitations (RaBitQ)
+================================================================================
+
+--------------------------------------------------------------------------------
+[PHASE4-001] Rotation Matrix: O(L²) Apply — Hadamard FWHT O(L log L) available
+--------------------------------------------------------------------------------
+Status  : Implemented (both paths available)
+Files   : include/vdb/rabitq/rabitq_rotation.h, src/rabitq/rabitq_rotation.cpp
+
+What was done:
+  - Full random orthogonal matrix via Gram-Schmidt QR is implemented.
+  - Hadamard mode (P = (1/√L) H × D) is implemented with both:
+    (a) O(L²) explicit matrix multiply path (use_fast_transform=false)
+    (b) O(L log L) fast Walsh-Hadamard transform path (use_fast_transform=true)
+  - Hadamard requires dim to be a power of 2.
+
+Future optimization:
+  1. SIMD-accelerate the Apply() matrix-vector multiply for the random
+     orthogonal case (AVX2 FMA in chunks of 8).
+  2. For Hadamard FWHT, implement AVX2-accelerated butterfly operations.
+  3. Consider generating P once and serializing to disk (not regenerating
+     per-index-load).
+
+--------------------------------------------------------------------------------
+[PHASE4-002] Multi-bit RaBitQ (M=2, 4, 8) Not Implemented
+--------------------------------------------------------------------------------
+Status  : Not implemented (only M=1)
+Files   : include/vdb/rabitq/rabitq_encoder.h, include/vdb/rabitq/rabitq_estimator.h
+
+What was done:
+  - Only 1-bit RaBitQ (32× compression) is implemented.
+  - The distance estimator uses sign-code XOR + popcount for the fast path.
+
+How to implement later:
+  1. Extend encoder to quantize each rotated dimension into 2^M bins
+     (uniform quantization in [-1, 1]).
+  2. Pack M-bit codes using the existing bitpack_codec.
+  3. Distance computation uses a precomputed LUT[2^M] per query:
+     LUT[v] = weighted sum for quantization level v.
+  4. MSB optimization: use MSB (= sign bit) for Stage 1 pruning, then
+     full M-bit for Stage 2 refinement.
+  5. Template on BITS: RaBitQEncoder<1>, RaBitQEncoder<2>, etc.
+
+--------------------------------------------------------------------------------
+[PHASE4-003] Estimator PopcountXor: No AVX-512 VPOPCNTDQ Path
+--------------------------------------------------------------------------------
+Status  : Not implemented
+Files   : src/simd/popcount.cpp
+
+What was done:
+  - AVX2 VPSHUFB-based popcount (nibble lookup table).
+  - Scalar __builtin_popcountll fallback.
+
+How to implement later:
+  1. On AVX-512 VPOPCNT (Ice Lake+), use _mm512_popcnt_epi64 directly.
+  2. This eliminates the lookup + accumulate overhead entirely.
+  3. Guard with #if defined(__AVX512VPOPCNTDQ__).
+
+--------------------------------------------------------------------------------
+[PHASE4-004] RaBitQ Encoder: Per-vector Heap Allocation
+--------------------------------------------------------------------------------
+Status  : Known inefficiency
+Files   : src/rabitq/rabitq_encoder.cpp
+
+What was done:
+  - Encode() allocates two std::vector<float> (residual, rotated) per call.
+  - EncodeBatch() calls Encode() in a loop.
+
+How to implement later:
+  1. Pre-allocate thread-local scratch buffers.
+  2. EncodeBatch() should share scratch across iterations.
+  3. Consider AlignedBuffer<float> for SIMD-aligned temporaries.
+
+--------------------------------------------------------------------------------
+[PHASE4-005] Gram-Schmidt Numerical Stability for Large dim
+--------------------------------------------------------------------------------
+Status  : Acceptable for dim ≤ 256; may degrade for dim ≥ 512
+Files   : src/rabitq/rabitq_rotation.cpp
+
+What was done:
+  - Modified Gram-Schmidt (row-oriented) for QR decomposition.
+  - Orthogonality verified up to dim=128 with tolerance 1e-3.
+
+How to implement later:
+  1. Use Householder reflections for better numerical stability.
+  2. Or use LAPACK dgeqrf/sgeqrf if available.
+  3. Or apply re-orthogonalization pass after initial Gram-Schmidt.
+
+================================================================================
 End of UNDO.txt
 ================================================================================

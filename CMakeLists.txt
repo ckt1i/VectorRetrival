@@ -129,6 +129,7 @@ add_library(vdb_simd STATIC
     src/simd/distance_l2.cpp
     src/simd/bit_unpack.cpp
     src/simd/prefix_sum.cpp
+    src/simd/popcount.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -148,6 +149,22 @@ target_include_directories(vdb_codec PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_codec PUBLIC vdb_simd)
+
+# =============================================================================
+# VDB RaBitQ Library (Phase 4)
+# 1-bit RaBitQ quantization: rotation, encoder, estimator.
+# See RabitQemplementation.md for algorithm details.
+# =============================================================================
+add_library(vdb_rabitq STATIC
+    src/rabitq/rabitq_rotation.cpp
+    src/rabitq/rabitq_encoder.cpp
+    src/rabitq/rabitq_estimator.cpp
+)
+target_include_directories(vdb_rabitq PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_rabitq PUBLIC vdb_simd)
 
 # =============================================================================
 # Tests
@@ -219,6 +236,28 @@ if(VDB_BUILD_TESTS)
     add_executable(test_dict_codec tests/codec/dict_codec_test.cpp)
     target_link_libraries(test_dict_codec PRIVATE vdb_codec GTest::gtest GTest::gtest_main)
     add_test(NAME test_dict_codec COMMAND test_dict_codec)
+
+    # -------------------------------------------------------------------------
+    # SIMD popcount test (Phase 4 prerequisite)
+    # -------------------------------------------------------------------------
+    add_executable(test_popcount tests/simd/popcount_test.cpp)
+    target_link_libraries(test_popcount PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_popcount COMMAND test_popcount)
+
+    # -------------------------------------------------------------------------
+    # RaBitQ tests (Phase 4)
+    # -------------------------------------------------------------------------
+    add_executable(test_rabitq_rotation tests/rabitq/rabitq_rotation_test.cpp)
+    target_link_libraries(test_rabitq_rotation PRIVATE vdb_rabitq GTest::gtest GTest::gtest_main)
+    add_test(NAME test_rabitq_rotation COMMAND test_rabitq_rotation)
+
+    add_executable(test_rabitq_encoder tests/rabitq/rabitq_encoder_test.cpp)
+    target_link_libraries(test_rabitq_encoder PRIVATE vdb_rabitq GTest::gtest GTest::gtest_main)
+    add_test(NAME test_rabitq_encoder COMMAND test_rabitq_encoder)
+
+    add_executable(test_rabitq_estimator tests/rabitq/rabitq_estimator_test.cpp)
+    target_link_libraries(test_rabitq_estimator PRIVATE vdb_rabitq vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_rabitq_estimator COMMAND test_rabitq_estimator)
 endif()
 
 # =============================================================================
