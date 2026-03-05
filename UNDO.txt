@@ -1,7 +1,182 @@
-tpyes.h: SIMD的宽度具体要定多少
+================================================================================
+UNDO.txt — Phase 3 Deferred Optimizations & Known Limitations
+================================================================================
 
-2. 向量数据与原始数据分开管理，不放在Flatbuffer里
+This file tracks intentional simplifications made during Phase 3 (SIMD + Codec)
+implementation. Each entry describes what was deferred, why, and how to implement
+it when the need arises.
 
-列存储的时候，不同列是否需要放到同一个文件里？
+--------------------------------------------------------------------------------
+[PHASE3-001] AVX-512 Path Deferred
+--------------------------------------------------------------------------------
+Status  : Not implemented
+Files   : include/vdb/simd/distance_l2.h, src/simd/distance_l2.cpp
+          include/vdb/simd/bit_unpack.h,  src/simd/bit_unpack.cpp
+          include/vdb/simd/prefix_sum.h,  src/simd/prefix_sum.cpp
 
-考虑编码压缩的节点实在读取/存储阶段还是先压缩后存储？
+What was done:
+  - Only AVX2 (+FMA) and scalar fallback paths are implemented.
+  - The CMake option VDB_USE_AVX512=OFF already exists but is not wired into
+    any SIMD kernel in Phase 3.
+
+Why deferred:
+  - AVX-512 requires a separate CPU target and complicates the dispatch table.
+  - AVX-512 doubles the vector width (512-bit) but offers diminishing returns
+    for short vectors (dim < 512) or small batch sizes.
+  - Hardware availability: AVX-512 is not universally supported on dev machines.
+
+How to implement later:
+  1. Add a new #elif VDB_USE_AVX512 branch in each .cpp file.
+  2. distance_l2: use _mm512_loadu_ps (16 floats/iter), _mm512_sub_ps,
+     _mm512_fmadd_ps, _mm512_reduce_add_ps for horizontal sum.
+  3. bit_unpack 1-bit: use _mm512_srlv_epi32 with 16-element shift vectors
+     to process 2 bytes → 16 uint32_t per iteration.
+  4. prefix_sum: use _mm512_alignr_epi32 for cross-lane carries; process
+     16 uint32_t per AVX-512 register.
+  5. Guard with #if defined(VDB_USE_AVX512) && defined(__AVX512F__).
+  6. Add a CMake compile-definition VDB_USE_AVX512=1 and compiler flag
+     -mavx512f -mavx512dq -mavx512bw -mavx512vl when the option is ON.
+
+--------------------------------------------------------------------------------
+[PHASE3-002] bit_unpack: Only 1-bit Has AVX2 Specialization
+--------------------------------------------------------------------------------
+Status  : Partially specialized
+Files   : include/vdb/simd/bit_unpack.h, src/simd/bit_unpack.cpp
+
+What was done:
+  - bit_width=1 has a dedicated AVX2 path: broadcasts each byte to a __m256i,
+    uses _mm256_srlv_epi32 with shift vector [0..7], AND with 1, then stores
+    8 uint32_t per byte. This is the critical path for RaBitQ 1-bit quantization.
+  - bit_width=2, 4, 8 fall through to the scalar BitUnpackScalar path.
+
+Why deferred:
+  - RaBitQ primarily uses 1-bit quantization; 2/4/8-bit are lower priority.
+  - Scalar is correct and readable; performance profiling should guide when to
+    add AVX2 paths for other widths.
+
+How to implement later (per bit_width):
+  bit_width=2 (count=64, 16 bytes → 64 uint32_t):
+    - Load 2 bytes at a time, broadcast to __m256i, use shift vector [0,2,4,6,0,2,4,6]
+      and mask 0x3 to extract 4 2-bit values per register pair.
+    - Or: process 4 bytes → 16 uint32_t per __m256i using _mm256_srlv_epi32 with
+      shift vector [0,2,4,6,0,2,4,6] and value broadcast.
+
+  bit_width=4 (count=64, 32 bytes → 64 uint32_t):
+    - Use _mm256_loadu_si256 to load 32 bytes, then _mm256_and_si256 with 0x0f0f0f0f
+      mask to extract low nibbles, and >>4 for high nibbles.
+    - _mm256_unpacklo_epi8 / _mm256_unpackhi_epi8 + zero-extend to uint32_t.
+
+  bit_width=8 (count=64, 64 bytes → 64 uint32_t):
+    - Simple zero-extension: load 8 bytes as __m64 or 16 bytes as __m128i,
+      use _mm256_cvtepu8_epi32 (8 bytes → 8 uint32_t per call) × 8 iterations.
+
+--------------------------------------------------------------------------------
+[PHASE3-003] prefix_sum: AVX2 Processes 8 uint32_t/iter, No 16/32-wide Path
+--------------------------------------------------------------------------------
+Status  : Implemented (AVX2, 8 uint32_t/iter)
+Files   : include/vdb/simd/prefix_sum.h, src/simd/prefix_sum.cpp
+
+What was done:
+  - AVX2 path processes 8 uint32_t per __m256i register using _mm256_slli_si256
+    (intra-lane shift) and _mm_alignr_epi8 for the cross-lane carry.
+  - Scalar tail for remainder (count % 8 != 0).
+
+Potential optimization:
+  - Loop unrolling: process 2 × __m256i per iteration to reduce loop overhead
+    for count=64 (8 iterations → 4 iterations).
+  - AVX-512 path: _mm512_alignr_epi32 can do cross-lane shifts natively for
+    16 uint32_t per register, handling count=64 in 4 iterations.
+  - For very large count (> 1024), a parallel prefix sum using reduction trees
+    would be more cache-efficient.
+
+--------------------------------------------------------------------------------
+[PHASE3-004] BitpackCodec::Encode: Scalar Bit-Packing (No SIMD Write Path)
+--------------------------------------------------------------------------------
+Status  : Scalar implementation
+Files   : include/vdb/codec/bitpack_codec.h, src/codec/bitpack_codec.cpp
+
+What was done:
+  - Encode() writes bit_width bits per value into a packed byte array using
+    scalar OR + shift operations (bit_pos / 8, bit_pos % 8 per element).
+  - Decode() delegates to vdb::simd::BitUnpack (AVX2 for 1-bit, scalar for rest).
+
+Why deferred:
+  - Encoding is performed offline during index construction (not on the query
+    critical path), so scalar speed is acceptable.
+
+How to optimize later:
+  - For bit_width=1: process 32 values at a time using AVX2 _mm256_movemask_epi8
+    after comparing each 32-element batch with a mask. Store as a single
+    uint32_t (one byte per iteration with _mm_movemask_epi8 on __m128i).
+  - For bit_width=4: pack pairs of nibbles using _mm256_packs_epi16 +
+    shuffle, then store 32 bytes.
+  - For bit_width=8: trivially memcpy.
+
+--------------------------------------------------------------------------------
+[PHASE3-005] DictCodec: Simple std::unordered_map — No Compression of Indices
+--------------------------------------------------------------------------------
+Status  : Simple implementation
+Files   : include/vdb/codec/dict_codec.h, src/codec/dict_codec.cpp
+
+What was done:
+  - BuildDict() uses std::unordered_map<string, uint32_t> for O(n) dict build;
+    insertion order defines dict entry ordering.
+  - Indices are stored as uint32_t (not further compressed).
+  - Decode() is a simple lookup into the dict vector.
+
+Potential future optimizations:
+  1. Sort the dict by frequency and use smaller index types (uint8_t if dict
+     size ≤ 256, uint16_t if ≤ 65536) to reduce storage. Pair with
+     BitpackCodec to pack the indices.
+  2. Integrate with BitpackCodec: after BuildDict(), call
+     ComputeMinBitWidth(indices) and Encode(indices) to get a compact byte
+     stream for on-disk storage of payload columns.
+  3. For very large datasets, use a perfect hash (e.g. gperf) to minimize
+     decode lookup time.
+  4. The current BuildDict preserves insertion order. If sorted order is
+     needed (for binary search decode), sort dict by value or by frequency.
+
+--------------------------------------------------------------------------------
+[PHASE3-006] distance_l2: Unaligned Loads Only
+--------------------------------------------------------------------------------
+Status  : Uses _mm256_loadu_ps (unaligned)
+Files   : src/simd/distance_l2.cpp
+
+What was done:
+  - Uses _mm256_loadu_ps for both input vectors regardless of alignment.
+
+Potential optimization:
+  - When both pointers are 32-byte aligned (VDB_SIMD_ALIGNED), use
+    _mm256_load_ps for slightly better throughput on older hardware.
+  - In practice, modern CPUs (Haswell+) have negligible penalty for unaligned
+    loads when data is actually aligned. Only worth adding if profiling shows
+    a measurable bottleneck.
+  - Could add a fast path: if (((uintptr_t)a | (uintptr_t)b) & 31) == 0,
+    use _mm256_load_ps, otherwise _mm256_loadu_ps.
+
+--------------------------------------------------------------------------------
+[PHASE3-007] No Runtime CPU Feature Detection (Compile-Time Dispatch Only)
+--------------------------------------------------------------------------------
+Status  : Compile-time dispatch via #ifdef VDB_USE_AVX2
+Files   : All simd/*.cpp
+
+What was done:
+  - SIMD path selection happens at compile time via CMake options and
+    corresponding preprocessor defines (VDB_USE_AVX2=1, VDB_USE_AVX512=1).
+  - A single binary cannot run both AVX2 and scalar paths at runtime.
+
+Why deferred:
+  - Runtime dispatch adds code complexity (function pointer tables, CPUID
+    detection, initialization overhead).
+  - The current build target is a server with known CPU capabilities.
+
+How to implement later:
+  1. Use __builtin_cpu_supports("avx2") at runtime to select paths.
+  2. Create separate compilation units with different -march flags and
+    use function multiversioning (__attribute__((target("avx2")))).
+  3. Or use a dispatch library like highway (google/highway) which handles
+    this automatically.
+
+================================================================================
+End of UNDO.txt
+================================================================================

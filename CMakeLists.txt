@@ -121,6 +121,35 @@ target_include_directories(vdb_columns PUBLIC
 target_link_libraries(vdb_columns PUBLIC vdb_common Threads::Threads)
 
 # =============================================================================
+# VDB SIMD Library (Phase 3)
+# Only AVX2 + scalar paths are implemented. AVX-512 is deferred.
+# See UNDO.txt [PHASE3-001] for the AVX-512 implementation plan.
+# =============================================================================
+add_library(vdb_simd STATIC
+    src/simd/distance_l2.cpp
+    src/simd/bit_unpack.cpp
+    src/simd/prefix_sum.cpp
+)
+target_include_directories(vdb_simd PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_simd PUBLIC vdb_common)
+
+# =============================================================================
+# VDB Codec Library (Phase 3)
+# =============================================================================
+add_library(vdb_codec STATIC
+    src/codec/bitpack_codec.cpp
+    src/codec/dict_codec.cpp
+)
+target_include_directories(vdb_codec PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_codec PUBLIC vdb_simd)
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -164,6 +193,32 @@ if(VDB_BUILD_TESTS)
     add_executable(test_column_store tests/columns/column_store_test.cpp)
     target_link_libraries(test_column_store PRIVATE vdb_columns GTest::gtest GTest::gtest_main)
     add_test(NAME test_column_store COMMAND test_column_store)
+
+    # -------------------------------------------------------------------------
+    # SIMD tests (Phase 3)
+    # -------------------------------------------------------------------------
+    add_executable(test_distance_l2 tests/simd/distance_l2_test.cpp)
+    target_link_libraries(test_distance_l2 PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_distance_l2 COMMAND test_distance_l2)
+
+    add_executable(test_bit_unpack tests/simd/bit_unpack_test.cpp)
+    target_link_libraries(test_bit_unpack PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_bit_unpack COMMAND test_bit_unpack)
+
+    add_executable(test_prefix_sum tests/simd/prefix_sum_test.cpp)
+    target_link_libraries(test_prefix_sum PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_prefix_sum COMMAND test_prefix_sum)
+
+    # -------------------------------------------------------------------------
+    # Codec tests (Phase 3)
+    # -------------------------------------------------------------------------
+    add_executable(test_bitpack_codec tests/codec/bitpack_codec_test.cpp)
+    target_link_libraries(test_bitpack_codec PRIVATE vdb_codec GTest::gtest GTest::gtest_main)
+    add_test(NAME test_bitpack_codec COMMAND test_bitpack_codec)
+
+    add_executable(test_dict_codec tests/codec/dict_codec_test.cpp)
+    target_link_libraries(test_dict_codec PRIVATE vdb_codec GTest::gtest GTest::gtest_main)
+    add_test(NAME test_dict_codec COMMAND test_dict_codec)
 endif()
 
 # =============================================================================
