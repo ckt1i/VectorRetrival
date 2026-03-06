@@ -167,6 +167,23 @@ target_include_directories(vdb_rabitq PUBLIC
 target_link_libraries(vdb_rabitq PUBLIC vdb_simd)
 
 # =============================================================================
+# VDB Storage Library (Phase 5)
+# Provides AddressColumn, DataFileWriter, DataFileReader, ClusterStore, Segment.
+# =============================================================================
+add_library(vdb_storage STATIC
+    src/storage/address_column.cpp
+    src/storage/data_file_writer.cpp
+    src/storage/data_file_reader.cpp
+    src/storage/cluster_store.cpp
+    src/storage/segment.cpp
+)
+target_include_directories(vdb_storage PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_storage PUBLIC vdb_columns vdb_codec vdb_rabitq)
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -258,6 +275,25 @@ if(VDB_BUILD_TESTS)
     add_executable(test_rabitq_estimator tests/rabitq/rabitq_estimator_test.cpp)
     target_link_libraries(test_rabitq_estimator PRIVATE vdb_rabitq vdb_simd GTest::gtest GTest::gtest_main)
     add_test(NAME test_rabitq_estimator COMMAND test_rabitq_estimator)
+
+    # -------------------------------------------------------------------------
+    # Storage tests (Phase 5)
+    # -------------------------------------------------------------------------
+    add_executable(test_address_column tests/storage/address_column_test.cpp)
+    target_link_libraries(test_address_column PRIVATE vdb_storage GTest::gtest GTest::gtest_main)
+    add_test(NAME test_address_column COMMAND test_address_column)
+
+    add_executable(test_data_file tests/storage/data_file_test.cpp)
+    target_link_libraries(test_data_file PRIVATE vdb_storage GTest::gtest GTest::gtest_main)
+    add_test(NAME test_data_file COMMAND test_data_file)
+
+    add_executable(test_cluster_store tests/storage/cluster_store_test.cpp)
+    target_link_libraries(test_cluster_store PRIVATE vdb_storage GTest::gtest GTest::gtest_main)
+    add_test(NAME test_cluster_store COMMAND test_cluster_store)
+
+    add_executable(test_segment tests/storage/segment_test.cpp)
+    target_link_libraries(test_segment PRIVATE vdb_storage GTest::gtest GTest::gtest_main)
+    add_test(NAME test_segment COMMAND test_segment)
 endif()
 
 # =============================================================================

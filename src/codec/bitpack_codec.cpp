@@ -41,20 +41,26 @@ std::vector<uint8_t> BitpackCodec::Encode(const uint32_t* values,
     const uint32_t total_bytes = EncodedSize(count, bit_width);
     std::vector<uint8_t> packed(total_bytes, 0u);
 
-    // Scalar LSB-first bit packing.
-    // See UNDO.txt [PHASE3-004] for deferred SIMD encode paths.
+    // Scalar LSB-first bit packing — handles arbitrary bit_width up to 32.
+    // Each value is written across as many byte boundaries as needed.
     uint32_t bit_pos = 0u;
     for (uint32_t i = 0u; i < count; i++) {
-        uint32_t val      = values[i];
-        uint32_t byte_idx = bit_pos >> 3;       // bit_pos / 8
-        uint32_t bit_off  = bit_pos & 7u;       // bit_pos % 8
+        uint32_t val            = values[i];
+        uint32_t bits_remaining = bit_width;
+        uint32_t cur_bit        = bit_pos;
 
-        // Write low (8 - bit_off) bits into byte[byte_idx]
-        packed[byte_idx] |= static_cast<uint8_t>(val << bit_off);
+        while (bits_remaining > 0u) {
+            uint32_t byte_idx = cur_bit >> 3;
+            uint32_t bit_off  = cur_bit & 7u;
+            uint32_t space    = 8u - bit_off;  // bits available in this byte
+            uint32_t to_write = std::min(space, bits_remaining);
 
-        // If the value straddles two bytes, write the high bits into byte[byte_idx+1]
-        if (bit_off + bit_width > 8u) {
-            packed[byte_idx + 1u] |= static_cast<uint8_t>(val >> (8u - bit_off));
+            uint8_t mask = static_cast<uint8_t>((1u << to_write) - 1u);
+            packed[byte_idx] |= static_cast<uint8_t>((val & mask) << bit_off);
+
+            val >>= to_write;
+            cur_bit += to_write;
+            bits_remaining -= to_write;
         }
 
         bit_pos += bit_width;

@@ -21,15 +21,27 @@ void BitUnpackScalar(const uint8_t* VDB_RESTRICT packed,
     uint32_t bit_pos = 0;
 
     for (uint32_t i = 0; i < count; i++) {
-        uint32_t byte_idx = bit_pos >> 3;       // bit_pos / 8
-        uint32_t bit_off  = bit_pos & 7u;       // bit_pos % 8
+        // General multi-byte extraction for arbitrary bit_width [1..32].
+        uint32_t val = 0;
+        uint32_t bits_read = 0;
+        uint32_t cur_bit = bit_pos;
 
-        // A value of up to 8 bits may straddle two bytes.
-        uint32_t word = static_cast<uint32_t>(packed[byte_idx]);
-        if (bit_off + bit_width > 8u) {
-            word |= static_cast<uint32_t>(packed[byte_idx + 1]) << 8;
+        while (bits_read < bit_width) {
+            uint32_t byte_idx = cur_bit >> 3;
+            uint32_t bit_off  = cur_bit & 7u;
+            uint32_t avail    = 8u - bit_off;
+            uint32_t to_read  = bit_width - bits_read;
+            if (to_read > avail) to_read = avail;
+
+            uint32_t chunk = (static_cast<uint32_t>(packed[byte_idx]) >> bit_off);
+            chunk &= (1u << to_read) - 1u;
+            val |= chunk << bits_read;
+
+            cur_bit += to_read;
+            bits_read += to_read;
         }
-        out[i] = (word >> bit_off) & mask;
+
+        out[i] = val & mask;
         bit_pos += bit_width;
     }
 }
