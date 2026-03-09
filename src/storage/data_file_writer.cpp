@@ -24,7 +24,8 @@ DataFileWriter::~DataFileWriter() {
 Status DataFileWriter::Open(const std::string& path,
                              uint32_t cluster_id,
                              Dim dim,
-                             const std::vector<ColumnSchema>& payload_schemas) {
+                             const std::vector<ColumnSchema>& payload_schemas,
+                             uint32_t page_size) {
     if (file_.is_open()) {
         return Status::InvalidArgument("DataFileWriter already open");
     }
@@ -33,6 +34,7 @@ Status DataFileWriter::Open(const std::string& path,
     cluster_id_ = cluster_id;
     dim_ = dim;
     payload_schemas_ = payload_schemas;
+    page_size_ = page_size;
     current_offset_ = 0;
     num_records_ = 0;
     finalized_ = false;
@@ -79,6 +81,23 @@ Status DataFileWriter::WriteRecord(const float* vec,
     // Write each payload column
     for (size_t i = 0; i < payload.size(); ++i) {
         VDB_RETURN_IF_ERROR(WriteDatum(payload[i], payload_schemas_[i]));
+    }
+
+    // Pad to page boundary (if page_size > 1)
+    if (page_size_ > 1) {
+        uint64_t raw_size = current_offset_ - out_entry.offset;
+        uint64_t padded = ((raw_size + page_size_ - 1) / page_size_) * page_size_;
+        uint64_t pad_bytes = padded - raw_size;
+        if (pad_bytes > 0) {
+            // Write zero padding in a stack buffer (max page_size - 1 bytes per record)
+            std::vector<uint8_t> padding(pad_bytes, 0);
+            file_.write(reinterpret_cast<const char*>(padding.data()),
+                        static_cast<std::streamsize>(pad_bytes));
+            if (!file_.good()) {
+                return Status::IOError("Failed to write page padding");
+            }
+            current_offset_ += pad_bytes;
+        }
     }
 
     out_entry.size = static_cast<uint32_t>(current_offset_ - out_entry.offset);

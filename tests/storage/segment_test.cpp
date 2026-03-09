@@ -61,7 +61,7 @@ class SegmentTest : public ::testing::Test {
         // Generate vectors and write data file
         DataFileWriter dat_writer;
         EXPECT_TRUE(
-            dat_writer.Open(dat_path, cluster_id, dim, payload_schemas).ok());
+            dat_writer.Open(dat_path, cluster_id, dim, payload_schemas, 1).ok());
 
         std::vector<AddressEntry> addrs;
         std::vector<RaBitQCode> codes;
@@ -94,7 +94,7 @@ class SegmentTest : public ::testing::Test {
         EXPECT_TRUE(dat_writer.Finalize().ok());
 
         // Build address blocks
-        auto addr_blocks = AddressColumn::Encode(addrs);
+        auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
         // Write cluster store
         RaBitQConfig config{1, 64, 5.75f};
@@ -289,7 +289,7 @@ TEST_F(SegmentTest, EndToEnd_ReadVectors) {
 
     std::string dat_path = TestPath("c7.dat");
     DataFileWriter dat_writer;
-    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim).ok());
+    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim, {}, 1).ok());
 
     std::vector<std::vector<float>> original_vecs(N);
     std::vector<AddressEntry> addrs;
@@ -311,7 +311,7 @@ TEST_F(SegmentTest, EndToEnd_ReadVectors) {
     }
     ASSERT_TRUE(dat_writer.Finalize().ok());
 
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     // Write cluster store
     std::string clu_path = TestPath("c7.clu");
@@ -374,7 +374,7 @@ TEST_F(SegmentTest, EndToEnd_WithPayload) {
 
     std::string dat_path = TestPath("c0.dat");
     DataFileWriter dat_writer;
-    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim, schemas).ok());
+    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim, schemas, 1).ok());
 
     std::vector<std::vector<float>> original_vecs(N);
     std::vector<AddressEntry> addrs;
@@ -402,7 +402,7 @@ TEST_F(SegmentTest, EndToEnd_WithPayload) {
     }
     ASSERT_TRUE(dat_writer.Finalize().ok());
 
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     std::string clu_path = TestPath("c0.clu");
     RaBitQConfig config{1, 64, 5.75f};

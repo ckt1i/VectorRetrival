@@ -97,7 +97,7 @@ TEST_F(ClusterStoreTest, Writer_WithVectors) {
         addrs.push_back({off, sz});
         off += sz;
     }
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     // Write cluster store
     RaBitQConfig config{1, 64, 5.75f};
@@ -176,7 +176,7 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes) {
         addrs.push_back({off, dim * 4u});
         off += dim * 4;
     }
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     // Write
     RaBitQConfig config{1, 64, 5.75f};
@@ -233,7 +233,7 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes_Batch) {
         addrs.push_back({off, dim * 4u});
         off += dim * 4;
     }
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     RaBitQConfig config{1, 64, 5.75f};
     ClusterStoreWriter writer;
@@ -288,7 +288,7 @@ TEST_F(ClusterStoreTest, Reader_LoadAllNorms) {
         addrs.push_back({off, dim * 4u});
         off += dim * 4;
     }
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     RaBitQConfig config{1, 64, 5.75f};
     ClusterStoreWriter writer;
@@ -338,7 +338,7 @@ TEST_F(ClusterStoreTest, Reader_GetAddress) {
         addrs.push_back({off, sz});
         off += sz;
     }
-    auto addr_blocks = AddressColumn::Encode(addrs);
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
     RaBitQConfig config{1, 64, 5.75f};
     ClusterStoreWriter writer;

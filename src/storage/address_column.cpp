@@ -16,7 +16,8 @@ namespace storage {
 
 std::vector<AddressBlock> AddressColumn::Encode(
     const std::vector<AddressEntry>& entries,
-    uint32_t block_granularity) {
+    uint32_t block_granularity,
+    uint32_t page_size) {
 
     std::vector<AddressBlock> blocks;
     if (entries.empty()) return blocks;
@@ -28,22 +29,24 @@ std::vector<AddressBlock> AddressColumn::Encode(
     for (uint32_t b = 0; b < num_blocks; ++b) {
         uint32_t start = b * block_granularity;
         uint32_t count = std::min(block_granularity, N - start);
-        blocks.push_back(EncodeSingleBlock(&entries[start], count));
+        blocks.push_back(EncodeSingleBlock(&entries[start], count, page_size));
     }
 
     return blocks;
 }
 
 AddressBlock AddressColumn::EncodeSingleBlock(const AddressEntry* entries,
-                                               uint32_t count) {
+                                               uint32_t count,
+                                               uint32_t page_size) {
     AddressBlock block;
-    block.base_offset = entries[0].offset;
+    block.page_size = page_size;
+    block.base_offset = entries[0].offset / page_size;  // page index
     block.record_count = count;
 
-    // Extract sizes
+    // Extract sizes in page units (ceil division)
     std::vector<uint32_t> sizes(count);
     for (uint32_t i = 0; i < count; ++i) {
-        sizes[i] = entries[i].size;
+        sizes[i] = (entries[i].size + page_size - 1) / page_size;
     }
 
     // Compute minimum bit width for all sizes in this block.
@@ -84,10 +87,13 @@ void AddressColumn::DecodeBlock(const AddressBlock& block,
     std::vector<uint32_t> prefix(aligned_count, 0);
     simd::ExclusivePrefixSum(sizes.data(), prefix.data(), count);
 
-    // Step 3: reconstruct AddressEntry values
+    // Step 3: reconstruct AddressEntry values (convert page units → bytes)
+    const uint64_t ps = block.page_size;
     for (uint32_t i = 0; i < count; ++i) {
-        out_entries[i].offset = block.base_offset + prefix[i];
-        out_entries[i].size   = sizes[i];
+        out_entries[i].offset =
+            (block.base_offset + static_cast<uint64_t>(prefix[i])) * ps;
+        out_entries[i].size =
+            static_cast<uint32_t>(static_cast<uint64_t>(sizes[i]) * ps);
     }
 }
 

@@ -41,14 +41,14 @@ class DataFileTest : public ::testing::Test {
 
 TEST_F(DataFileTest, Writer_OpenClose) {
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 64).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 64, {}, 1).ok());
     EXPECT_EQ(writer.num_records(), 0u);
     ASSERT_TRUE(writer.Finalize().ok());
 }
 
 TEST_F(DataFileTest, Writer_SingleRecord_NoPayload) {
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, {}, 1).ok());
 
     float vec[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     AddressEntry addr;
@@ -63,7 +63,7 @@ TEST_F(DataFileTest, Writer_SingleRecord_NoPayload) {
 
 TEST_F(DataFileTest, Writer_MultipleRecords) {
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 8).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 8, {}, 1).ok());
 
     std::vector<AddressEntry> addrs;
     for (int i = 0; i < 10; ++i) {
@@ -95,7 +95,7 @@ TEST_F(DataFileTest, Writer_FixedPayload) {
     };
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, schemas).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, schemas, 1).ok());
 
     float vec[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     std::vector<Datum> payload = {
@@ -119,7 +119,7 @@ TEST_F(DataFileTest, Writer_VarLengthPayload) {
     };
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 2, schemas).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 2, schemas, 1).ok());
 
     float vec[2] = {1.0f, 2.0f};
     std::vector<Datum> payload = {Datum::String("hello")};
@@ -139,7 +139,7 @@ TEST_F(DataFileTest, Writer_PayloadSizeMismatch) {
     };
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, schemas).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, schemas, 1).ok());
 
     float vec[4] = {1, 2, 3, 4};
     // Empty payload but schema expects 1 column
@@ -150,7 +150,7 @@ TEST_F(DataFileTest, Writer_PayloadSizeMismatch) {
 
 TEST_F(DataFileTest, Writer_DoubleFinalize) {
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4).ok());
+    ASSERT_TRUE(writer.Open(TestPath("test.dat"), 0, 4, {}, 1).ok());
     ASSERT_TRUE(writer.Finalize().ok());
     EXPECT_FALSE(writer.Finalize().ok());
 }
@@ -164,7 +164,7 @@ TEST_F(DataFileTest, Reader_ReadRecord_NoPayload) {
 
     // Write
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 4).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 4, {}, 1).ok());
 
     float vec_in[4] = {1.5f, 2.5f, 3.5f, 4.5f};
     AddressEntry addr;
@@ -194,7 +194,7 @@ TEST_F(DataFileTest, Reader_ReadRecord_FixedPayload) {
 
     // Write
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 2, schemas).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 2, schemas, 1).ok());
 
     float vec_in[2] = {10.0f, 20.0f};
     std::vector<Datum> payload_in = {
@@ -229,7 +229,7 @@ TEST_F(DataFileTest, Reader_ReadRecord_VarLengthPayload) {
 
     // Write
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 2, schemas).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 2, schemas, 1).ok());
 
     float vec_in[2] = {1.0f, 2.0f};
     std::vector<Datum> payload_in = {Datum::String("world")};
@@ -257,7 +257,7 @@ TEST_F(DataFileTest, Reader_MultipleRecords) {
 
     // Write
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, dim).ok());
+    ASSERT_TRUE(writer.Open(path, 0, dim, {}, 1).ok());
 
     std::vector<AddressEntry> addrs;
     for (int i = 0; i < N; ++i) {
@@ -288,7 +288,7 @@ TEST_F(DataFileTest, Reader_ReadVector) {
     std::vector<ColumnSchema> schemas = {{0, "id", DType::UINT32}};
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 4, schemas).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 4, schemas, 1).ok());
 
     float vec_in[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     AddressEntry addr;
@@ -310,7 +310,7 @@ TEST_F(DataFileTest, Reader_ReadRaw) {
     std::string path = TestPath("test.dat");
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 4).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 4, {}, 1).ok());
 
     float vec_in[4] = {1.0f, 2.0f, 3.0f, 4.0f};
     AddressEntry addr;
@@ -337,7 +337,7 @@ TEST_F(DataFileTest, MixedPayload) {
     };
 
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, 2, schemas).ok());
+    ASSERT_TRUE(writer.Open(path, 0, 2, schemas, 1).ok());
 
     float vec[2] = {5.0f, 6.0f};
     std::vector<Datum> payload = {
@@ -376,7 +376,7 @@ TEST_F(DataFileTest, Integration_WithAddressColumn) {
 
     // Write records
     DataFileWriter writer;
-    ASSERT_TRUE(writer.Open(path, 0, dim).ok());
+    ASSERT_TRUE(writer.Open(path, 0, dim, {}, 1).ok());
 
     std::vector<AddressEntry> addrs;
     std::mt19937 rng(123);
@@ -392,7 +392,7 @@ TEST_F(DataFileTest, Integration_WithAddressColumn) {
     ASSERT_TRUE(writer.Finalize().ok());
 
     // Encode addresses
-    auto blocks = AddressColumn::Encode(addrs);
+    auto blocks = AddressColumn::Encode(addrs, 64, 1);
 
     // Read back using decoded addresses
     DataFileReader reader;

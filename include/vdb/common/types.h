@@ -470,8 +470,8 @@ struct RaBitQConfig {
 /// Default block size for I/O alignment (4KB)
 constexpr size_t kDefaultBlockSize = 4096;
 
-/// Default page size for mmap
-constexpr size_t kDefaultPageSize = 4096;
+/// Default page size for page-aligned record storage (4KB)
+constexpr uint32_t kDefaultPageSize = 4096;
 
 /// Cache line size for SIMD alignment
 constexpr size_t kCacheLineSize = 64;

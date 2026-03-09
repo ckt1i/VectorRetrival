@@ -24,7 +24,7 @@ TEST(AddressColumnTest, EmptyInput) {
 
 TEST(AddressColumnTest, SingleRecord) {
     std::vector<AddressEntry> entries = {{1000, 256}};
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
 
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_EQ(blocks[0].base_offset, 1000u);
@@ -47,7 +47,7 @@ TEST(AddressColumnTest, ExactlyOneBlock) {
         off += sz;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_EQ(blocks[0].record_count, 64u);
 
@@ -69,7 +69,7 @@ TEST(AddressColumnTest, TwoBlocks) {
         off += sz;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 2u);
     EXPECT_EQ(blocks[0].record_count, 64u);
     EXPECT_EQ(blocks[1].record_count, 36u);
@@ -92,7 +92,7 @@ TEST(AddressColumnTest, UniformSizes) {
         off += 128;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_EQ(blocks[0].bit_width, 8u);  // 128 needs 8 bits
 
@@ -113,7 +113,7 @@ TEST(AddressColumnTest, SmallSizes_LowBitWidth) {
         off += sz;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_EQ(blocks[0].bit_width, 2u);
 
@@ -134,7 +134,7 @@ TEST(AddressColumnTest, LargeSizes) {
         off += sz;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_GE(blocks[0].bit_width, 17u);
 
@@ -157,7 +157,7 @@ TEST(AddressColumnTest, DecodeBlock_Full) {
         off += 512;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
 
     std::vector<AddressEntry> decoded;
@@ -179,7 +179,7 @@ TEST(AddressColumnTest, DecodeBlock_Partial) {
         off += 100;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
     EXPECT_EQ(blocks[0].record_count, 10u);
 
@@ -200,7 +200,7 @@ TEST(AddressColumnTest, BatchLookup_SameBlock) {
         off += 200 + i;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
 
     std::vector<uint32_t> indices = {0, 10, 32, 63};
     auto results = AddressColumn::BatchLookup(blocks, indices);
@@ -220,7 +220,7 @@ TEST(AddressColumnTest, BatchLookup_CrossBlock) {
         off += 300;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     EXPECT_EQ(blocks.size(), 4u);  // 200/64 = 3.125 → 4 blocks
 
     std::vector<uint32_t> indices = {0, 63, 64, 127, 128, 199};
@@ -241,7 +241,7 @@ TEST(AddressColumnTest, BatchLookup_CrossBlock) {
 
 TEST(AddressColumnTest, Lookup_OutOfRange) {
     std::vector<AddressEntry> entries = {{0, 100}, {100, 100}};
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
 
     auto e = AddressColumn::Lookup(blocks, 999);
     EXPECT_EQ(e.offset, 0u);
@@ -265,7 +265,7 @@ TEST(AddressColumnTest, RandomStress) {
         off += sz;
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     EXPECT_EQ(AddressColumn::TotalRecords(blocks),
               static_cast<uint32_t>(N));
 
@@ -289,7 +289,7 @@ TEST(AddressColumnTest, CustomGranularity_32) {
         off += 256;
     }
 
-    auto blocks = AddressColumn::Encode(entries, 32);
+    auto blocks = AddressColumn::Encode(entries, 32, 1);
     EXPECT_EQ(blocks.size(), 4u);  // 100/32 = 3.125 → 4
 
     for (uint32_t i = 0; i < 100; ++i) {
@@ -306,12 +306,109 @@ TEST(AddressColumnTest, ZeroSizes) {
         entries.push_back({0, 0});
     }
 
-    auto blocks = AddressColumn::Encode(entries);
+    auto blocks = AddressColumn::Encode(entries, 64, 1);
     ASSERT_EQ(blocks.size(), 1u);
 
     for (uint32_t i = 0; i < 64; ++i) {
         auto e = AddressColumn::Lookup(blocks, i);
         EXPECT_EQ(e.offset, 0u);
         EXPECT_EQ(e.size, 0u);
+    }
+}
+
+// ============================================================================
+// Page-aligned tests (page_size = 4096)
+// ============================================================================
+
+TEST(AddressColumnTest, PageAligned_SingleRecord) {
+    // A single record occupying exactly one 4KB page
+    std::vector<AddressEntry> entries = {{0, 4096}};
+    auto blocks = AddressColumn::Encode(entries, 64, 4096);
+
+    ASSERT_EQ(blocks.size(), 1u);
+    EXPECT_EQ(blocks[0].page_size, 4096u);
+    EXPECT_EQ(blocks[0].base_offset, 0u);  // page index 0
+
+    auto e = AddressColumn::Lookup(blocks, 0);
+    EXPECT_EQ(e.offset, 0u);
+    EXPECT_EQ(e.size, 4096u);
+}
+
+TEST(AddressColumnTest, PageAligned_MultipleRecords) {
+    // 10 records, each 2 pages (8192 bytes)
+    const uint32_t page_size = 4096;
+    const uint32_t pages_per_record = 2;
+    std::vector<AddressEntry> entries;
+    uint64_t off = 0;
+    for (int i = 0; i < 10; ++i) {
+        uint32_t sz = pages_per_record * page_size;
+        entries.push_back({off, sz});
+        off += sz;
+    }
+
+    auto blocks = AddressColumn::Encode(entries, 64, page_size);
+    ASSERT_EQ(blocks.size(), 1u);
+    EXPECT_EQ(blocks[0].page_size, page_size);
+    // base_offset in page units: 0
+    EXPECT_EQ(blocks[0].base_offset, 0u);
+    // bit_width: all sizes are 2 pages, needs 2 bits
+    EXPECT_EQ(blocks[0].bit_width, 2u);
+
+    for (uint32_t i = 0; i < 10; ++i) {
+        auto e = AddressColumn::Lookup(blocks, i);
+        EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
+        EXPECT_EQ(e.size, entries[i].size) << "record " << i;
+    }
+}
+
+TEST(AddressColumnTest, PageAligned_VariableSizes) {
+    // Records of varying page counts (1-5 pages each)
+    const uint32_t page_size = 4096;
+    std::vector<AddressEntry> entries;
+    uint64_t off = 0;
+    for (int i = 0; i < 64; ++i) {
+        uint32_t pages = 1 + (i % 5);  // 1 to 5 pages
+        uint32_t sz = pages * page_size;
+        entries.push_back({off, sz});
+        off += sz;
+    }
+
+    auto blocks = AddressColumn::Encode(entries, 64, page_size);
+    ASSERT_EQ(blocks.size(), 1u);
+    // max pages = 5, needs 3 bits
+    EXPECT_EQ(blocks[0].bit_width, 3u);
+
+    for (uint32_t i = 0; i < 64; ++i) {
+        auto e = AddressColumn::Lookup(blocks, i);
+        EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
+        EXPECT_EQ(e.size, entries[i].size) << "record " << i;
+    }
+}
+
+TEST(AddressColumnTest, PageAligned_BitWidthReduction) {
+    // Without page alignment: size=8192 needs 14 bits
+    // With page_size=4096:    size=2 pages needs 2 bits
+    const uint32_t page_size = 4096;
+    std::vector<AddressEntry> entries;
+    uint64_t off = 0;
+    for (int i = 0; i < 64; ++i) {
+        entries.push_back({off, 8192u});
+        off += 8192;
+    }
+
+    // page_size=1 (byte-level): needs 14 bits
+    auto blocks_byte = AddressColumn::Encode(entries, 64, 1);
+    EXPECT_EQ(blocks_byte[0].bit_width, 14u);
+
+    // page_size=4096: needs 2 bits (size=2 in page units)
+    auto blocks_page = AddressColumn::Encode(entries, 64, page_size);
+    EXPECT_EQ(blocks_page[0].bit_width, 2u);
+
+    // Both decode to the same byte addresses
+    for (uint32_t i = 0; i < 64; ++i) {
+        auto e1 = AddressColumn::Lookup(blocks_byte, i);
+        auto e2 = AddressColumn::Lookup(blocks_page, i);
+        EXPECT_EQ(e1.offset, e2.offset);
+        EXPECT_EQ(e1.size, e2.size);
     }
 }

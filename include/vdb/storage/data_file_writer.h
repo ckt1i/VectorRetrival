@@ -48,11 +48,15 @@ class DataFileWriter {
     /// @param cluster_id       Associated cluster ID
     /// @param dim              Vector dimensionality
     /// @param payload_schemas  Payload column definitions (may be empty)
+    /// @param page_size        Page alignment granularity in bytes.
+    ///                         Each record is padded to this boundary.
+    ///                         Use 1 to disable padding.
     /// @return Status
     Status Open(const std::string& path,
                 uint32_t cluster_id,
                 Dim dim,
-                const std::vector<ColumnSchema>& payload_schemas = {});
+                const std::vector<ColumnSchema>& payload_schemas = {},
+                uint32_t page_size = kDefaultPageSize);
 
     /// Write a single record (vector + payload).
     ///
@@ -83,6 +87,7 @@ class DataFileWriter {
     uint32_t cluster_id_ = 0;
     Dim dim_ = 0;
     std::vector<ColumnSchema> payload_schemas_;
+    uint32_t page_size_ = kDefaultPageSize;
     uint64_t current_offset_ = 0;
     uint64_t num_records_ = 0;
     bool finalized_ = false;
