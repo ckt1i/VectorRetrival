@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <fstream>
 #include <random>
 #include <numeric>
 
@@ -269,6 +270,59 @@ void RotationMatrix::ApplyInverse(const float* VDB_RESTRICT in,
             out[i] = sum;
         }
     }
+}
+
+// ============================================================================
+// Save / Load — persist rotation matrix to binary file
+// ============================================================================
+
+Status RotationMatrix::Save(const std::string& path) const {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs.is_open()) {
+        return Status::IOError("Failed to open file for writing: " + path);
+    }
+
+    // Write dim
+    uint32_t d = dim_;
+    ofs.write(reinterpret_cast<const char*>(&d), sizeof(d));
+
+    // Write matrix data (dim * dim floats)
+    const size_t data_bytes = static_cast<size_t>(dim_) * dim_ * sizeof(float);
+    ofs.write(reinterpret_cast<const char*>(data_.data()), data_bytes);
+
+    if (!ofs.good()) {
+        return Status::IOError("Failed to write rotation matrix to: " + path);
+    }
+    return Status::OK();
+}
+
+StatusOr<RotationMatrix> RotationMatrix::Load(const std::string& path, Dim dim) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs.is_open()) {
+        return Status::IOError("Failed to open rotation file: " + path);
+    }
+
+    // Read dim
+    uint32_t file_dim = 0;
+    ifs.read(reinterpret_cast<char*>(&file_dim), sizeof(file_dim));
+    if (!ifs.good()) {
+        return Status::Corruption("Failed to read dim from rotation file");
+    }
+    if (file_dim != dim) {
+        return Status::InvalidArgument(
+            "Rotation matrix dimension mismatch: expected " +
+            std::to_string(dim) + ", got " + std::to_string(file_dim));
+    }
+
+    // Read matrix data
+    const size_t n = static_cast<size_t>(dim) * dim;
+    std::vector<float> data(n);
+    ifs.read(reinterpret_cast<char*>(data.data()), n * sizeof(float));
+    if (!ifs.good()) {
+        return Status::Corruption("Failed to read rotation matrix data");
+    }
+
+    return RotationMatrix(dim, std::move(data));
 }
 
 }  // namespace rabitq

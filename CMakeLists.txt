@@ -184,6 +184,22 @@ target_include_directories(vdb_storage PUBLIC
 target_link_libraries(vdb_storage PUBLIC vdb_columns vdb_codec vdb_rabitq)
 
 # =============================================================================
+# VDB Index Library (Phase 6)
+# IVF index: ConANN 3-class classifier, IvfIndex, IvfBuilder.
+# =============================================================================
+add_library(vdb_index STATIC
+    src/index/conann.cpp
+    src/index/ivf_index.cpp
+    src/index/ivf_builder.cpp
+)
+target_include_directories(vdb_index PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${FLATBUFFERS_GENERATED_DIR}>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema)
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -294,6 +310,25 @@ if(VDB_BUILD_TESTS)
     add_executable(test_segment tests/storage/segment_test.cpp)
     target_link_libraries(test_segment PRIVATE vdb_storage GTest::gtest GTest::gtest_main)
     add_test(NAME test_segment COMMAND test_segment)
+
+    # -------------------------------------------------------------------------
+    # Index tests (Phase 6)
+    # -------------------------------------------------------------------------
+    add_executable(test_conann tests/index/conann_test.cpp)
+    target_link_libraries(test_conann PRIVATE vdb_index GTest::gtest GTest::gtest_main)
+    add_test(NAME test_conann COMMAND test_conann)
+
+    add_executable(test_ivf_index tests/index/ivf_index_test.cpp)
+    target_link_libraries(test_ivf_index PRIVATE vdb_index GTest::gtest GTest::gtest_main)
+    add_test(NAME test_ivf_index COMMAND test_ivf_index)
+
+    add_executable(test_ivf_builder tests/index/ivf_builder_test.cpp)
+    target_link_libraries(test_ivf_builder PRIVATE vdb_index GTest::gtest GTest::gtest_main)
+    add_test(NAME test_ivf_builder COMMAND test_ivf_builder)
+
+    # ----- Benchmark (Phase 6) -----
+    add_executable(bench_ivf_quality tests/index/bench_ivf_quality.cpp)
+    target_link_libraries(bench_ivf_quality PRIVATE vdb_index)
 endif()
 
 # =============================================================================

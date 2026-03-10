@@ -53,6 +53,11 @@ table IvfParams {
     min_list_size: uint32;       // 最小 list 大小
     max_list_size: uint32;       // 最大 list 大小
     avg_list_size: float;        // 平均 list 大小
+
+    // Phase 6 新增: 平衡聚类因子
+    // 0 = 无约束 (标准 K-means)
+    // >1.0 = 每个 cluster 最大容量 = ceil(balance_factor × N / nlist)
+    balance_factor: float;       // 平衡聚类因子
 }
 
 // ============================================================
@@ -123,9 +128,22 @@ table RaBitQParams {
 // ============================================================
 
 /// ConANN (Cluster Architecture Nearest Neighbor Analysis) 参数
+///
+/// Phase 6 新公式：SafeIn if approx_dist < d_k − 2ε,  SafeOut if approx_dist > d_k + 2ε
+/// 其中 d_k 是全量数据集预计算的 top-k 参考距离，ε = c·2^(−B/2)/√D
 table ConANNParams {
-    tau_in_factor: float;        // SafeIn 门限因子
-    tau_out_factor: float;       // SafeOut 门限因子
+    // DEPRECATED: 旧乘性门限因子，保留向后兼容
+    tau_in_factor: float;        // (deprecated) SafeIn 门限因子
+    tau_out_factor: float;       // (deprecated) SafeOut 门限因子
+
+    // Phase 6 新增: 加性阈值参数
+    epsilon: float;              // ε = c·2^(−B/2)/√D (RaBitQ 误差界)
+    d_k: float;                  // 全局预计算的 top-k 参考距离
+
+    // 校准参数 (记录供复现)
+    calibration_samples: uint32;     // 校准时采样 query 数量
+    calibration_topk: uint32;        // 校准时 top-k 的 k
+    calibration_percentile: float;   // d_k 取的分位数
 }
 
 // ============================================================

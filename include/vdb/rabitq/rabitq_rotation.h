@@ -2,9 +2,11 @@
 
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "vdb/common/macros.h"
+#include "vdb/common/status.h"
 #include "vdb/common/types.h"
 
 namespace vdb {
@@ -40,6 +42,10 @@ namespace rabitq {
 ///
 class RotationMatrix {
  public:
+    /// Default-construct an empty rotation (dim=0).
+    /// Required by StatusOr&lt;RotationMatrix&gt;; not useful on its own.
+    RotationMatrix() : dim_(0), use_fast_hadamard_(false) {}
+
     /// Construct an uninitialized rotation for dimension `dim`.
     /// Call GenerateRandom() or GenerateHadamard() to populate.
     explicit RotationMatrix(Dim dim);
@@ -115,6 +121,23 @@ class RotationMatrix {
     /// Random diagonal signs for Hadamard mode (length = dim).
     /// Only valid after GenerateHadamard().
     const std::vector<int8_t>& diagonal_signs() const { return diag_signs_; }
+
+    /// Save the rotation matrix to a binary file.
+    ///
+    /// File format: [dim:uint32][data: dim*dim floats]
+    /// The Hadamard mode flag and diagonal signs are NOT persisted —
+    /// a loaded matrix always uses the general O(L²) matmul path.
+    ///
+    /// @param path  Output file path
+    /// @return      Status
+    Status Save(const std::string& path) const;
+
+    /// Load a rotation matrix from a binary file.
+    ///
+    /// @param path  Input file path
+    /// @param dim   Expected dimensionality (must match the saved matrix)
+    /// @return      Loaded RotationMatrix, or error status
+    static StatusOr<RotationMatrix> Load(const std::string& path, Dim dim);
 
  private:
     Dim dim_;

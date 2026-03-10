@@ -146,6 +146,17 @@ class ClusterStoreReader {
     Status Open(const std::string& path,
                 const ClusterStoreWriter::ClusterInfo& info);
 
+    /// Read ClusterInfo from a .clu file's embedded trailer.
+    /// This allows opening a .clu file without having the original
+    /// ClusterInfo from the writer — the metadata is reconstructed from
+    /// the trailer that Finalize() appends at the end of the file.
+    ///
+    /// @param path  File path to the .clu file
+    /// @param out   Output ClusterInfo
+    /// @return Status
+    static Status ReadInfo(const std::string& path,
+                           ClusterStoreWriter::ClusterInfo* out);
+
     /// Close the file.
     void Close();
 

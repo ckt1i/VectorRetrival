@@ -304,7 +304,7 @@ SearchRequest(query_vec, top_k, nprobe, payload_columns[])
   ▼
 Phase-A: Warmup (一次性)
   │  加载 centroids 到内存, mmap ClusterStore 头部
-  ▼
+  │  预先计算RabitQ量化的误差，以及ConANN搜索的top_k门限：随机采样多个query得到top_k的特定分位数（默认99%）距离
 Phase-B: Init
   │  计算 query 到所有 centroid 的距离
   │  选出 nprobe 个最近的 cluster

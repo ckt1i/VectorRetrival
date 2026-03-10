@@ -3,12 +3,16 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "vdb/simd/popcount.h"
 
 namespace vdb {
 namespace storage {
+
+/// Magic number for ClusterStore trailer: "VCLU" (0x554C4356 little-endian)
+static constexpr uint32_t kCluTrailerMagic = 0x56434C55;
 
 // ============================================================================
 // ClusterStoreWriter
@@ -176,8 +180,89 @@ Status ClusterStoreWriter::WriteAddressBlocks(
 }
 
 // ============================================================================
-// Finalize
+// Finalize — write trailer and close
 // ============================================================================
+
+namespace {
+
+/// Helper: append raw bytes to a buffer.
+inline void AppendBytes(std::vector<uint8_t>& buf, const void* data,
+                        size_t len) {
+    const auto* p = reinterpret_cast<const uint8_t*>(data);
+    buf.insert(buf.end(), p, p + len);
+}
+
+template <typename T>
+inline void AppendValue(std::vector<uint8_t>& buf, T value) {
+    AppendBytes(buf, &value, sizeof(T));
+}
+
+/// Build ClusterInfo trailer as a byte buffer.
+/// Layout (all little-endian, native on x86):
+///   cluster_id       : u32
+///   num_records      : u32
+///   dim              : u32
+///   rabitq_bits      : u8
+///   rabitq_block_size: u32
+///   rabitq_c_factor  : f32
+///   centroid_offset  : u64
+///   centroid_length  : u32
+///   rabitq_data_offset: u64
+///   rabitq_data_length: u32
+///   norms_offset     : u64
+///   norms_length     : u32
+///   data_file_path_len: u32
+///   data_file_path   : char[data_file_path_len]
+///   num_address_blocks: u32
+///   For each address block:
+///     base_offset    : u64
+///     bit_width      : u8
+///     record_count   : u32
+///     page_size      : u32
+///     packed_size    : u32
+///     packed_data    : u8[packed_size]
+std::vector<uint8_t> BuildTrailer(
+    const ClusterStoreWriter::ClusterInfo& info) {
+    std::vector<uint8_t> buf;
+    buf.reserve(256);
+
+    AppendValue(buf, info.cluster_id);
+    AppendValue(buf, info.num_records);
+    AppendValue(buf, info.dim);
+    AppendValue(buf, info.rabitq_config.bits);
+    AppendValue(buf, info.rabitq_config.block_size);
+    AppendValue(buf, info.rabitq_config.c_factor);
+    AppendValue(buf, info.centroid_offset);
+    AppendValue(buf, info.centroid_length);
+    AppendValue(buf, info.rabitq_data_offset);
+    AppendValue(buf, info.rabitq_data_length);
+    AppendValue(buf, info.norms_offset);
+    AppendValue(buf, info.norms_length);
+
+    const auto path_len =
+        static_cast<uint32_t>(info.data_file_path.size());
+    AppendValue(buf, path_len);
+    AppendBytes(buf, info.data_file_path.data(), path_len);
+
+    const auto num_blocks =
+        static_cast<uint32_t>(info.address_blocks.size());
+    AppendValue(buf, num_blocks);
+
+    for (const auto& block : info.address_blocks) {
+        AppendValue(buf, block.base_offset);
+        AppendValue(buf, block.bit_width);
+        AppendValue(buf, block.record_count);
+        AppendValue(buf, block.page_size);
+        const auto packed_size =
+            static_cast<uint32_t>(block.packed.size());
+        AppendValue(buf, packed_size);
+        AppendBytes(buf, block.packed.data(), packed_size);
+    }
+
+    return buf;
+}
+
+}  // anonymous namespace
 
 Status ClusterStoreWriter::Finalize(const std::string& data_file_path) {
     if (!file_.is_open()) {
@@ -189,9 +274,178 @@ Status ClusterStoreWriter::Finalize(const std::string& data_file_path) {
 
     info_.data_file_path = data_file_path;
 
+    // --- Write trailer ---
+    auto trailer = BuildTrailer(info_);
+    file_.write(reinterpret_cast<const char*>(trailer.data()),
+                static_cast<std::streamsize>(trailer.size()));
+    if (!file_.good()) {
+        return Status::IOError("Failed to write trailer");
+    }
+
+    // Write trailer_size (u32) + magic (u32) as the last 8 bytes
+    const auto trailer_size = static_cast<uint32_t>(trailer.size());
+    file_.write(reinterpret_cast<const char*>(&trailer_size),
+                sizeof(uint32_t));
+    file_.write(reinterpret_cast<const char*>(&kCluTrailerMagic),
+                sizeof(uint32_t));
+
     file_.flush();
     file_.close();
     finalized_ = true;
+
+    return Status::OK();
+}
+
+// ============================================================================
+// ClusterStoreReader::ReadInfo — reconstruct ClusterInfo from .clu trailer
+// ============================================================================
+
+namespace {
+
+/// Helper: read a value from a buffer at a given position, advance pos.
+template <typename T>
+inline bool ReadValue(const std::vector<uint8_t>& buf, size_t& pos, T& out) {
+    if (pos + sizeof(T) > buf.size()) return false;
+    std::memcpy(&out, buf.data() + pos, sizeof(T));
+    pos += sizeof(T);
+    return true;
+}
+
+inline bool ReadBytes(const std::vector<uint8_t>& buf, size_t& pos,
+                      void* out, size_t len) {
+    if (pos + len > buf.size()) return false;
+    std::memcpy(out, buf.data() + pos, len);
+    pos += len;
+    return true;
+}
+
+}  // anonymous namespace
+
+Status ClusterStoreReader::ReadInfo(
+    const std::string& path,
+    ClusterStoreWriter::ClusterInfo* out) {
+    if (!out) {
+        return Status::InvalidArgument("out must not be null");
+    }
+
+    int fd = ::open(path.c_str(), O_RDONLY);
+    if (fd < 0) {
+        return Status::IOError("Failed to open ClusterStore: " + path);
+    }
+
+    // Get file size
+    struct stat st;
+    if (::fstat(fd, &st) != 0) {
+        ::close(fd);
+        return Status::IOError("Failed to stat file: " + path);
+    }
+    const auto file_size = static_cast<uint64_t>(st.st_size);
+    if (file_size < 8) {
+        ::close(fd);
+        return Status::Corruption("File too small for trailer: " + path);
+    }
+
+    // Read last 8 bytes: trailer_size (u32) + magic (u32)
+    uint32_t footer[2];
+    ssize_t n = ::pread(fd, footer, 8,
+                        static_cast<off_t>(file_size - 8));
+    if (n != 8) {
+        ::close(fd);
+        return Status::IOError("Failed to read trailer footer");
+    }
+
+    const uint32_t trailer_size = footer[0];
+    const uint32_t magic = footer[1];
+
+    if (magic != kCluTrailerMagic) {
+        ::close(fd);
+        return Status::Corruption(
+            "Invalid ClusterStore magic (expected 0x56434C55, got 0x" +
+            std::to_string(magic) + ")");
+    }
+
+    if (file_size < trailer_size + 8) {
+        ::close(fd);
+        return Status::Corruption("Trailer size exceeds file size");
+    }
+
+    // Read trailer data
+    std::vector<uint8_t> buf(trailer_size);
+    n = ::pread(fd, buf.data(), trailer_size,
+                static_cast<off_t>(file_size - 8 - trailer_size));
+    ::close(fd);
+    if (n != static_cast<ssize_t>(trailer_size)) {
+        return Status::IOError("Failed to read trailer data");
+    }
+
+    // Parse trailer
+    size_t pos = 0;
+    auto& info = *out;
+
+    if (!ReadValue(buf, pos, info.cluster_id) ||
+        !ReadValue(buf, pos, info.num_records) ||
+        !ReadValue(buf, pos, info.dim) ||
+        !ReadValue(buf, pos, info.rabitq_config.bits) ||
+        !ReadValue(buf, pos, info.rabitq_config.block_size) ||
+        !ReadValue(buf, pos, info.rabitq_config.c_factor) ||
+        !ReadValue(buf, pos, info.centroid_offset) ||
+        !ReadValue(buf, pos, info.centroid_length) ||
+        !ReadValue(buf, pos, info.rabitq_data_offset) ||
+        !ReadValue(buf, pos, info.rabitq_data_length) ||
+        !ReadValue(buf, pos, info.norms_offset) ||
+        !ReadValue(buf, pos, info.norms_length)) {
+        return Status::Corruption("Trailer: failed to parse fixed fields");
+    }
+
+    uint32_t path_len = 0;
+    if (!ReadValue(buf, pos, path_len)) {
+        return Status::Corruption("Trailer: failed to parse path length");
+    }
+    if (pos + path_len > buf.size()) {
+        return Status::Corruption("Trailer: path extends beyond trailer");
+    }
+    info.data_file_path.resize(path_len);
+    if (path_len > 0) {
+        if (!ReadBytes(buf, pos, info.data_file_path.data(), path_len)) {
+            return Status::Corruption("Trailer: failed to read path");
+        }
+    }
+
+    uint32_t num_blocks = 0;
+    if (!ReadValue(buf, pos, num_blocks)) {
+        return Status::Corruption("Trailer: failed to parse num_blocks");
+    }
+
+    info.address_blocks.resize(num_blocks);
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+        auto& block = info.address_blocks[i];
+        uint32_t packed_size = 0;
+
+        if (!ReadValue(buf, pos, block.base_offset) ||
+            !ReadValue(buf, pos, block.bit_width) ||
+            !ReadValue(buf, pos, block.record_count) ||
+            !ReadValue(buf, pos, block.page_size) ||
+            !ReadValue(buf, pos, packed_size)) {
+            return Status::Corruption("Trailer: failed to parse block " +
+                                      std::to_string(i));
+        }
+
+        block.packed.resize(packed_size);
+        if (packed_size > 0) {
+            if (!ReadBytes(buf, pos, block.packed.data(), packed_size)) {
+                return Status::Corruption(
+                    "Trailer: failed to read packed data for block " +
+                    std::to_string(i));
+            }
+        }
+    }
+
+    if (pos != buf.size()) {
+        return Status::Corruption(
+            "Trailer: extra bytes at end (parsed " +
+            std::to_string(pos) + " of " +
+            std::to_string(buf.size()) + ")");
+    }
 
     return Status::OK();
 }
