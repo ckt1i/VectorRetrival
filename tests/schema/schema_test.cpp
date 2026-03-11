@@ -666,8 +666,6 @@ TEST_F(Phase25SchemaTest, CreateClusterMeta) {
         24000,      // rabitq_data_length
         addr_col,   // address_column
         data_file,  // data_file_path
-        24512,      // norms_offset
-        6000,       // norms_length (1500 * 4 bytes)
         0           // checksum
     );
     
@@ -707,7 +705,7 @@ TEST_F(Phase25SchemaTest, CreateSegmentMetaWithClusters) {
         
         auto path = builder_.CreateString("cluster_" + std::to_string(i) + ".dat");
         clusters_vec.push_back(schema::CreateClusterMeta(
-            builder_, i, 500, 0, 512, 512, 8000, addr, path, 8512, 2000, 0));
+            builder_, i, 500, 0, 512, 512, 8000, addr, path, 0));
     }
     auto clusters = builder_.CreateVector(clusters_vec);
     

@@ -111,33 +111,10 @@ Status ClusterStoreWriter::WriteVectors(
             return Status::IOError("Failed to write RaBitQ code");
         }
         current_offset_ += code_bytes;
-
-        // Write norm
-        file_.write(reinterpret_cast<const char*>(&codes[i].norm),
-                    sizeof(float));
-        if (!file_.good()) {
-            return Status::IOError("Failed to write norm");
-        }
-        current_offset_ += sizeof(float);
     }
 
     info_.rabitq_data_length =
         static_cast<uint32_t>(current_offset_ - info_.rabitq_data_offset);
-
-    // --- Write norms array separately (for batch loading) ---
-    info_.norms_offset = current_offset_;
-
-    for (uint32_t i = 0; i < N; ++i) {
-        file_.write(reinterpret_cast<const char*>(&codes[i].norm),
-                    sizeof(float));
-        if (!file_.good()) {
-            return Status::IOError("Failed to write norm array entry");
-        }
-        current_offset_ += sizeof(float);
-    }
-
-    info_.norms_length =
-        static_cast<uint32_t>(current_offset_ - info_.norms_offset);
 
     vectors_written_ = true;
     return Status::OK();
@@ -159,6 +136,8 @@ Status ClusterStoreWriter::WriteAddressBlocks(
     if (address_written_) {
         return Status::InvalidArgument("Address blocks already written");
     }
+
+    info_.address_blocks_offset = current_offset_;
 
     // Save blocks metadata and write packed data
     info_.address_blocks = blocks;
@@ -209,10 +188,9 @@ inline void AppendValue(std::vector<uint8_t>& buf, T value) {
 ///   centroid_length  : u32
 ///   rabitq_data_offset: u64
 ///   rabitq_data_length: u32
-///   norms_offset     : u64
-///   norms_length     : u32
 ///   data_file_path_len: u32
 ///   data_file_path   : char[data_file_path_len]
+///   address_blocks_offset: u64
 ///   num_address_blocks: u32
 ///   For each address block:
 ///     base_offset    : u64
@@ -220,7 +198,6 @@ inline void AppendValue(std::vector<uint8_t>& buf, T value) {
 ///     record_count   : u32
 ///     page_size      : u32
 ///     packed_size    : u32
-///     packed_data    : u8[packed_size]
 std::vector<uint8_t> BuildTrailer(
     const ClusterStoreWriter::ClusterInfo& info) {
     std::vector<uint8_t> buf;
@@ -236,8 +213,6 @@ std::vector<uint8_t> BuildTrailer(
     AppendValue(buf, info.centroid_length);
     AppendValue(buf, info.rabitq_data_offset);
     AppendValue(buf, info.rabitq_data_length);
-    AppendValue(buf, info.norms_offset);
-    AppendValue(buf, info.norms_length);
 
     const auto path_len =
         static_cast<uint32_t>(info.data_file_path.size());
@@ -246,6 +221,7 @@ std::vector<uint8_t> BuildTrailer(
 
     const auto num_blocks =
         static_cast<uint32_t>(info.address_blocks.size());
+    AppendValue(buf, info.address_blocks_offset);
     AppendValue(buf, num_blocks);
 
     for (const auto& block : info.address_blocks) {
@@ -256,7 +232,6 @@ std::vector<uint8_t> BuildTrailer(
         const auto packed_size =
             static_cast<uint32_t>(block.packed.size());
         AppendValue(buf, packed_size);
-        AppendBytes(buf, block.packed.data(), packed_size);
     }
 
     return buf;
@@ -391,9 +366,7 @@ Status ClusterStoreReader::ReadInfo(
         !ReadValue(buf, pos, info.centroid_offset) ||
         !ReadValue(buf, pos, info.centroid_length) ||
         !ReadValue(buf, pos, info.rabitq_data_offset) ||
-        !ReadValue(buf, pos, info.rabitq_data_length) ||
-        !ReadValue(buf, pos, info.norms_offset) ||
-        !ReadValue(buf, pos, info.norms_length)) {
+        !ReadValue(buf, pos, info.rabitq_data_length)) {
         return Status::Corruption("Trailer: failed to parse fixed fields");
     }
 
@@ -412,7 +385,8 @@ Status ClusterStoreReader::ReadInfo(
     }
 
     uint32_t num_blocks = 0;
-    if (!ReadValue(buf, pos, num_blocks)) {
+    if (!ReadValue(buf, pos, info.address_blocks_offset) ||
+        !ReadValue(buf, pos, num_blocks)) {
         return Status::Corruption("Trailer: failed to parse num_blocks");
     }
 
@@ -430,14 +404,7 @@ Status ClusterStoreReader::ReadInfo(
                                       std::to_string(i));
         }
 
-        block.packed.resize(packed_size);
-        if (packed_size > 0) {
-            if (!ReadBytes(buf, pos, block.packed.data(), packed_size)) {
-                return Status::Corruption(
-                    "Trailer: failed to read packed data for block " +
-                    std::to_string(i));
-            }
-        }
+        block.packed.resize(packed_size);  // allocate space; LoadAddressBlocks fills it
     }
 
     if (pos != buf.size()) {
@@ -489,6 +456,7 @@ Status ClusterStoreReader::Open(
     }
 
     info_ = info;
+    VDB_RETURN_IF_ERROR(LoadAddressBlocks());
     return Status::OK();
 }
 
@@ -525,8 +493,7 @@ Status ClusterStoreReader::LoadCentroid(std::vector<float>& out) const {
 // ============================================================================
 
 Status ClusterStoreReader::LoadCode(uint32_t record_idx,
-                                     std::vector<uint64_t>& out_code,
-                                     float& out_norm) const {
+                                     std::vector<uint64_t>& out_code) const {
     if (fd_ < 0) {
         return Status::InvalidArgument("ClusterStoreReader not open");
     }
@@ -549,13 +516,6 @@ Status ClusterStoreReader::LoadCode(uint32_t record_idx,
         return Status::IOError("Failed to read RaBitQ code");
     }
 
-    // Read norm (immediately after code words)
-    n = ::pread(fd_, &out_norm, sizeof(float),
-                static_cast<off_t>(code_offset + nwords * sizeof(uint64_t)));
-    if (n != sizeof(float)) {
-        return Status::IOError("Failed to read norm");
-    }
-
     return Status::OK();
 }
 
@@ -574,11 +534,10 @@ Status ClusterStoreReader::LoadCodes(
 
     for (size_t i = 0; i < indices.size(); ++i) {
         std::vector<uint64_t> code;
-        float norm;
-        VDB_RETURN_IF_ERROR(LoadCode(indices[i], code, norm));
+        VDB_RETURN_IF_ERROR(LoadCode(indices[i], code));
 
         out_codes[i].code = std::move(code);
-        out_codes[i].norm = norm;
+        out_codes[i].norm = 0.0f;
         out_codes[i].sum_x = simd::PopcountTotal(
             out_codes[i].code.data(),
             static_cast<uint32_t>(out_codes[i].code.size()));
@@ -588,21 +547,42 @@ Status ClusterStoreReader::LoadCodes(
 }
 
 // ============================================================================
-// LoadAllNorms
+// LoadAddressBlocks — read and decode all address blocks
 // ============================================================================
-
-Status ClusterStoreReader::LoadAllNorms(std::vector<float>& out) const {
+Status ClusterStoreReader::LoadAddressBlocks() {
     if (fd_ < 0) {
         return Status::InvalidArgument("ClusterStoreReader not open");
     }
 
-    out.resize(info_.num_records);
-    const uint32_t bytes = info_.num_records * sizeof(float);
+    //Phase1: Load all the packed data for address blocks
+    uint64_t current_offset = info_.address_blocks_offset;
 
-    ssize_t n = ::pread(fd_, out.data(), bytes,
-                        static_cast<off_t>(info_.norms_offset));
-    if (n != static_cast<ssize_t>(bytes)) {
-        return Status::IOError("Failed to read norms array");
+    for (auto& block : info_.address_blocks) {
+        uint32_t packed_size = block.packed.size();  // 已知大小
+        if (packed_size == 0) continue;
+
+        block.packed.resize(packed_size);
+        ssize_t n = ::pread(fd_, block.packed.data(), packed_size,
+                            static_cast<off_t>(current_offset));
+        if (n != static_cast<ssize_t>(packed_size)) {
+            return Status::IOError("Failed to read address block data");
+        }
+        current_offset += packed_size;
+    }
+
+    //Phase2: Decode all blocks into decoded_addresses with SIMD
+    info_.decoded_addresses.clear();
+    info_.decoded_addresses.reserve(info_.num_records);
+
+    for (const auto& block : info_.address_blocks) {
+        std::vector<AddressEntry> block_entries;
+        AddressColumn::DecodeBlock(block, block_entries);
+
+        info_.decoded_addresses.insert(
+            info_.decoded_addresses.end(),
+            block_entries.begin(), 
+            block_entries.end()
+        );
     }
 
     return Status::OK();
@@ -613,12 +593,19 @@ Status ClusterStoreReader::LoadAllNorms(std::vector<float>& out) const {
 // ============================================================================
 
 AddressEntry ClusterStoreReader::GetAddress(uint32_t record_idx) const {
-    return AddressColumn::Lookup(info_.address_blocks, record_idx);
+    if (record_idx >= info_.decoded_addresses.size()) {
+        return AddressEntry{0, 0};  // 错误情况
+    }
+    return info_.decoded_addresses[record_idx];
 }
 
 std::vector<AddressEntry> ClusterStoreReader::GetAddresses(
     const std::vector<uint32_t>& indices) const {
-    return AddressColumn::BatchLookup(info_.address_blocks, indices);
+    std::vector<AddressEntry> results(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+        results[i] = GetAddress(indices[i]);
+    }
+    return results;
 }
 
 }  // namespace storage

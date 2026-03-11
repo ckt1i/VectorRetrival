@@ -96,26 +96,6 @@ class AddressColumn {
     static void DecodeBlock(const AddressBlock& block,
                             std::vector<AddressEntry>& out_entries);
 
-    /// Look up a single record's address from a block array.
-    ///
-    /// @param blocks       All blocks for this cluster
-    /// @param record_idx   Global record index [0, N)
-    /// @param granularity  Records per block (must match Encode)
-    /// @return             The record's (offset, size)
-    static AddressEntry Lookup(const std::vector<AddressBlock>& blocks,
-                               uint32_t record_idx,
-                               uint32_t granularity = kDefaultBlockGranularity);
-
-    /// Batch lookup: decode multiple record indices.
-    ///
-    /// @param blocks       All blocks for this cluster
-    /// @param indices      Record indices to look up
-    /// @param granularity  Records per block
-    /// @return             Corresponding AddressEntry values (same order)
-    static std::vector<AddressEntry> BatchLookup(
-        const std::vector<AddressBlock>& blocks,
-        const std::vector<uint32_t>& indices,
-        uint32_t granularity = kDefaultBlockGranularity);
 
     /// Total number of records across all blocks.
     static uint32_t TotalRecords(const std::vector<AddressBlock>& blocks);

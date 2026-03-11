@@ -515,29 +515,3 @@ TEST_F(SegmentTest, LoadCentroid_ThroughSegment) {
     EXPECT_TRUE(has_nonzero);
 }
 
-TEST_F(SegmentTest, LoadNorms_ThroughSegment) {
-    const Dim dim = 64;
-    const uint32_t N = 12;
-
-    auto info = BuildCluster(3, dim, N);
-
-    Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_3.clu"),
-                       TestPath("cluster_3.dat"),
-                       dim)
-            .ok());
-
-    auto reader = seg.GetCluster(3);
-    ASSERT_NE(reader, nullptr);
-
-    std::vector<float> norms;
-    ASSERT_TRUE(reader->LoadAllNorms(norms).ok());
-    ASSERT_EQ(norms.size(), N);
-
-    // All norms should be positive (squared distances from centroid)
-    for (uint32_t i = 0; i < N; ++i) {
-        EXPECT_GT(norms[i], 0.0f) << "norm " << i;
-    }
-}

@@ -97,68 +97,6 @@ void AddressColumn::DecodeBlock(const AddressBlock& block,
     }
 }
 
-// ============================================================================
-// Lookup — single record address
-// ============================================================================
-
-AddressEntry AddressColumn::Lookup(const std::vector<AddressBlock>& blocks,
-                                    uint32_t record_idx,
-                                    uint32_t granularity) {
-    uint32_t block_idx = record_idx / granularity;
-    if (block_idx >= blocks.size()) {
-        return {0, 0};  // out of range
-    }
-
-    // Decode the entire block and pick the entry
-    std::vector<AddressEntry> decoded;
-    DecodeBlock(blocks[block_idx], decoded);
-
-    uint32_t local_idx = record_idx % granularity;
-    if (local_idx >= decoded.size()) {
-        return {0, 0};
-    }
-
-    return decoded[local_idx];
-}
-
-// ============================================================================
-// BatchLookup — multiple records
-// ============================================================================
-
-std::vector<AddressEntry> AddressColumn::BatchLookup(
-    const std::vector<AddressBlock>& blocks,
-    const std::vector<uint32_t>& indices,
-    uint32_t granularity) {
-
-    std::vector<AddressEntry> results(indices.size());
-
-    // Cache decoded blocks to avoid re-decoding the same block
-    uint32_t cached_block_idx = UINT32_MAX;
-    std::vector<AddressEntry> cached_decoded;
-
-    for (size_t i = 0; i < indices.size(); ++i) {
-        uint32_t block_idx = indices[i] / granularity;
-        uint32_t local_idx = indices[i] % granularity;
-
-        if (block_idx != cached_block_idx) {
-            if (block_idx < blocks.size()) {
-                DecodeBlock(blocks[block_idx], cached_decoded);
-                cached_block_idx = block_idx;
-            } else {
-                results[i] = {0, 0};
-                continue;
-            }
-        }
-
-        if (local_idx < cached_decoded.size()) {
-            results[i] = cached_decoded[local_idx];
-        } else {
-            results[i] = {0, 0};
-        }
-    }
-
-    return results;
-}
 
 // ============================================================================
 // TotalRecords

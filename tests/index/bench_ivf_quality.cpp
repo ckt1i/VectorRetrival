@@ -261,13 +261,12 @@ int main(int argc, char* argv[]) {
             for (uint32_t r = 0; r < n_records; ++r) {
                 // Load RaBitQ code
                 std::vector<uint64_t> code;
-                float norm;
-                auto ls = clu_reader->LoadCode(r, code, norm);
+                auto ls = clu_reader->LoadCode(r, code);
                 if (!ls.ok()) continue;
 
                 RaBitQCode rcode;
                 rcode.code = code;
-                rcode.norm = norm;
+                rcode.norm = 0.0f;
                 rcode.sum_x = 0;
                 for (auto w : code) {
                     rcode.sum_x += __builtin_popcountll(w);

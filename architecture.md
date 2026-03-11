@@ -212,37 +212,52 @@ RaBitQConfig   = struct {
 
 ### 4.1 Cluster 内部布局（ClusterStore）
 
-每个 Cluster 存储在一个 ClusterStore 文件中（`.clu`），包含：
-
+所有 Cluster 存储在一个 ClusterStore 文件中（`.clu`），包含一个内部查询各个聚类向量块的表；所有的量化向量和原始数据的簇统一打包成一个DataBlocks，并且按照查找表里排布原始向量顺序存储对应的簇数据
 ```
-┌─────────────────────────────────────────────┐
-│ ClusterHeader (FlatBuffers)                 │
-│   - cluster_id, num_records, dim            │
-│   - rabitq_config (bits, block_size, c)     │
-│   - address_column_meta                     │
-│   - centroid vector                         │
-├─────────────────────────────────────────────┤
-│ RaBitQ Quantized Vectors                    │
-│   - B bits × D dims × N records            │
-│   - 按 block_size (64) 分块对齐             │
-├─────────────────────────────────────────────┤
-│ Address Column                              │
-│   - AddressBlock[0..⌈N/64⌉-1]              │
-│   - 每块: base_offset(u64) +               │
-│           bit-packed sizes(bit_width × 64)  │
-├─────────────────────────────────────────────┤
-│ Pre-computed Norms / Aux Data               │
-└─────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+| Cluster Header:metadata                                |
+|   - magic, num_records, dimension,                     |
+|   - rabitq_configurations,                             |
+|   - etc..                                              |
+|   - Cluster Table(Hybrid storage):                     |
+|  ┌──────────────────┐┌──────────────────────────────┐  |
+|  | Centroid_vector1 || Block_Address1 | Block_Size1 |  |
+|  ├──────────────────┤├──────────────────────────────┤  |
+|  | ...              ||                              |  |
+|  ├──────────────────┤├──────────────────────────────┤  |
+|  | Centroid_vectorN || Block_AddressN | Block_SizeN |  |
+|  └──────────────────┘└──────────────────────────────┘  |
+├────────────────────────────────────────────────────────┤
+| Cluster Data Blocks:                                   |
+|   Block1:                                              |
+|  ┌─────────────────────────────────────────────┐       |
+|  │ RaBitQ Quantized Vectors                    │       |
+|  │   - B bits × D dims × N records             │       |
+|  │   - 按 block_size(64)分块对齐                 |       |
+|  ├─────────────────────────────────────────────┤       |
+|  │ Address Column                              │       |
+|  │   - AddressBlock[0..⌈N/64⌉-1]               │       |
+|  │   - 每块: base_offset(u64) +                 │       |
+|  │           bit-packed sizes(bit_width × 64)  │       |
+|  ├─────────────────────────────────────────────┤       |
+|  │ Address Trailer: metadatas in block         │       |
+|  └─────────────────────────────────────────────┘       |
+|   Block2:                                              |
+|  ┌─────────────────────────────────────────────┐       |
+|  | ...                                         |       |
+|  └─────────────────────────────────────────────┘       |
+|  ...                                                   |
+└────────────────────────────────────────────────────────┘ 
 ```
 
-### 4.2 DataFile 布局（1:1 对应 Cluster）
+### 4.2 DataFile 布局
 
-每个 DataFile（`.dat`）存储对应 cluster 的原始向量 + payload 列存：
+DataFile（`.data`）存储原始向量 + payload 列存：
 
 ```
 ┌─────────────────────────────────────────────┐
 │ DataFileHeader (FlatBuffers)                │
-│   - magic, version, cluster_id              │
+│   - magic, version                          │
 │   - num_records, dimension                  │
 │   - column_schemas[]                        │
 │   - column_region_offsets[]                 │
@@ -258,13 +273,14 @@ RaBitQConfig   = struct {
 
 ### 4.3 Address Column 编码细节
 
-Address Column 按 block 粒度（默认 64 条记录）编码：
+Address Column 按照一定的粒度（4KB）对原始数据进行分页，并且 block 粒度（默认 64 条记录）编码：
 
 ```
 AddressBlock:
   base_offset : uint64           // 块内第一条记录的 DataFile 字节偏移
   bit_width   : uint8            // 每个 size 值的位宽
   sizes[64]   : bit-packed       // 每条记录的字节长度，bit_width 位
+  pagesize    : uint8            // 原始数据分页力度（默认按照4KB分页）
 
 解码第 i 条记录的地址:
   block_idx  = i / 64
@@ -283,13 +299,8 @@ AddressBlock:
 ```
 segment_<id>/
 ├── segment.meta                 # SegmentMeta (FlatBuffers)
-├── centroids.bin                # IVF centroid 向量矩阵
-├── cluster_0000.clu             # ClusterStore (RaBitQ + address)
-├── cluster_0000.dat             # DataFile (raw vec + payload)
-├── cluster_0001.clu
-├── cluster_0001.dat
-├── ...
-└── cluster_NNNN.clu / .dat
+├── cluster.clu                  # ClusterStore (Cebtoids + RaBitQ + address)
+├── data.dat             # DataFile (raw vec + payload)
 ```
 
 ---
@@ -303,7 +314,7 @@ SearchRequest(query_vec, top_k, nprobe, payload_columns[])
   │
   ▼
 Phase-A: Warmup (一次性)
-  │  加载 centroids 到内存, mmap ClusterStore 头部
+  │  加载.clu的查询表到内存, mmap ClusterStore 头部
   │  预先计算RabitQ量化的误差，以及ConANN搜索的top_k门限：随机采样多个query得到top_k的特定分位数（默认99%）距离
 Phase-B: Init
   │  计算 query 到所有 centroid 的距离

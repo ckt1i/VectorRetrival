@@ -436,8 +436,6 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
             ci.rabitq_data_length,
             addr_col,
             dfp,
-            ci.norms_offset,
-            ci.norms_length,
             0  // checksum
         ));
     }

@@ -12,6 +12,42 @@ using namespace vdb;
 using namespace vdb::storage;
 
 // ============================================================================
+// Local helpers replacing the removed Lookup / BatchLookup static methods.
+// ClusterStoreReader now eagerly decodes all addresses at Open() time, so
+// Lookup/BatchLookup are no longer part of the public API; tests use
+// DecodeBlock directly.
+// ============================================================================
+
+static AddressEntry TestLookup(
+    const std::vector<AddressBlock>& blocks,
+    uint32_t idx,
+    uint32_t gran = AddressColumn::kDefaultBlockGranularity) {
+    uint32_t block_idx = idx / gran;
+    if (block_idx >= static_cast<uint32_t>(blocks.size())) {
+        return AddressEntry{0, 0};
+    }
+    uint32_t local_idx = idx % gran;
+    std::vector<AddressEntry> entries;
+    AddressColumn::DecodeBlock(blocks[block_idx], entries);
+    if (local_idx >= static_cast<uint32_t>(entries.size())) {
+        return AddressEntry{0, 0};
+    }
+    return entries[local_idx];
+}
+
+static std::vector<AddressEntry> TestBatchLookup(
+    const std::vector<AddressBlock>& blocks,
+    const std::vector<uint32_t>& indices,
+    uint32_t gran = AddressColumn::kDefaultBlockGranularity) {
+    std::vector<AddressEntry> results;
+    results.reserve(indices.size());
+    for (auto idx : indices) {
+        results.push_back(TestLookup(blocks, idx, gran));
+    }
+    return results;
+}
+
+// ============================================================================
 // Encode / Decode round-trip
 // ============================================================================
 
@@ -32,7 +68,7 @@ TEST(AddressColumnTest, SingleRecord) {
     EXPECT_EQ(AddressColumn::TotalRecords(blocks), 1u);
 
     // Decode
-    auto e = AddressColumn::Lookup(blocks, 0);
+    auto e = TestLookup(blocks, 0);
     EXPECT_EQ(e.offset, 1000u);
     EXPECT_EQ(e.size, 256u);
 }
@@ -53,7 +89,7 @@ TEST(AddressColumnTest, ExactlyOneBlock) {
 
     // Verify round-trip for every entry
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -77,7 +113,7 @@ TEST(AddressColumnTest, TwoBlocks) {
 
     // Verify all entries
     for (uint32_t i = 0; i < 100; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -97,7 +133,7 @@ TEST(AddressColumnTest, UniformSizes) {
     EXPECT_EQ(blocks[0].bit_width, 8u);  // 128 needs 8 bits
 
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset);
         EXPECT_EQ(e.size, 128u);
     }
@@ -118,7 +154,7 @@ TEST(AddressColumnTest, SmallSizes_LowBitWidth) {
     EXPECT_EQ(blocks[0].bit_width, 2u);
 
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -139,7 +175,7 @@ TEST(AddressColumnTest, LargeSizes) {
     EXPECT_GE(blocks[0].bit_width, 17u);
 
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -203,7 +239,7 @@ TEST(AddressColumnTest, BatchLookup_SameBlock) {
     auto blocks = AddressColumn::Encode(entries, 64, 1);
 
     std::vector<uint32_t> indices = {0, 10, 32, 63};
-    auto results = AddressColumn::BatchLookup(blocks, indices);
+    auto results = TestBatchLookup(blocks, indices);
 
     ASSERT_EQ(results.size(), 4u);
     for (size_t i = 0; i < indices.size(); ++i) {
@@ -224,7 +260,7 @@ TEST(AddressColumnTest, BatchLookup_CrossBlock) {
     EXPECT_EQ(blocks.size(), 4u);  // 200/64 = 3.125 → 4 blocks
 
     std::vector<uint32_t> indices = {0, 63, 64, 127, 128, 199};
-    auto results = AddressColumn::BatchLookup(blocks, indices);
+    auto results = TestBatchLookup(blocks, indices);
 
     ASSERT_EQ(results.size(), 6u);
     for (size_t i = 0; i < indices.size(); ++i) {
@@ -243,7 +279,7 @@ TEST(AddressColumnTest, Lookup_OutOfRange) {
     std::vector<AddressEntry> entries = {{0, 100}, {100, 100}};
     auto blocks = AddressColumn::Encode(entries, 64, 1);
 
-    auto e = AddressColumn::Lookup(blocks, 999);
+    auto e = TestLookup(blocks, 999);
     EXPECT_EQ(e.offset, 0u);
     EXPECT_EQ(e.size, 0u);
 }
@@ -271,7 +307,7 @@ TEST(AddressColumnTest, RandomStress) {
 
     // Verify every entry
     for (uint32_t i = 0; i < static_cast<uint32_t>(N); ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -293,7 +329,7 @@ TEST(AddressColumnTest, CustomGranularity_32) {
     EXPECT_EQ(blocks.size(), 4u);  // 100/32 = 3.125 → 4
 
     for (uint32_t i = 0; i < 100; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i, 32);
+        auto e = TestLookup(blocks, i, 32);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -310,7 +346,7 @@ TEST(AddressColumnTest, ZeroSizes) {
     ASSERT_EQ(blocks.size(), 1u);
 
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, 0u);
         EXPECT_EQ(e.size, 0u);
     }
@@ -329,7 +365,7 @@ TEST(AddressColumnTest, PageAligned_SingleRecord) {
     EXPECT_EQ(blocks[0].page_size, 4096u);
     EXPECT_EQ(blocks[0].base_offset, 0u);  // page index 0
 
-    auto e = AddressColumn::Lookup(blocks, 0);
+    auto e = TestLookup(blocks, 0);
     EXPECT_EQ(e.offset, 0u);
     EXPECT_EQ(e.size, 4096u);
 }
@@ -355,7 +391,7 @@ TEST(AddressColumnTest, PageAligned_MultipleRecords) {
     EXPECT_EQ(blocks[0].bit_width, 2u);
 
     for (uint32_t i = 0; i < 10; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -379,7 +415,7 @@ TEST(AddressColumnTest, PageAligned_VariableSizes) {
     EXPECT_EQ(blocks[0].bit_width, 3u);
 
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e = AddressColumn::Lookup(blocks, i);
+        auto e = TestLookup(blocks, i);
         EXPECT_EQ(e.offset, entries[i].offset) << "record " << i;
         EXPECT_EQ(e.size, entries[i].size) << "record " << i;
     }
@@ -406,8 +442,8 @@ TEST(AddressColumnTest, PageAligned_BitWidthReduction) {
 
     // Both decode to the same byte addresses
     for (uint32_t i = 0; i < 64; ++i) {
-        auto e1 = AddressColumn::Lookup(blocks_byte, i);
-        auto e2 = AddressColumn::Lookup(blocks_page, i);
+        auto e1 = TestLookup(blocks_byte, i);
+        auto e2 = TestLookup(blocks_page, i);
         EXPECT_EQ(e1.offset, e2.offset);
         EXPECT_EQ(e1.size, e2.size);
     }

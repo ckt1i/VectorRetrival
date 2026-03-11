@@ -30,16 +30,19 @@ namespace storage {
 ///   │   code[1]: uint64_t[nwords]  │
 ///   │   ...                        │
 ///   ├──────────────────────────────┤
-///   │  Norms (float[N])            │
-///   ├──────────────────────────────┤
 ///   │  Address blocks              │
 ///   │   block[0].packed bytes      │
 ///   │   block[1].packed bytes      │
 ///   │   ...                        │
+///   ├──────────────────────────────┤
+///   │  Trailer (ClusterInfo)       │
+///   ├──────────────────────────────┤
+///   │  trailer_size (u32)          │
+///   │  magic "VCLU" (u32)          │
 ///   └──────────────────────────────┘
 ///
-/// After all data is written, Finalize() serializes a ClusterMeta
-/// (in-memory struct) that records the offsets and lengths of each region.
+/// After all data is written, Finalize() serializes a ClusterInfo
+/// trailer that records the offsets and lengths of each region.
 ///
 class ClusterStoreWriter {
  public:
@@ -100,11 +103,12 @@ class ClusterStoreWriter {
         uint64_t rabitq_data_offset;
         uint32_t rabitq_data_length;
 
-        uint64_t norms_offset;
-        uint32_t norms_length;
+        uint64_t address_blocks_offset; 
 
         // Address blocks metadata
         std::vector<AddressBlock> address_blocks;
+        // Decoded address entries for all records (length = num_records, populated after writing blocks)
+        std::vector<AddressEntry> decoded_addresses;  // 长度 = num_records
     };
 
     const ClusterInfo& info() const { return info_; }
@@ -167,20 +171,14 @@ class ClusterStoreReader {
     /// Load a single RaBitQ code.
     /// @param record_idx  Record index [0, num_records)
     /// @param out_code    Output code words
-    /// @param out_norm    Output norm value
     Status LoadCode(uint32_t record_idx,
-                    std::vector<uint64_t>& out_code,
-                    float& out_norm) const;
+                    std::vector<uint64_t>& out_code) const;
 
     /// Load multiple RaBitQ codes.
     /// @param indices   Record indices to load
     /// @param out_codes Output RaBitQCode structs
     Status LoadCodes(const std::vector<uint32_t>& indices,
                      std::vector<rabitq::RaBitQCode>& out_codes) const;
-
-    /// Load all norms at once.
-    /// @param out  Output norms array (will be resized to num_records)
-    Status LoadAllNorms(std::vector<float>& out) const;
 
     /// Get address entry for a record (decoded from address blocks).
     /// @param record_idx  Record index
@@ -203,12 +201,16 @@ class ClusterStoreReader {
     int fd_ = -1;
     ClusterStoreWriter::ClusterInfo info_;
 
+    /// Load and SIMD-decode all address blocks into decoded_addresses.
+    /// Called automatically by Open().
+    Status LoadAddressBlocks();
+
     /// Number of uint64_t words per code
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }
 
-    /// Byte size of one code entry (code words + norm float)
+    /// Byte size of one code entry (code words only)
     uint32_t code_entry_size() const {
-        return num_code_words() * sizeof(uint64_t) + sizeof(float);
+        return num_code_words() * sizeof(uint64_t);
     }
 };
 

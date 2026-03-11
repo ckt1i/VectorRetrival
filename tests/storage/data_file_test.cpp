@@ -394,12 +394,23 @@ TEST_F(DataFileTest, Integration_WithAddressColumn) {
     // Encode addresses
     auto blocks = AddressColumn::Encode(addrs, 64, 1);
 
+    // Decode all blocks into a flat array (mirrors what LoadAddressBlocks does)
+    std::vector<AddressEntry> decoded_addrs;
+    decoded_addrs.reserve(static_cast<size_t>(N));
+    for (const auto& block : blocks) {
+        std::vector<AddressEntry> blk_entries;
+        AddressColumn::DecodeBlock(block, blk_entries);
+        decoded_addrs.insert(decoded_addrs.end(),
+                             blk_entries.begin(), blk_entries.end());
+    }
+    ASSERT_EQ(decoded_addrs.size(), static_cast<size_t>(N));
+
     // Read back using decoded addresses
     DataFileReader reader;
     ASSERT_TRUE(reader.Open(path, dim).ok());
 
     for (int i = 0; i < N; ++i) {
-        auto decoded_addr = AddressColumn::Lookup(blocks, i);
+        const auto& decoded_addr = decoded_addrs[static_cast<size_t>(i)];
         EXPECT_EQ(decoded_addr.offset, addrs[i].offset);
         EXPECT_EQ(decoded_addr.size, addrs[i].size);
 

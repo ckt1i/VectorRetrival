@@ -189,10 +189,6 @@ table ClusterMeta {
     // DataFile 路径 (相对路径，如 "cluster_0042.dat")
     data_file_path: string;
     
-    // 预计算范数数据位置 (.clu 文件内)
-    norms_offset: uint64;
-    norms_length: uint32;
-    
     // 校验和
     checksum: uint32;
 }
