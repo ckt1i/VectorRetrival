@@ -31,8 +31,8 @@ namespace index {
 ///   ├── segment.meta         # SegmentMeta FlatBuffers
 ///   ├── centroids.bin        # nlist × dim × float32 (raw binary)
 ///   ├── rotation.bin         # dim × dim × float32 (raw binary)
-///   ├── cluster_XXXX.clu     # ClusterStore files
-///   └── cluster_XXXX.dat     # DataFile files
+///   ├── cluster.clu          # unified ClusterStore file
+///   └── data.dat             # unified DataFile
 ///
 class IvfIndex {
  public:

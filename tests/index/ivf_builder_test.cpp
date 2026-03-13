@@ -75,16 +75,11 @@ TEST_F(IvfBuilderTest, Build_Basic) {
     EXPECT_TRUE(fs::exists(test_dir_ + "/centroids.bin"));
     EXPECT_TRUE(fs::exists(test_dir_ + "/rotation.bin"));
 
-    // Verify per-cluster files
-    for (uint32_t k = 0; k < nlist; ++k) {
-        char clu_name[32], dat_name[32];
-        std::snprintf(clu_name, sizeof(clu_name), "cluster_%04u.clu", k);
-        std::snprintf(dat_name, sizeof(dat_name), "cluster_%04u.dat", k);
-        EXPECT_TRUE(fs::exists(test_dir_ + "/" + clu_name))
-            << "Missing " << clu_name;
-        EXPECT_TRUE(fs::exists(test_dir_ + "/" + dat_name))
-            << "Missing " << dat_name;
-    }
+    // Verify unified files
+    EXPECT_TRUE(fs::exists(test_dir_ + "/cluster.clu"))
+        << "Missing cluster.clu";
+    EXPECT_TRUE(fs::exists(test_dir_ + "/data.dat"))
+        << "Missing data.dat";
 
     // Verify assignments cover all vectors
     EXPECT_EQ(builder.assignments().size(), N);

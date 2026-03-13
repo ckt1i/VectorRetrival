@@ -295,44 +295,49 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     // --- Build encoder ---
     rabitq::RaBitQEncoder encoder(dim, rotation);
 
-    // --- Per-cluster writing ---
-    // Collect ClusterInfo for SegmentMeta
-    std::vector<storage::ClusterStoreWriter::ClusterInfo> cluster_infos(K);
+    // =======================================================================
+    // Unified file writing: single data.dat + single cluster.clu
+    // =======================================================================
+
+    const std::string dat_path = output_dir + "/data.dat";
+    const std::string clu_path = output_dir + "/cluster.clu";
+
+    // --- Phase 1: write all records into one DataFileWriter ---
+    storage::DataFileWriter dat_writer;
+    s = dat_writer.Open(dat_path, 0, dim, config_.payload_schemas,
+                        config_.page_size);
+    if (!s.ok()) return s;
+
+    // addr_entries_per_cluster[k] = address entries for cluster k
+    std::vector<std::vector<AddressEntry>> addr_entries_per_cluster(K);
 
     for (uint32_t k = 0; k < K; ++k) {
         const auto& members = cluster_members[k];
-        const uint32_t n_members = static_cast<uint32_t>(members.size());
-        const float* centroid = centroids_.data() + static_cast<size_t>(k) * dim;
-
-        // File names
-        char clu_name[32], dat_name[32];
-        std::snprintf(clu_name, sizeof(clu_name), "cluster_%04u.clu", k);
-        std::snprintf(dat_name, sizeof(dat_name), "cluster_%04u.dat", k);
-        std::string clu_path = output_dir + "/" + clu_name;
-        std::string dat_path = output_dir + "/" + dat_name;
-
-        // --- DataFileWriter ---
-        storage::DataFileWriter dat_writer;
-        s = dat_writer.Open(dat_path, k, dim, config_.payload_schemas,
-                            config_.page_size);
-        if (!s.ok()) return s;
-
-        std::vector<AddressEntry> addr_entries;
-        addr_entries.reserve(n_members);
+        addr_entries_per_cluster[k].reserve(members.size());
 
         for (uint32_t idx : members) {
             const float* vec = vectors + static_cast<size_t>(idx) * dim;
             AddressEntry entry;
             s = dat_writer.WriteRecord(vec, {}, entry);
             if (!s.ok()) return s;
-            addr_entries.push_back(entry);
+            addr_entries_per_cluster[k].push_back(entry);
         }
+    }
 
-        s = dat_writer.Finalize();
-        if (!s.ok()) return s;
+    s = dat_writer.Finalize();
+    if (!s.ok()) return s;
 
-        // --- RaBitQ encode all members ---
-        // Gather member vectors contiguously for batch encoding
+    // --- Phase 2: write unified cluster.clu ---
+    storage::ClusterStoreWriter clu_writer;
+    s = clu_writer.Open(clu_path, K, dim, config_.rabitq);
+    if (!s.ok()) return s;
+
+    for (uint32_t k = 0; k < K; ++k) {
+        const auto& members = cluster_members[k];
+        const uint32_t n_members = static_cast<uint32_t>(members.size());
+        const float* centroid = centroids_.data() + static_cast<size_t>(k) * dim;
+
+        // RaBitQ encode all members (gather contiguously)
         std::vector<float> member_vecs(static_cast<size_t>(n_members) * dim);
         for (uint32_t m = 0; m < n_members; ++m) {
             std::memcpy(member_vecs.data() + static_cast<size_t>(m) * dim,
@@ -342,16 +347,12 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
 
         auto codes = encoder.EncodeBatch(member_vecs.data(), n_members, centroid);
 
-        // --- AddressColumn encode ---
+        // AddressColumn encode
         auto addr_blocks = storage::AddressColumn::Encode(
-            addr_entries, 64 /*granularity*/, config_.page_size);
+            addr_entries_per_cluster[k], 64 /*fixed packed size*/, config_.page_size);
 
-        // --- ClusterStoreWriter ---
-        storage::ClusterStoreWriter clu_writer;
-        s = clu_writer.Open(clu_path, k, dim, config_.rabitq);
-        if (!s.ok()) return s;
-
-        s = clu_writer.WriteCentroid(centroid);
+        // Write cluster block
+        s = clu_writer.BeginCluster(k, n_members, centroid);
         if (!s.ok()) return s;
 
         s = clu_writer.WriteVectors(codes);
@@ -360,15 +361,16 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         s = clu_writer.WriteAddressBlocks(addr_blocks);
         if (!s.ok()) return s;
 
-        s = clu_writer.Finalize(dat_name);
+        s = clu_writer.EndCluster();
         if (!s.ok()) return s;
-
-        cluster_infos[k] = clu_writer.info();
 
         if (progress_cb_) {
             progress_cb_(k, K);
         }
     }
+
+    s = clu_writer.Finalize("data.dat");
+    if (!s.ok()) return s;
 
     // --- Write segment.meta (FlatBuffers) ---
     flatbuffers::FlatBufferBuilder fbb(4096);
@@ -405,35 +407,28 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         config_.calibration_percentile   // calibration_percentile
     );
 
-    // ClusterMeta array
+    // ClusterMeta array — per-cluster info from the lookup table
+    const auto& global_info = clu_writer.info();
     std::vector<flatbuffers::Offset<vdb::schema::ClusterMeta>> cluster_offsets;
     cluster_offsets.reserve(K);
     for (uint32_t k = 0; k < K; ++k) {
-        const auto& ci = cluster_infos[k];
+        const auto& entry = global_info.lookup_table[k];
 
-        // Build AddressColumnMeta
-        std::vector<flatbuffers::Offset<vdb::schema::AddressBlockMeta>> ab_offsets;
-        ab_offsets.reserve(ci.address_blocks.size());
-        for (const auto& ab : ci.address_blocks) {
-            ab_offsets.push_back(vdb::schema::CreateAddressBlockMeta(
-                fbb, ab.base_offset, ab.bit_width, 0 /*data_offset*/, 0 /*data_length*/));
-        }
-        auto ab_vec = fbb.CreateVector(ab_offsets);
+        // Build empty AddressColumnMeta (address info is in .clu mini-trailers)
+        auto ab_vec = fbb.CreateVector(
+            std::vector<flatbuffers::Offset<vdb::schema::AddressBlockMeta>>{});
         auto addr_col = vdb::schema::CreateAddressColumnMeta(
-            fbb, 64 /*granularity*/,
-            static_cast<uint32_t>(ci.address_blocks.size()),
-            ab_vec);
+            fbb, 64 /*granularity*/, 0, ab_vec);
 
-        auto dfp = fbb.CreateString(ci.data_file_path);
+        auto dfp = fbb.CreateString("data.dat");
 
         cluster_offsets.push_back(vdb::schema::CreateClusterMeta(
             fbb,
-            ci.cluster_id,
-            ci.num_records,
-            ci.centroid_offset,
-            ci.centroid_length,
-            ci.rabitq_data_offset,
-            ci.rabitq_data_length,
+            entry.cluster_id,
+            entry.num_records,
+            0, 0,                   // centroid_offset/length (in .clu lookup table)
+            entry.block_offset,     // rabitq_data_offset → block_offset
+            entry.block_size,       // rabitq_data_length → block_size
             addr_col,
             dfp,
             0  // checksum

@@ -130,6 +130,7 @@ add_library(vdb_simd STATIC
     src/simd/bit_unpack.cpp
     src/simd/prefix_sum.cpp
     src/simd/popcount.cpp
+    src/simd/transpose.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -258,6 +259,10 @@ if(VDB_BUILD_TESTS)
     add_executable(test_prefix_sum tests/simd/prefix_sum_test.cpp)
     target_link_libraries(test_prefix_sum PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
     add_test(NAME test_prefix_sum COMMAND test_prefix_sum)
+
+    add_executable(test_transpose tests/simd/transpose_test.cpp)
+    target_link_libraries(test_transpose PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_transpose COMMAND test_transpose)
 
     # -------------------------------------------------------------------------
     # Codec tests (Phase 3)

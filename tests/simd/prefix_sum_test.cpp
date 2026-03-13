@@ -3,8 +3,12 @@
 #include <vector>
 
 #include "vdb/simd/prefix_sum.h"
+#include "vdb/simd/transpose.h"
 
 using vdb::simd::ExclusivePrefixSum;
+using vdb::simd::ExclusivePrefixSumMulti;
+using vdb::simd::Transpose8xN;
+using vdb::simd::TransposeNx8;
 
 // Helper: compute exclusive prefix sum into a new vector
 static std::vector<uint32_t> PrefixSum(const std::vector<uint32_t>& in) {
@@ -139,5 +143,88 @@ TEST(PrefixSumTest, FullBlock64_VerifyTotal) {
     for (uint32_t i = 0; i < 64u; i++) {
         EXPECT_EQ(result[i], cumsum) << "at i=" << i;
         cumsum += in[i];
+    }
+}
+
+// ===========================================================================
+// Multi-stream prefix sum tests
+// ===========================================================================
+
+// Helper: compute multi-stream prefix sum via single-stream reference
+static void ReferenceMultiPrefixSum(
+    const std::vector<std::vector<uint32_t>>& streams,
+    std::vector<std::vector<uint32_t>>& out_streams) {
+    out_streams.resize(streams.size());
+    for (size_t k = 0; k < streams.size(); ++k) {
+        out_streams[k].resize(streams[k].size());
+        ExclusivePrefixSum(streams[k].data(), out_streams[k].data(),
+                           static_cast<uint32_t>(streams[k].size()));
+    }
+}
+
+class PrefixSumMultiTest : public ::testing::TestWithParam<
+    std::tuple<uint32_t /*num_streams*/, uint32_t /*count*/>> {};
+
+TEST_P(PrefixSumMultiTest, ConsistentWithSingleStream) {
+    auto [K, N] = GetParam();
+
+    // Build K streams with deterministic values
+    std::vector<std::vector<uint32_t>> streams(K, std::vector<uint32_t>(N));
+    for (uint32_t k = 0; k < K; ++k) {
+        for (uint32_t j = 0; j < N; ++j) {
+            streams[k][j] = (k + 1) * (j % 7 + 1);
+        }
+    }
+
+    // Reference: single-stream prefix sum for each stream
+    std::vector<std::vector<uint32_t>> ref_out;
+    ReferenceMultiPrefixSum(streams, ref_out);
+
+    // Multi-stream: transpose → ExclusivePrefixSumMulti → transpose back
+    std::vector<const uint32_t*> in_ptrs(K);
+    for (uint32_t k = 0; k < K; ++k) in_ptrs[k] = streams[k].data();
+
+    std::vector<uint32_t> interleaved_in(N * 8, 0);
+    Transpose8xN(in_ptrs.data(), interleaved_in.data(), K, N);
+
+    std::vector<uint32_t> interleaved_out(N * 8, 0);
+    ExclusivePrefixSumMulti(interleaved_in.data(), interleaved_out.data(), N, K);
+
+    std::vector<std::vector<uint32_t>> multi_out(K, std::vector<uint32_t>(N, 0));
+    std::vector<uint32_t*> out_ptrs(K);
+    for (uint32_t k = 0; k < K; ++k) out_ptrs[k] = multi_out[k].data();
+    TransposeNx8(interleaved_out.data(), out_ptrs.data(), K, N);
+
+    // Compare
+    for (uint32_t k = 0; k < K; ++k) {
+        for (uint32_t j = 0; j < N; ++j) {
+            EXPECT_EQ(multi_out[k][j], ref_out[k][j])
+                << "stream=" << k << " elem=" << j;
+        }
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    MultiStreamParams, PrefixSumMultiTest,
+    ::testing::Combine(
+        ::testing::Values(1, 2, 4, 8),
+        ::testing::Values(1, 7, 8, 9, 16, 64, 65)
+    ));
+
+TEST(PrefixSumMultiTest, ZeroCount) {
+    ExclusivePrefixSumMulti(nullptr, nullptr, 0, 8);
+}
+
+TEST(PrefixSumMultiTest, ZeroStreams) {
+    ExclusivePrefixSumMulti(nullptr, nullptr, 64, 0);
+}
+
+TEST(PrefixSumMultiTest, AllZeros_8Streams) {
+    const uint32_t N = 16, K = 8;
+    std::vector<uint32_t> in(N * 8, 0);
+    std::vector<uint32_t> out(N * 8, 0xDEAD);
+    ExclusivePrefixSumMulti(in.data(), out.data(), N, K);
+    for (uint32_t i = 0; i < N * 8; ++i) {
+        EXPECT_EQ(out[i], 0u) << "at index " << i;
     }
 }

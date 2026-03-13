@@ -108,10 +108,55 @@ void ExclusivePrefixSumAVX2(const uint32_t* VDB_RESTRICT in,
 
 #endif  // VDB_USE_AVX2
 
+// ============================================================================
+// Multi-stream scalar fallback
+// ============================================================================
+
+void ExclusivePrefixSumMultiScalar(const uint32_t* VDB_RESTRICT interleaved_in,
+                                     uint32_t* VDB_RESTRICT       interleaved_out,
+                                     uint32_t                     count,
+                                     uint32_t                     num_streams) {
+    // K independent running sums, one per stream
+    uint32_t running[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+    for (uint32_t j = 0; j < count; ++j) {
+        for (uint32_t k = 0; k < num_streams; ++k) {
+            interleaved_out[j * 8 + k] = running[k];
+            running[k] += interleaved_in[j * 8 + k];
+        }
+        // Zero excess lanes
+        for (uint32_t k = num_streams; k < 8; ++k) {
+            interleaved_out[j * 8 + k] = 0;
+        }
+    }
+}
+
+// ============================================================================
+// Multi-stream AVX2: one _mm256_add_epi32 per element index
+// ============================================================================
+#ifdef VDB_USE_AVX2
+
+void ExclusivePrefixSumMultiAVX2(const uint32_t* VDB_RESTRICT interleaved_in,
+                                    uint32_t* VDB_RESTRICT       interleaved_out,
+                                    uint32_t                     count,
+                                    uint32_t                     num_streams) {
+    VDB_UNUSED(num_streams);  // All 8 lanes processed; excess are zero → no effect
+    __m256i running = _mm256_setzero_si256();
+
+    for (uint32_t j = 0; j < count; ++j) {
+        __m256i vals = _mm256_loadu_si256(
+            reinterpret_cast<const __m256i*>(interleaved_in + j * 8));
+        _mm256_storeu_si256(
+            reinterpret_cast<__m256i*>(interleaved_out + j * 8), running);
+        running = _mm256_add_epi32(running, vals);
+    }
+}
+
+#endif  // VDB_USE_AVX2
+
 }  // namespace
 
 // ============================================================================
-// Public entry point
+// Public entry points
 // ============================================================================
 
 void ExclusivePrefixSum(const uint32_t* VDB_RESTRICT in,
@@ -123,6 +168,19 @@ void ExclusivePrefixSum(const uint32_t* VDB_RESTRICT in,
     ExclusivePrefixSumAVX2(in, out, count);
 #else
     ExclusivePrefixSumScalar(in, out, count);
+#endif
+}
+
+void ExclusivePrefixSumMulti(const uint32_t* VDB_RESTRICT interleaved_in,
+                              uint32_t* VDB_RESTRICT       interleaved_out,
+                              uint32_t                     count,
+                              uint32_t                     num_streams) {
+    if (count == 0u || num_streams == 0u) return;
+
+#ifdef VDB_USE_AVX2
+    ExclusivePrefixSumMultiAVX2(interleaved_in, interleaved_out, count, num_streams);
+#else
+    ExclusivePrefixSumMultiScalar(interleaved_in, interleaved_out, count, num_streams);
 #endif
 }
 

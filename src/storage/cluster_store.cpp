@@ -11,8 +11,44 @@
 namespace vdb {
 namespace storage {
 
-/// Magic number for ClusterStore trailer: "VCLU" (0x554C4356 little-endian)
-static constexpr uint32_t kCluTrailerMagic = 0x56434C55;
+// ============================================================================
+// Constants
+// ============================================================================
+
+/// Global file header magic: "VCML" (0x4C4D4356 little-endian)
+static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
+static constexpr uint32_t kFileVersion = 4;
+
+/// Per-cluster block mini-trailer magic: "VCLB" (0x424C4356 little-endian)
+static constexpr uint32_t kBlockMagic = 0x424C4356;
+
+// ============================================================================
+// Helper: append / read raw bytes
+// ============================================================================
+
+namespace {
+
+inline void WriteRaw(std::fstream& f, const void* data, size_t len) {
+    f.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(len));
+}
+
+template <typename T>
+inline void WriteVal(std::fstream& f, T value) {
+    WriteRaw(f, &value, sizeof(T));
+}
+
+template <typename T>
+inline bool PreadValue(int fd, off_t offset, T& out) {
+    ssize_t n = ::pread(fd, &out, sizeof(T), offset);
+    return n == static_cast<ssize_t>(sizeof(T));
+}
+
+inline bool PreadBytes(int fd, off_t offset, void* out, size_t len) {
+    ssize_t n = ::pread(fd, out, len, offset);
+    return n == static_cast<ssize_t>(len);
+}
+
+}  // anonymous namespace
 
 // ============================================================================
 // ClusterStoreWriter
@@ -26,8 +62,29 @@ ClusterStoreWriter::~ClusterStoreWriter() {
     }
 }
 
+uint64_t ClusterStoreWriter::lookup_entry_size() const {
+    // cluster_id(4) + num_records(4) + centroid(dim*4) + block_offset(8) + block_size(8)
+    return 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8;
+}
+
+// ============================================================================
+// Global Header Layout:
+//   magic            : u32
+//   version          : u32
+//   num_clusters     : u32
+//   dim              : u32
+//   rabitq.bits      : u8
+//   rabitq.block_size: u32
+//   rabitq.c_factor  : f32
+//   data_file_path_len: u32   (placeholder 256)
+//   data_file_path   : char[256]  (zero-padded)
+//   [Lookup Table follows immediately]
+// ============================================================================
+
+static constexpr uint32_t kMaxPathLen = 256;
+
 Status ClusterStoreWriter::Open(const std::string& path,
-                                 uint32_t cluster_id,
+                                 uint32_t num_clusters,
                                  Dim dim,
                                  const RaBitQConfig& rabitq_config) {
     if (file_.is_open()) {
@@ -35,86 +92,110 @@ Status ClusterStoreWriter::Open(const std::string& path,
     }
 
     path_ = path;
-    info_.cluster_id = cluster_id;
+    info_.num_clusters = num_clusters;
     info_.dim = dim;
     info_.rabitq_config = rabitq_config;
-    info_.num_records = 0;
-    current_offset_ = 0;
-    centroid_written_ = false;
-    vectors_written_ = false;
-    address_written_ = false;
+    info_.lookup_table.resize(num_clusters);
+    current_cluster_index_ = 0;
+    in_cluster_ = false;
     finalized_ = false;
 
-    file_.open(path, std::ios::binary | std::ios::trunc);
+    file_.open(path, std::ios::binary | std::ios::in | std::ios::out | std::ios::trunc);
     if (!file_.is_open()) {
         return Status::IOError("Failed to open ClusterStore: " + path);
     }
 
+    // --- Write global header ---
+    WriteVal(file_, kGlobalMagic);
+    WriteVal(file_, kFileVersion);
+    WriteVal(file_, num_clusters);
+    WriteVal(file_, dim);
+    WriteVal(file_, rabitq_config.bits);
+    WriteVal(file_, rabitq_config.block_size);
+    WriteVal(file_, rabitq_config.c_factor);
+
+    // data_file_path placeholder (length + 256 zero bytes)
+    header_data_file_path_offset_ = static_cast<uint64_t>(file_.tellp());
+    uint32_t zero_path_len = 0;
+    WriteVal(file_, zero_path_len);
+    char zero_buf[kMaxPathLen] = {0};
+    WriteRaw(file_, zero_buf, kMaxPathLen);
+
+    if (!file_.good()) {
+        return Status::IOError("Failed to write global header");
+    }
+
+    // --- Record lookup table start and write zero-filled entries ---
+    lookup_table_start_ = static_cast<uint64_t>(file_.tellp());
+
+    const uint64_t entry_sz = lookup_entry_size();
+    std::vector<uint8_t> zero_entry(entry_sz, 0);
+    for (uint32_t i = 0; i < num_clusters; ++i) {
+        WriteRaw(file_, zero_entry.data(), entry_sz);
+    }
+
+    if (!file_.good()) {
+        return Status::IOError("Failed to write lookup table placeholders");
+    }
+
+    current_offset_ = static_cast<uint64_t>(file_.tellp());
     return Status::OK();
 }
 
 // ============================================================================
-// WriteCentroid
+// BeginCluster
 // ============================================================================
 
-Status ClusterStoreWriter::WriteCentroid(const float* centroid) {
+Status ClusterStoreWriter::BeginCluster(uint32_t cluster_id,
+                                         uint32_t num_records,
+                                         const float* centroid) {
     if (!file_.is_open()) {
         return Status::InvalidArgument("ClusterStoreWriter not open");
     }
-    if (centroid_written_) {
-        return Status::InvalidArgument("Centroid already written");
+    if (in_cluster_) {
+        return Status::InvalidArgument("Previous cluster not ended");
+    }
+    if (current_cluster_index_ >= info_.num_clusters) {
+        return Status::InvalidArgument("All clusters already written");
     }
 
-    info_.centroid_offset = current_offset_;
-    const uint32_t bytes = info_.dim * sizeof(float);
+    in_cluster_ = true;
+    vectors_written_ = false;
+    address_written_ = false;
 
-    file_.write(reinterpret_cast<const char*>(centroid), bytes);
-    if (!file_.good()) {
-        return Status::IOError("Failed to write centroid");
-    }
-    current_offset_ += bytes;
-    info_.centroid_length = bytes;
-    centroid_written_ = true;
+    // Record lookup table entry
+    auto& entry = info_.lookup_table[current_cluster_index_];
+    entry.cluster_id = cluster_id;
+    entry.num_records = num_records;
+    entry.centroid.assign(centroid, centroid + info_.dim);
+
+    block_start_ = current_offset_;
 
     return Status::OK();
 }
 
 // ============================================================================
-// WriteVectors — write RaBitQ codes + norms
+// WriteVectors
 // ============================================================================
 
 Status ClusterStoreWriter::WriteVectors(
     const std::vector<rabitq::RaBitQCode>& codes) {
-    if (!file_.is_open()) {
-        return Status::InvalidArgument("ClusterStoreWriter not open");
-    }
-    if (!centroid_written_) {
-        return Status::InvalidArgument("Must write centroid before vectors");
+    if (!file_.is_open() || !in_cluster_) {
+        return Status::InvalidArgument("Not in a cluster block");
     }
     if (vectors_written_) {
         return Status::InvalidArgument("Vectors already written");
     }
 
-    const uint32_t N = static_cast<uint32_t>(codes.size());
-    info_.num_records = N;
-
-    // --- Write RaBitQ codes ---
-    info_.rabitq_data_offset = current_offset_;
-
-    for (uint32_t i = 0; i < N; ++i) {
-        // Write code words
-        const auto& code = codes[i].code;
+    for (const auto& code : codes) {
         const uint32_t code_bytes =
-            static_cast<uint32_t>(code.size()) * sizeof(uint64_t);
-        file_.write(reinterpret_cast<const char*>(code.data()), code_bytes);
+            static_cast<uint32_t>(code.code.size()) * sizeof(uint64_t);
+        file_.write(reinterpret_cast<const char*>(code.code.data()), code_bytes);
         if (!file_.good()) {
             return Status::IOError("Failed to write RaBitQ code");
         }
         current_offset_ += code_bytes;
     }
-
-    info_.rabitq_data_length =
-        static_cast<uint32_t>(current_offset_ - info_.rabitq_data_offset);
 
     vectors_written_ = true;
     return Status::OK();
@@ -125,29 +206,33 @@ Status ClusterStoreWriter::WriteVectors(
 // ============================================================================
 
 Status ClusterStoreWriter::WriteAddressBlocks(
-    const std::vector<AddressBlock>& blocks) {
-    if (!file_.is_open()) {
-        return Status::InvalidArgument("ClusterStoreWriter not open");
+    const EncodedAddressColumn& column) {
+    if (!file_.is_open() || !in_cluster_) {
+        return Status::InvalidArgument("Not in a cluster block");
     }
     if (!vectors_written_) {
-        return Status::InvalidArgument(
-            "Must write vectors before address blocks");
+        return Status::InvalidArgument("Must write vectors before address blocks");
     }
     if (address_written_) {
         return Status::InvalidArgument("Address blocks already written");
     }
 
-    info_.address_blocks_offset = current_offset_;
+    const auto& entry = info_.lookup_table[current_cluster_index_];
+    if (column.total_records != entry.num_records) {
+        return Status::InvalidArgument("Address column record count does not match cluster");
+    }
+    if (column.blocks.size() != column.layout.num_address_blocks) {
+        return Status::InvalidArgument("Address column block count does not match layout");
+    }
+    if (entry.num_records > 0 && column.layout.num_address_blocks == 0) {
+        return Status::InvalidArgument("Non-empty cluster requires address blocks");
+    }
 
-    // Save blocks metadata and write packed data
-    info_.address_blocks = blocks;
+    current_address_column_ = column;
 
-    for (auto& block : info_.address_blocks) {
-        // Write the packed bytes to the .clu file; record the offset
-        // (The AddressBlock struct in info_ will be updated with position info
-        //  for the reader to locate the data.)
+    for (const auto& block : column.blocks) {
         file_.write(reinterpret_cast<const char*>(block.packed.data()),
-                    block.packed.size());
+                    static_cast<std::streamsize>(block.packed.size()));
         if (!file_.good()) {
             return Status::IOError("Failed to write address block data");
         }
@@ -159,85 +244,94 @@ Status ClusterStoreWriter::WriteAddressBlocks(
 }
 
 // ============================================================================
-// Finalize — write trailer and close
+// EndCluster — write mini-trailer, patch lookup table
 // ============================================================================
 
-namespace {
-
-/// Helper: append raw bytes to a buffer.
-inline void AppendBytes(std::vector<uint8_t>& buf, const void* data,
-                        size_t len) {
-    const auto* p = reinterpret_cast<const uint8_t*>(data);
-    buf.insert(buf.end(), p, p + len);
-}
-
-template <typename T>
-inline void AppendValue(std::vector<uint8_t>& buf, T value) {
-    AppendBytes(buf, &value, sizeof(T));
-}
-
-/// Build ClusterInfo trailer as a byte buffer.
-/// Layout (all little-endian, native on x86):
-///   cluster_id       : u32
-///   num_records      : u32
-///   dim              : u32
-///   rabitq_bits      : u8
-///   rabitq_block_size: u32
-///   rabitq_c_factor  : f32
-///   centroid_offset  : u64
-///   centroid_length  : u32
-///   rabitq_data_offset: u64
-///   rabitq_data_length: u32
-///   data_file_path_len: u32
-///   data_file_path   : char[data_file_path_len]
-///   address_blocks_offset: u64
-///   num_address_blocks: u32
-///   For each address block:
-///     base_offset    : u64
-///     bit_width      : u8
-///     record_count   : u32
-///     page_size      : u32
-///     packed_size    : u32
-std::vector<uint8_t> BuildTrailer(
-    const ClusterStoreWriter::ClusterInfo& info) {
-    std::vector<uint8_t> buf;
-    buf.reserve(256);
-
-    AppendValue(buf, info.cluster_id);
-    AppendValue(buf, info.num_records);
-    AppendValue(buf, info.dim);
-    AppendValue(buf, info.rabitq_config.bits);
-    AppendValue(buf, info.rabitq_config.block_size);
-    AppendValue(buf, info.rabitq_config.c_factor);
-    AppendValue(buf, info.centroid_offset);
-    AppendValue(buf, info.centroid_length);
-    AppendValue(buf, info.rabitq_data_offset);
-    AppendValue(buf, info.rabitq_data_length);
-
-    const auto path_len =
-        static_cast<uint32_t>(info.data_file_path.size());
-    AppendValue(buf, path_len);
-    AppendBytes(buf, info.data_file_path.data(), path_len);
-
-    const auto num_blocks =
-        static_cast<uint32_t>(info.address_blocks.size());
-    AppendValue(buf, info.address_blocks_offset);
-    AppendValue(buf, num_blocks);
-
-    for (const auto& block : info.address_blocks) {
-        AppendValue(buf, block.base_offset);
-        AppendValue(buf, block.bit_width);
-        AppendValue(buf, block.record_count);
-        AppendValue(buf, block.page_size);
-        const auto packed_size =
-            static_cast<uint32_t>(block.packed.size());
-        AppendValue(buf, packed_size);
+Status ClusterStoreWriter::EndCluster() {
+    if (!file_.is_open() || !in_cluster_) {
+        return Status::InvalidArgument("Not in a cluster block");
+    }
+    if (!address_written_) {
+        return Status::InvalidArgument("Must write address blocks before EndCluster");
     }
 
-    return buf;
+    // --- Write block mini-trailer ---
+    // Layout:
+    //   page_size           : u32
+    //   bit_width           : u8
+    //   block_granularity   : u32
+    //   fixed_packed_size   : u32
+    //   last_packed_size    : u32
+    //   num_address_blocks    : u32
+    //   For each block:
+    //     base_offset       : u32
+    //   mini_trailer_size : u32
+    //   block_magic       : u32
+
+    uint64_t trailer_start = current_offset_;
+
+    WriteVal(file_, current_address_column_.layout.page_size);
+    WriteVal(file_, current_address_column_.layout.bit_width);
+    WriteVal(file_, current_address_column_.layout.block_granularity);
+    WriteVal(file_, current_address_column_.layout.fixed_packed_size);
+    WriteVal(file_, current_address_column_.layout.last_packed_size);
+    const uint32_t num_blocks = current_address_column_.layout.num_address_blocks;
+    WriteVal(file_, num_blocks);
+
+    for (const auto& block : current_address_column_.blocks) {
+        WriteVal(file_, block.base_offset);
+    }
+
+    // We need the trailer size to be written BEFORE magic
+    // trailer_size = (current file pos + 8) - trailer_start
+    uint64_t after_blocks_pos = static_cast<uint64_t>(file_.tellp());
+    uint32_t mini_trailer_size = static_cast<uint32_t>(
+        (after_blocks_pos + 8) - trailer_start);
+    WriteVal(file_, mini_trailer_size);
+    WriteVal(file_, kBlockMagic);
+
+    if (!file_.good()) {
+        return Status::IOError("Failed to write block mini-trailer");
+    }
+
+    current_offset_ = static_cast<uint64_t>(file_.tellp());
+
+    // --- Patch lookup table entry ---
+    auto& entry = info_.lookup_table[current_cluster_index_];
+    entry.block_offset = block_start_;
+    entry.block_size = current_offset_ - block_start_;
+
+    // Seek to the lookup table entry and write it
+    uint64_t entry_offset = lookup_table_start_ +
+        static_cast<uint64_t>(current_cluster_index_) * lookup_entry_size();
+    file_.seekp(static_cast<std::streamoff>(entry_offset));
+
+    WriteVal(file_, entry.cluster_id);
+    WriteVal(file_, entry.num_records);
+    file_.write(reinterpret_cast<const char*>(entry.centroid.data()),
+                static_cast<std::streamsize>(info_.dim * sizeof(float)));
+    WriteVal(file_, entry.block_offset);
+    WriteVal(file_, entry.block_size);
+
+    if (!file_.good()) {
+        return Status::IOError("Failed to patch lookup table entry");
+    }
+
+    // Seek back to end for next cluster
+    file_.seekp(static_cast<std::streamoff>(current_offset_));
+
+    current_cluster_index_++;
+    in_cluster_ = false;
+    vectors_written_ = false;
+    address_written_ = false;
+    current_address_column_ = EncodedAddressColumn{};
+
+    return Status::OK();
 }
 
-}  // anonymous namespace
+// ============================================================================
+// Finalize
+// ============================================================================
 
 Status ClusterStoreWriter::Finalize(const std::string& data_file_path) {
     if (!file_.is_open()) {
@@ -246,173 +340,30 @@ Status ClusterStoreWriter::Finalize(const std::string& data_file_path) {
     if (finalized_) {
         return Status::InvalidArgument("Already finalized");
     }
+    if (in_cluster_) {
+        return Status::InvalidArgument("Cluster not ended");
+    }
 
     info_.data_file_path = data_file_path;
 
-    // --- Write trailer ---
-    auto trailer = BuildTrailer(info_);
-    file_.write(reinterpret_cast<const char*>(trailer.data()),
-                static_cast<std::streamsize>(trailer.size()));
-    if (!file_.good()) {
-        return Status::IOError("Failed to write trailer");
+    // Patch data_file_path in the global header
+    file_.seekp(static_cast<std::streamoff>(header_data_file_path_offset_));
+    uint32_t path_len = static_cast<uint32_t>(data_file_path.size());
+    if (path_len > kMaxPathLen) {
+        return Status::InvalidArgument("data_file_path exceeds max length");
     }
+    WriteVal(file_, path_len);
+    char path_buf[kMaxPathLen] = {0};
+    std::memcpy(path_buf, data_file_path.data(), path_len);
+    WriteRaw(file_, path_buf, kMaxPathLen);
 
-    // Write trailer_size (u32) + magic (u32) as the last 8 bytes
-    const auto trailer_size = static_cast<uint32_t>(trailer.size());
-    file_.write(reinterpret_cast<const char*>(&trailer_size),
-                sizeof(uint32_t));
-    file_.write(reinterpret_cast<const char*>(&kCluTrailerMagic),
-                sizeof(uint32_t));
+    if (!file_.good()) {
+        return Status::IOError("Failed to patch data_file_path");
+    }
 
     file_.flush();
     file_.close();
     finalized_ = true;
-
-    return Status::OK();
-}
-
-// ============================================================================
-// ClusterStoreReader::ReadInfo — reconstruct ClusterInfo from .clu trailer
-// ============================================================================
-
-namespace {
-
-/// Helper: read a value from a buffer at a given position, advance pos.
-template <typename T>
-inline bool ReadValue(const std::vector<uint8_t>& buf, size_t& pos, T& out) {
-    if (pos + sizeof(T) > buf.size()) return false;
-    std::memcpy(&out, buf.data() + pos, sizeof(T));
-    pos += sizeof(T);
-    return true;
-}
-
-inline bool ReadBytes(const std::vector<uint8_t>& buf, size_t& pos,
-                      void* out, size_t len) {
-    if (pos + len > buf.size()) return false;
-    std::memcpy(out, buf.data() + pos, len);
-    pos += len;
-    return true;
-}
-
-}  // anonymous namespace
-
-Status ClusterStoreReader::ReadInfo(
-    const std::string& path,
-    ClusterStoreWriter::ClusterInfo* out) {
-    if (!out) {
-        return Status::InvalidArgument("out must not be null");
-    }
-
-    int fd = ::open(path.c_str(), O_RDONLY);
-    if (fd < 0) {
-        return Status::IOError("Failed to open ClusterStore: " + path);
-    }
-
-    // Get file size
-    struct stat st;
-    if (::fstat(fd, &st) != 0) {
-        ::close(fd);
-        return Status::IOError("Failed to stat file: " + path);
-    }
-    const auto file_size = static_cast<uint64_t>(st.st_size);
-    if (file_size < 8) {
-        ::close(fd);
-        return Status::Corruption("File too small for trailer: " + path);
-    }
-
-    // Read last 8 bytes: trailer_size (u32) + magic (u32)
-    uint32_t footer[2];
-    ssize_t n = ::pread(fd, footer, 8,
-                        static_cast<off_t>(file_size - 8));
-    if (n != 8) {
-        ::close(fd);
-        return Status::IOError("Failed to read trailer footer");
-    }
-
-    const uint32_t trailer_size = footer[0];
-    const uint32_t magic = footer[1];
-
-    if (magic != kCluTrailerMagic) {
-        ::close(fd);
-        return Status::Corruption(
-            "Invalid ClusterStore magic (expected 0x56434C55, got 0x" +
-            std::to_string(magic) + ")");
-    }
-
-    if (file_size < trailer_size + 8) {
-        ::close(fd);
-        return Status::Corruption("Trailer size exceeds file size");
-    }
-
-    // Read trailer data
-    std::vector<uint8_t> buf(trailer_size);
-    n = ::pread(fd, buf.data(), trailer_size,
-                static_cast<off_t>(file_size - 8 - trailer_size));
-    ::close(fd);
-    if (n != static_cast<ssize_t>(trailer_size)) {
-        return Status::IOError("Failed to read trailer data");
-    }
-
-    // Parse trailer
-    size_t pos = 0;
-    auto& info = *out;
-
-    if (!ReadValue(buf, pos, info.cluster_id) ||
-        !ReadValue(buf, pos, info.num_records) ||
-        !ReadValue(buf, pos, info.dim) ||
-        !ReadValue(buf, pos, info.rabitq_config.bits) ||
-        !ReadValue(buf, pos, info.rabitq_config.block_size) ||
-        !ReadValue(buf, pos, info.rabitq_config.c_factor) ||
-        !ReadValue(buf, pos, info.centroid_offset) ||
-        !ReadValue(buf, pos, info.centroid_length) ||
-        !ReadValue(buf, pos, info.rabitq_data_offset) ||
-        !ReadValue(buf, pos, info.rabitq_data_length)) {
-        return Status::Corruption("Trailer: failed to parse fixed fields");
-    }
-
-    uint32_t path_len = 0;
-    if (!ReadValue(buf, pos, path_len)) {
-        return Status::Corruption("Trailer: failed to parse path length");
-    }
-    if (pos + path_len > buf.size()) {
-        return Status::Corruption("Trailer: path extends beyond trailer");
-    }
-    info.data_file_path.resize(path_len);
-    if (path_len > 0) {
-        if (!ReadBytes(buf, pos, info.data_file_path.data(), path_len)) {
-            return Status::Corruption("Trailer: failed to read path");
-        }
-    }
-
-    uint32_t num_blocks = 0;
-    if (!ReadValue(buf, pos, info.address_blocks_offset) ||
-        !ReadValue(buf, pos, num_blocks)) {
-        return Status::Corruption("Trailer: failed to parse num_blocks");
-    }
-
-    info.address_blocks.resize(num_blocks);
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        auto& block = info.address_blocks[i];
-        uint32_t packed_size = 0;
-
-        if (!ReadValue(buf, pos, block.base_offset) ||
-            !ReadValue(buf, pos, block.bit_width) ||
-            !ReadValue(buf, pos, block.record_count) ||
-            !ReadValue(buf, pos, block.page_size) ||
-            !ReadValue(buf, pos, packed_size)) {
-            return Status::Corruption("Trailer: failed to parse block " +
-                                      std::to_string(i));
-        }
-
-        block.packed.resize(packed_size);  // allocate space; LoadAddressBlocks fills it
-    }
-
-    if (pos != buf.size()) {
-        return Status::Corruption(
-            "Trailer: extra bytes at end (parsed " +
-            std::to_string(pos) + " of " +
-            std::to_string(buf.size()) + ")");
-    }
 
     return Status::OK();
 }
@@ -428,7 +379,10 @@ ClusterStoreReader::~ClusterStoreReader() {
 }
 
 ClusterStoreReader::ClusterStoreReader(ClusterStoreReader&& other) noexcept
-    : fd_(other.fd_), info_(std::move(other.info_)) {
+    : fd_(other.fd_),
+      info_(std::move(other.info_)),
+      cluster_index_(std::move(other.cluster_index_)),
+      loaded_clusters_(std::move(other.loaded_clusters_)) {
     other.fd_ = -1;
 }
 
@@ -438,14 +392,23 @@ ClusterStoreReader& ClusterStoreReader::operator=(
         Close();
         fd_ = other.fd_;
         info_ = std::move(other.info_);
+        cluster_index_ = std::move(other.cluster_index_);
+        loaded_clusters_ = std::move(other.loaded_clusters_);
         other.fd_ = -1;
     }
     return *this;
 }
 
-Status ClusterStoreReader::Open(
-    const std::string& path,
-    const ClusterStoreWriter::ClusterInfo& info) {
+void ClusterStoreReader::Close() {
+    if (fd_ >= 0) {
+        ::close(fd_);
+        fd_ = -1;
+    }
+    loaded_clusters_.clear();
+    cluster_index_.clear();
+}
+
+Status ClusterStoreReader::Open(const std::string& path) {
     if (fd_ >= 0) {
         return Status::InvalidArgument("ClusterStoreReader already open");
     }
@@ -455,75 +418,374 @@ Status ClusterStoreReader::Open(
         return Status::IOError("Failed to open ClusterStore: " + path);
     }
 
-    info_ = info;
-    VDB_RETURN_IF_ERROR(LoadAddressBlocks());
+    // --- Read global header ---
+    off_t pos = 0;
+    uint32_t magic = 0, version = 0;
+    if (!PreadValue(fd_, pos, magic)) {
+        Close();
+        return Status::IOError("Failed to read magic");
+    }
+    pos += sizeof(uint32_t);
+
+    if (magic != kGlobalMagic) {
+        Close();
+        return Status::Corruption("Invalid ClusterStore magic");
+    }
+
+    if (!PreadValue(fd_, pos, version)) {
+        Close();
+        return Status::IOError("Failed to read version");
+    }
+    pos += sizeof(uint32_t);
+
+    if (version != kFileVersion) {
+        Close();
+        return Status::NotSupported(
+            "Unsupported ClusterStore version: " + std::to_string(version));
+    }
+
+    if (!PreadValue(fd_, pos, info_.num_clusters)) {
+        Close();
+        return Status::IOError("Failed to read num_clusters");
+    }
+    pos += sizeof(uint32_t);
+
+    if (!PreadValue(fd_, pos, info_.dim)) {
+        Close();
+        return Status::IOError("Failed to read dim");
+    }
+    pos += sizeof(uint32_t);
+
+    if (!PreadValue(fd_, pos, info_.rabitq_config.bits)) {
+        Close();
+        return Status::IOError("Failed to read rabitq bits");
+    }
+    pos += sizeof(uint8_t);
+
+    if (!PreadValue(fd_, pos, info_.rabitq_config.block_size)) {
+        Close();
+        return Status::IOError("Failed to read rabitq block_size");
+    }
+    pos += sizeof(uint32_t);
+
+    if (!PreadValue(fd_, pos, info_.rabitq_config.c_factor)) {
+        Close();
+        return Status::IOError("Failed to read rabitq c_factor");
+    }
+    pos += sizeof(float);
+
+    // data_file_path: length + 256 bytes
+    uint32_t path_len = 0;
+    if (!PreadValue(fd_, pos, path_len)) {
+        Close();
+        return Status::IOError("Failed to read path length");
+    }
+    pos += sizeof(uint32_t);
+
+    if (path_len > kMaxPathLen) {
+        Close();
+        return Status::Corruption("data_file_path length exceeds max");
+    }
+
+    char path_buf[kMaxPathLen] = {0};
+    if (!PreadBytes(fd_, pos, path_buf, kMaxPathLen)) {
+        Close();
+        return Status::IOError("Failed to read data_file_path");
+    }
+    pos += kMaxPathLen;
+    info_.data_file_path.assign(path_buf, path_len);
+
+    // --- Read lookup table ---
+    info_.lookup_table.resize(info_.num_clusters);
+    cluster_index_.clear();
+
+    for (uint32_t i = 0; i < info_.num_clusters; ++i) {
+        auto& entry = info_.lookup_table[i];
+
+        if (!PreadValue(fd_, pos, entry.cluster_id)) {
+            Close();
+            return Status::IOError("Failed to read cluster_id");
+        }
+        pos += sizeof(uint32_t);
+
+        if (!PreadValue(fd_, pos, entry.num_records)) {
+            Close();
+            return Status::IOError("Failed to read num_records");
+        }
+        pos += sizeof(uint32_t);
+
+        entry.centroid.resize(info_.dim);
+        if (!PreadBytes(fd_, pos, entry.centroid.data(),
+                        info_.dim * sizeof(float))) {
+            Close();
+            return Status::IOError("Failed to read centroid");
+        }
+        pos += info_.dim * sizeof(float);
+
+        if (!PreadValue(fd_, pos, entry.block_offset)) {
+            Close();
+            return Status::IOError("Failed to read block_offset");
+        }
+        pos += sizeof(uint64_t);
+
+        if (!PreadValue(fd_, pos, entry.block_size)) {
+            Close();
+            return Status::IOError("Failed to read block_size");
+        }
+        pos += sizeof(uint64_t);
+
+        cluster_index_[entry.cluster_id] = i;
+    }
+
     return Status::OK();
 }
 
-void ClusterStoreReader::Close() {
-    if (fd_ >= 0) {
-        ::close(fd_);
-        fd_ = -1;
+// ============================================================================
+// Lookup table accessors
+// ============================================================================
+
+std::vector<uint32_t> ClusterStoreReader::cluster_ids() const {
+    std::vector<uint32_t> ids;
+    ids.reserve(info_.lookup_table.size());
+    for (const auto& e : info_.lookup_table) {
+        ids.push_back(e.cluster_id);
     }
+    return ids;
+}
+
+uint32_t ClusterStoreReader::GetNumRecords(uint32_t cluster_id) const {
+    auto it = cluster_index_.find(cluster_id);
+    if (it == cluster_index_.end()) return 0;
+    return info_.lookup_table[it->second].num_records;
+}
+
+const float* ClusterStoreReader::GetCentroid(uint32_t cluster_id) const {
+    auto it = cluster_index_.find(cluster_id);
+    if (it == cluster_index_.end()) return nullptr;
+    return info_.lookup_table[it->second].centroid.data();
+}
+
+uint64_t ClusterStoreReader::total_records() const {
+    uint64_t total = 0;
+    for (const auto& e : info_.lookup_table) {
+        total += e.num_records;
+    }
+    return total;
 }
 
 // ============================================================================
-// LoadCentroid
+// EnsureClusterLoaded — lazy load a cluster's data block
 // ============================================================================
 
-Status ClusterStoreReader::LoadCentroid(std::vector<float>& out) const {
+Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
     if (fd_ < 0) {
         return Status::InvalidArgument("ClusterStoreReader not open");
     }
 
-    out.resize(info_.dim);
-    const uint32_t bytes = info_.dim * sizeof(float);
-
-    ssize_t n = ::pread(fd_, out.data(), bytes,
-                        static_cast<off_t>(info_.centroid_offset));
-    if (n != static_cast<ssize_t>(bytes)) {
-        return Status::IOError("Failed to read centroid");
+    // Already loaded?
+    if (loaded_clusters_.count(cluster_id)) {
+        return Status::OK();
     }
 
+    // Find cluster in lookup table
+    auto it = cluster_index_.find(cluster_id);
+    if (it == cluster_index_.end()) {
+        return Status::InvalidArgument(
+            "Cluster " + std::to_string(cluster_id) + " not found");
+    }
+
+    const auto& entry = info_.lookup_table[it->second];
+    ClusterData data;
+
+    uint64_t block_end = entry.block_offset + entry.block_size;
+    uint32_t mini_trailer_size = 0, block_magic = 0;
+
+    if (!PreadValue(fd_, static_cast<off_t>(block_end - 8), mini_trailer_size)) {
+        return Status::IOError("Failed to read mini_trailer_size");
+    }
+    if (!PreadValue(fd_, static_cast<off_t>(block_end - 4), block_magic)) {
+        return Status::IOError("Failed to read block_magic");
+    }
+    if (block_magic != kBlockMagic) {
+        return Status::Corruption("Invalid block magic");
+    }
+
+    // Read entire mini-trailer
+    uint64_t trailer_start = block_end - mini_trailer_size;
+    std::vector<uint8_t> trailer_buf(mini_trailer_size);
+    if (!PreadBytes(fd_, static_cast<off_t>(trailer_start),
+                    trailer_buf.data(), mini_trailer_size)) {
+        return Status::IOError("Failed to read block mini-trailer");
+    }
+
+    // Parse mini-trailer
+    size_t tpos = 0;
+    auto ReadT = [&](auto& val) -> bool {
+        if (tpos + sizeof(val) > trailer_buf.size()) return false;
+        std::memcpy(&val, trailer_buf.data() + tpos, sizeof(val));
+        tpos += sizeof(val);
+        return true;
+    };
+
+    if (!ReadT(data.address_layout.page_size) ||
+        !ReadT(data.address_layout.bit_width) ||
+        !ReadT(data.address_layout.block_granularity) ||
+        !ReadT(data.address_layout.fixed_packed_size) ||
+        !ReadT(data.address_layout.last_packed_size) ||
+        !ReadT(data.address_layout.num_address_blocks)) {
+        return Status::Corruption("Mini-trailer: failed to read shared address layout");
+    }
+
+    const uint32_t num_blocks = data.address_layout.num_address_blocks;
+
+    if (entry.num_records == 0) {
+        if (num_blocks != 0 || data.address_layout.last_packed_size != 0) {
+            return Status::Corruption("Empty cluster has invalid address layout");
+        }
+    } else if (num_blocks == 0) {
+        return Status::Corruption("Non-empty cluster has zero address blocks");
+    }
+
+    data.address_blocks.resize(num_blocks);
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+        if (!ReadT(data.address_blocks[i].base_offset)) {
+            return Status::Corruption("Mini-trailer: failed to parse block " +
+                                      std::to_string(i));
+        }
+    }
+
+    uint32_t stored_trailer_size = 0;
+    uint32_t stored_block_magic = 0;
+    if (!ReadT(stored_trailer_size) || !ReadT(stored_block_magic)) {
+        return Status::Corruption("Mini-trailer: failed to read trailer footer");
+    }
+    if (stored_trailer_size != mini_trailer_size || stored_block_magic != kBlockMagic) {
+        return Status::Corruption("Mini-trailer footer mismatch");
+    }
+    if (tpos != trailer_buf.size()) {
+        return Status::Corruption("Mini-trailer has trailing bytes");
+    }
+
+    if (num_blocks > 0 && data.address_layout.block_granularity == 0) {
+        return Status::Corruption("Invalid address block granularity");
+    }
+
+    data.codes_offset = entry.block_offset;
+    data.codes_length = entry.num_records * code_entry_size();
+
+    const uint64_t address_payload_offset = entry.block_offset + data.codes_length;
+    if (address_payload_offset > block_end || data.codes_length > entry.block_size) {
+        return Status::Corruption("Cluster block shorter than RaBitQ code region");
+    }
+
+    uint64_t expected_payload_bytes = 0;
+    if (num_blocks > 0) {
+        expected_payload_bytes =
+            static_cast<uint64_t>(num_blocks - 1) * data.address_layout.fixed_packed_size +
+            data.address_layout.last_packed_size;
+    }
+    const uint64_t payload_and_trailer = entry.block_size - data.codes_length;
+    if (payload_and_trailer < mini_trailer_size) {
+        return Status::Corruption("Cluster block shorter than trailer");
+    }
+    const uint64_t actual_payload_bytes = payload_and_trailer - mini_trailer_size;
+    if (actual_payload_bytes != expected_payload_bytes) {
+        return Status::Corruption("Address payload size mismatch");
+    }
+
+    // --- Phase 1: pread address block packed data ---
+    uint64_t addr_read_offset = address_payload_offset;
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+        auto& block = data.address_blocks[i];
+        const uint32_t packed_size =
+            AddressColumn::BlockPackedSize(data.address_layout, i);
+        block.packed.resize(packed_size);
+        if (packed_size == 0) continue;
+
+        if (!PreadBytes(fd_, static_cast<off_t>(addr_read_offset),
+                        block.packed.data(), packed_size)) {
+            return Status::IOError("Failed to read address block packed data");
+        }
+        addr_read_offset += packed_size;
+    }
+
+    // --- Phase 2: SIMD decode all addresses ---
+    VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
+        data.address_layout, data.address_blocks, entry.num_records,
+        data.decoded_addresses));
+
+    loaded_clusters_[cluster_id] = std::move(data);
     return Status::OK();
 }
 
 // ============================================================================
-// LoadCode — single code
+// GetAddress / GetAddresses
 // ============================================================================
 
-Status ClusterStoreReader::LoadCode(uint32_t record_idx,
+AddressEntry ClusterStoreReader::GetAddress(uint32_t cluster_id,
+                                             uint32_t record_idx) const {
+    auto it = loaded_clusters_.find(cluster_id);
+    if (it == loaded_clusters_.end() ||
+        record_idx >= it->second.decoded_addresses.size()) {
+        return AddressEntry{0, 0};
+    }
+    return it->second.decoded_addresses[record_idx];
+}
+
+std::vector<AddressEntry> ClusterStoreReader::GetAddresses(
+    uint32_t cluster_id,
+    const std::vector<uint32_t>& indices) const {
+    std::vector<AddressEntry> results(indices.size());
+    for (size_t i = 0; i < indices.size(); ++i) {
+        results[i] = GetAddress(cluster_id, indices[i]);
+    }
+    return results;
+}
+
+// ============================================================================
+// LoadCode / LoadCodes
+// ============================================================================
+
+Status ClusterStoreReader::LoadCode(uint32_t cluster_id,
+                                     uint32_t record_idx,
                                      std::vector<uint64_t>& out_code) const {
     if (fd_ < 0) {
         return Status::InvalidArgument("ClusterStoreReader not open");
     }
-    if (record_idx >= info_.num_records) {
+
+    auto it = loaded_clusters_.find(cluster_id);
+    if (it == loaded_clusters_.end()) {
+        return Status::InvalidArgument(
+            "Cluster not loaded — call EnsureClusterLoaded first");
+    }
+
+    auto cid_it = cluster_index_.find(cluster_id);
+    if (cid_it == cluster_index_.end()) {
+        return Status::InvalidArgument("Cluster not found");
+    }
+
+    const auto& entry = info_.lookup_table[cid_it->second];
+    if (record_idx >= entry.num_records) {
         return Status::InvalidArgument("Record index out of range");
     }
 
     const uint32_t nwords = num_code_words();
     const uint32_t entry_sz = code_entry_size();
 
-    // Seek to the code entry
-    uint64_t code_offset = info_.rabitq_data_offset +
+    uint64_t code_offset = it->second.codes_offset +
                            static_cast<uint64_t>(record_idx) * entry_sz;
 
-    // Read code words
     out_code.resize(nwords);
-    ssize_t n = ::pread(fd_, out_code.data(), nwords * sizeof(uint64_t),
-                        static_cast<off_t>(code_offset));
-    if (n != static_cast<ssize_t>(nwords * sizeof(uint64_t))) {
+    if (!PreadBytes(fd_, static_cast<off_t>(code_offset),
+                    out_code.data(), nwords * sizeof(uint64_t))) {
         return Status::IOError("Failed to read RaBitQ code");
     }
 
     return Status::OK();
 }
 
-// ============================================================================
-// LoadCodes — batch
-// ============================================================================
-
 Status ClusterStoreReader::LoadCodes(
+    uint32_t cluster_id,
     const std::vector<uint32_t>& indices,
     std::vector<rabitq::RaBitQCode>& out_codes) const {
     if (fd_ < 0) {
@@ -534,7 +796,7 @@ Status ClusterStoreReader::LoadCodes(
 
     for (size_t i = 0; i < indices.size(); ++i) {
         std::vector<uint64_t> code;
-        VDB_RETURN_IF_ERROR(LoadCode(indices[i], code));
+        VDB_RETURN_IF_ERROR(LoadCode(cluster_id, indices[i], code));
 
         out_codes[i].code = std::move(code);
         out_codes[i].norm = 0.0f;
@@ -544,68 +806,6 @@ Status ClusterStoreReader::LoadCodes(
     }
 
     return Status::OK();
-}
-
-// ============================================================================
-// LoadAddressBlocks — read and decode all address blocks
-// ============================================================================
-Status ClusterStoreReader::LoadAddressBlocks() {
-    if (fd_ < 0) {
-        return Status::InvalidArgument("ClusterStoreReader not open");
-    }
-
-    //Phase1: Load all the packed data for address blocks
-    uint64_t current_offset = info_.address_blocks_offset;
-
-    for (auto& block : info_.address_blocks) {
-        uint32_t packed_size = block.packed.size();  // 已知大小
-        if (packed_size == 0) continue;
-
-        block.packed.resize(packed_size);
-        ssize_t n = ::pread(fd_, block.packed.data(), packed_size,
-                            static_cast<off_t>(current_offset));
-        if (n != static_cast<ssize_t>(packed_size)) {
-            return Status::IOError("Failed to read address block data");
-        }
-        current_offset += packed_size;
-    }
-
-    //Phase2: Decode all blocks into decoded_addresses with SIMD
-    info_.decoded_addresses.clear();
-    info_.decoded_addresses.reserve(info_.num_records);
-
-    for (const auto& block : info_.address_blocks) {
-        std::vector<AddressEntry> block_entries;
-        AddressColumn::DecodeBlock(block, block_entries);
-
-        info_.decoded_addresses.insert(
-            info_.decoded_addresses.end(),
-            block_entries.begin(), 
-            block_entries.end()
-        );
-    }
-
-    return Status::OK();
-}
-
-// ============================================================================
-// GetAddress / GetAddresses
-// ============================================================================
-
-AddressEntry ClusterStoreReader::GetAddress(uint32_t record_idx) const {
-    if (record_idx >= info_.decoded_addresses.size()) {
-        return AddressEntry{0, 0};  // 错误情况
-    }
-    return info_.decoded_addresses[record_idx];
-}
-
-std::vector<AddressEntry> ClusterStoreReader::GetAddresses(
-    const std::vector<uint32_t>& indices) const {
-    std::vector<AddressEntry> results(indices.size());
-    for (size_t i = 0; i < indices.size(); ++i) {
-        results[i] = GetAddress(indices[i]);
-    }
-    return results;
 }
 
 }  // namespace storage

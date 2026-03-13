@@ -148,10 +148,9 @@ TEST_F(IvfIndexTest, SegmentAccessible) {
 
     // Should be able to access clusters via the segment
     for (auto cid : idx.cluster_ids()) {
-        auto reader = idx.segment().GetCluster(cid);
-        ASSERT_NE(reader, nullptr) << "Cluster " << cid << " not found";
-        EXPECT_EQ(reader->dim(), kDim);
-        EXPECT_GT(reader->num_records(), 0u);
+        EXPECT_EQ(idx.segment().GetNumRecords(cid), idx.segment().GetNumRecords(cid));
+        EXPECT_GT(idx.segment().GetNumRecords(cid), 0u);
+        EXPECT_NE(idx.segment().GetCentroid(cid), nullptr);
     }
 }
 

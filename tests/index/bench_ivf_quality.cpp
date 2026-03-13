@@ -238,18 +238,19 @@ int main(int argc, char* argv[]) {
         auto probe_ids = idx.FindNearestClusters(query, nprobe);
 
         for (auto cid : probe_ids) {
-            auto clu_reader = idx.segment().GetCluster(cid);
-            if (!clu_reader) continue;
-
-            uint32_t n_records = clu_reader->num_records();
+            uint32_t n_records = idx.segment().GetNumRecords(cid);
             if (n_records == 0) continue;
 
+            // Ensure cluster data is loaded
+            auto load_s = idx.segment().EnsureClusterLoaded(cid);
+            if (!load_s.ok()) continue;
+
             // Load centroid
-            std::vector<float> centroid;
-            clu_reader->LoadCentroid(centroid);
+            const float* centroid = idx.segment().GetCentroid(cid);
+            if (!centroid) continue;
 
             // Prepare query for RaBitQ estimation
-            auto pq = estimator.PrepareQuery(query, centroid.data(),
+            auto pq = estimator.PrepareQuery(query, centroid,
                                               idx.rotation());
 
             // Per-record: approximate dist vs exact dist
@@ -261,7 +262,7 @@ int main(int argc, char* argv[]) {
             for (uint32_t r = 0; r < n_records; ++r) {
                 // Load RaBitQ code
                 std::vector<uint64_t> code;
-                auto ls = clu_reader->LoadCode(r, code);
+                auto ls = idx.segment().LoadCode(cid, r, code);
                 if (!ls.ok()) continue;
 
                 RaBitQCode rcode;
@@ -280,19 +281,16 @@ int main(int argc, char* argv[]) {
                 // reconstruction approximation: exact_dist = ||query - centroid||^2
                 // Actually we need to read from DataFile or do brute force
                 // For the benchmark, read from DataFile
-                auto dat = idx.segment().GetDataFile(cid);
-                if (dat) {
-                    auto addr = clu_reader->GetAddress(r);
+                {
+                    auto addr = idx.segment().GetAddress(cid, r);
                     std::vector<float> rec_vec(dim);
-                    auto rs = dat->ReadVector(addr, rec_vec.data());
+                    auto rs = idx.segment().ReadVector(addr, rec_vec.data());
                     if (rs.ok()) {
                         float exact = L2Sqr(query, rec_vec.data(), dim);
                         exact_dists.push_back(exact);
                     } else {
                         exact_dists.push_back(approx);  // fallback
                     }
-                } else {
-                    exact_dists.push_back(approx);
                 }
 
                 // ConANN classification

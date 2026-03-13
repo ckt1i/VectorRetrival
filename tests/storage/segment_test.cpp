@@ -30,82 +30,101 @@ class SegmentTest : public ::testing::Test {
         fs::remove_all(test_dir_);
     }
 
-    std::string TestPath(const std::string& name) {
-        return (test_dir_ / name).string();
-    }
+    /// Helper: build a unified cluster.clu + data.dat in test_dir_ with
+    /// K clusters, each with N records of dimension `dim`.
+    /// Returns the original vectors for verification.
+    struct BuiltSegment {
+        std::vector<std::vector<std::vector<float>>> vecs;  // [k][i][d]
+        std::vector<std::vector<AddressEntry>> addrs;       // [k][i]
+        std::vector<std::vector<float>> centroids;          // [k]
+        std::vector<std::vector<RaBitQCode>> codes;         // [k]
+    };
 
-    // Helper: build a complete cluster (clu + dat files) and return its info.
-    ClusterStoreWriter::ClusterInfo BuildCluster(
-        uint32_t cluster_id,
-        Dim dim,
-        uint32_t N,
+    BuiltSegment BuildSegment(
+        uint32_t K, uint32_t N_per_cluster, Dim dim,
         const std::vector<ColumnSchema>& payload_schemas = {},
         uint32_t seed = 42) {
-        std::mt19937 rng(seed + cluster_id);
+        BuiltSegment result;
+        result.vecs.resize(K);
+        result.addrs.resize(K);
+        result.centroids.resize(K);
+        result.codes.resize(K);
+
+        std::mt19937 rng(seed);
         std::normal_distribution<float> dist(0.0f, 1.0f);
 
-        std::string clu_path =
-            TestPath("cluster_" + std::to_string(cluster_id) + ".clu");
-        std::string dat_path =
-            TestPath("cluster_" + std::to_string(cluster_id) + ".dat");
-
-        // Generate centroid
-        std::vector<float> centroid(dim);
-        for (uint32_t d = 0; d < dim; ++d) centroid[d] = dist(rng);
-
-        // Rotation + encoder
         RotationMatrix rotation(dim);
         rotation.GenerateRandom(seed);
         RaBitQEncoder encoder(dim, rotation);
 
-        // Generate vectors and write data file
+        // --- Write data.dat ---
         DataFileWriter dat_writer;
+        std::string dat_path = (test_dir_ / "data.dat").string();
         EXPECT_TRUE(
-            dat_writer.Open(dat_path, cluster_id, dim, payload_schemas, 1).ok());
+            dat_writer.Open(dat_path, 0, dim, payload_schemas, 1).ok());
 
-        std::vector<AddressEntry> addrs;
-        std::vector<RaBitQCode> codes;
+        for (uint32_t k = 0; k < K; ++k) {
+            result.centroids[k].resize(dim);
+            for (uint32_t d = 0; d < dim; ++d)
+                result.centroids[k][d] = dist(rng);
 
-        for (uint32_t i = 0; i < N; ++i) {
-            std::vector<float> vec(dim);
-            for (uint32_t d = 0; d < dim; ++d) vec[d] = dist(rng);
+            result.vecs[k].resize(N_per_cluster);
+            result.addrs[k].reserve(N_per_cluster);
 
-            // Encode
-            codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+            for (uint32_t i = 0; i < N_per_cluster; ++i) {
+                result.vecs[k][i].resize(dim);
+                for (uint32_t d = 0; d < dim; ++d)
+                    result.vecs[k][i][d] = dist(rng);
 
-            // Build payload
-            std::vector<Datum> payload;
-            for (const auto& schema : payload_schemas) {
-                if (schema.dtype == DType::INT64) {
-                    payload.push_back(Datum::Int64(static_cast<int64_t>(i)));
-                } else if (schema.dtype == DType::STRING) {
-                    payload.push_back(
-                        Datum::String("rec_" + std::to_string(i)));
-                } else if (schema.dtype == DType::FLOAT32) {
-                    payload.push_back(Datum::Float32(static_cast<float>(i)));
+                result.codes[k].push_back(
+                    encoder.Encode(result.vecs[k][i].data(),
+                                   result.centroids[k].data()));
+
+                // Build payload
+                std::vector<Datum> payload;
+                for (const auto& schema : payload_schemas) {
+                    if (schema.dtype == DType::INT64) {
+                        payload.push_back(
+                            Datum::Int64(static_cast<int64_t>(k * 1000 + i)));
+                    } else if (schema.dtype == DType::STRING) {
+                        payload.push_back(
+                            Datum::String("r_" + std::to_string(k) + "_" +
+                                          std::to_string(i)));
+                    } else if (schema.dtype == DType::FLOAT32) {
+                        payload.push_back(
+                            Datum::Float32(static_cast<float>(i)));
+                    }
                 }
-            }
 
-            AddressEntry addr;
-            EXPECT_TRUE(
-                dat_writer.WriteRecord(vec.data(), payload, addr).ok());
-            addrs.push_back(addr);
+                AddressEntry addr;
+                EXPECT_TRUE(
+                    dat_writer.WriteRecord(result.vecs[k][i].data(),
+                                           payload, addr)
+                        .ok());
+                result.addrs[k].push_back(addr);
+            }
         }
         EXPECT_TRUE(dat_writer.Finalize().ok());
 
-        // Build address blocks
-        auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
-
-        // Write cluster store
+        // --- Write cluster.clu ---
         RaBitQConfig config{1, 64, 5.75f};
         ClusterStoreWriter clu_writer;
-        EXPECT_TRUE(clu_writer.Open(clu_path, cluster_id, dim, config).ok());
-        EXPECT_TRUE(clu_writer.WriteCentroid(centroid.data()).ok());
-        EXPECT_TRUE(clu_writer.WriteVectors(codes).ok());
-        EXPECT_TRUE(clu_writer.WriteAddressBlocks(addr_blocks).ok());
-        EXPECT_TRUE(clu_writer.Finalize(dat_path).ok());
+        std::string clu_path = (test_dir_ / "cluster.clu").string();
+        EXPECT_TRUE(clu_writer.Open(clu_path, K, dim, config).ok());
 
-        return clu_writer.info();
+        for (uint32_t k = 0; k < K; ++k) {
+            auto addr_blocks = AddressColumn::Encode(
+                result.addrs[k], 64, 1);
+
+            EXPECT_TRUE(clu_writer.BeginCluster(
+                k, N_per_cluster, result.centroids[k].data()).ok());
+            EXPECT_TRUE(clu_writer.WriteVectors(result.codes[k]).ok());
+            EXPECT_TRUE(clu_writer.WriteAddressBlocks(addr_blocks).ok());
+            EXPECT_TRUE(clu_writer.EndCluster().ok());
+        }
+
+        EXPECT_TRUE(clu_writer.Finalize("data.dat").ok());
+        return result;
     }
 
     fs::path test_dir_;
@@ -115,156 +134,74 @@ class SegmentTest : public ::testing::Test {
 // Basic Segment tests
 // ============================================================================
 
-TEST_F(SegmentTest, EmptySegment) {
+TEST_F(SegmentTest, Open_EmptyDir_Fails) {
     Segment seg;
-    EXPECT_EQ(seg.num_clusters(), 0u);
-    EXPECT_EQ(seg.total_records(), 0u);
-    EXPECT_TRUE(seg.cluster_ids().empty());
+    EXPECT_FALSE(seg.Open(test_dir_.string()).ok());
 }
 
-TEST_F(SegmentTest, AddCluster_Single) {
+TEST_F(SegmentTest, Open_SingleCluster) {
     const Dim dim = 64;
+    const uint32_t K = 1;
     const uint32_t N = 10;
 
-    auto info = BuildCluster(0, dim, N);
+    BuildSegment(K, N, dim);
 
     Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
-
-    EXPECT_EQ(seg.num_clusters(), 1u);
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
+    EXPECT_TRUE(seg.is_open());
+    EXPECT_EQ(seg.num_clusters(), K);
     EXPECT_EQ(seg.total_records(), N);
+    EXPECT_EQ(seg.dim(), dim);
 
     auto ids = seg.cluster_ids();
     ASSERT_EQ(ids.size(), 1u);
     EXPECT_EQ(ids[0], 0u);
 }
 
-TEST_F(SegmentTest, AddCluster_Duplicate) {
+TEST_F(SegmentTest, Open_MultipleClusters) {
     const Dim dim = 32;
-    auto info = BuildCluster(5, dim, 5);
-
-    Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_5.clu"),
-                       TestPath("cluster_5.dat"),
-                       dim)
-            .ok());
-
-    // Adding same cluster_id should fail
-    EXPECT_FALSE(
-        seg.AddCluster(info,
-                       TestPath("cluster_5.clu"),
-                       TestPath("cluster_5.dat"),
-                       dim)
-            .ok());
-}
-
-TEST_F(SegmentTest, MultipleCluster_TotalRecords) {
-    const Dim dim = 32;
-
-    auto info0 = BuildCluster(0, dim, 20);
-    auto info1 = BuildCluster(1, dim, 30);
-    auto info2 = BuildCluster(2, dim, 50);
-
-    Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info0,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
-    ASSERT_TRUE(
-        seg.AddCluster(info1,
-                       TestPath("cluster_1.clu"),
-                       TestPath("cluster_1.dat"),
-                       dim)
-            .ok());
-    ASSERT_TRUE(
-        seg.AddCluster(info2,
-                       TestPath("cluster_2.clu"),
-                       TestPath("cluster_2.dat"),
-                       dim)
-            .ok());
-
-    EXPECT_EQ(seg.num_clusters(), 3u);
-    EXPECT_EQ(seg.total_records(), 100u);
-
-    auto ids = seg.cluster_ids();
-    ASSERT_EQ(ids.size(), 3u);
-    // Map keeps sorted order
-    EXPECT_EQ(ids[0], 0u);
-    EXPECT_EQ(ids[1], 1u);
-    EXPECT_EQ(ids[2], 2u);
-}
-
-// ============================================================================
-// GetCluster / GetDataFile
-// ============================================================================
-
-TEST_F(SegmentTest, GetCluster_Opens) {
-    const Dim dim = 64;
+    const uint32_t K = 3;
     const uint32_t N = 15;
 
-    auto info = BuildCluster(0, dim, N);
+    BuildSegment(K, N, dim);
 
     Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
+    EXPECT_EQ(seg.num_clusters(), K);
+    EXPECT_EQ(seg.total_records(), K * N);
 
-    auto reader = seg.GetCluster(0);
-    ASSERT_NE(reader, nullptr);
-    EXPECT_EQ(reader->num_records(), N);
-    EXPECT_EQ(reader->dim(), dim);
-
-    // Subsequent call returns cached reader (same pointer)
-    auto reader2 = seg.GetCluster(0);
-    EXPECT_EQ(reader.get(), reader2.get());
+    auto ids = seg.cluster_ids();
+    ASSERT_EQ(ids.size(), K);
+    for (uint32_t k = 0; k < K; ++k) {
+        EXPECT_EQ(ids[k], k);
+        EXPECT_EQ(seg.GetNumRecords(k), N);
+    }
 }
 
-TEST_F(SegmentTest, GetCluster_NotFound) {
+// ============================================================================
+// Centroid access
+// ============================================================================
+
+TEST_F(SegmentTest, GetCentroid) {
+    const Dim dim = 64;
+    const uint32_t K = 2;
+    const uint32_t N = 5;
+
+    auto built = BuildSegment(K, N, dim);
+
     Segment seg;
-    auto reader = seg.GetCluster(999);
-    EXPECT_EQ(reader, nullptr);
-}
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
 
-TEST_F(SegmentTest, GetDataFile_Opens) {
-    const Dim dim = 32;
-    const uint32_t N = 10;
+    for (uint32_t k = 0; k < K; ++k) {
+        const float* c = seg.GetCentroid(k);
+        ASSERT_NE(c, nullptr);
+        for (uint32_t d = 0; d < dim; ++d) {
+            EXPECT_FLOAT_EQ(c[d], built.centroids[k][d]);
+        }
+    }
 
-    auto info = BuildCluster(0, dim, N);
-
-    Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
-
-    auto reader = seg.GetDataFile(0);
-    ASSERT_NE(reader, nullptr);
-    EXPECT_TRUE(reader->is_open());
-    EXPECT_EQ(reader->dim(), dim);
-
-    // Cached
-    auto reader2 = seg.GetDataFile(0);
-    EXPECT_EQ(reader.get(), reader2.get());
-}
-
-TEST_F(SegmentTest, GetDataFile_NotFound) {
-    Segment seg;
-    auto reader = seg.GetDataFile(42);
-    EXPECT_EQ(reader, nullptr);
+    // Non-existent cluster
+    EXPECT_EQ(seg.GetCentroid(999), nullptr);
 }
 
 // ============================================================================
@@ -273,245 +210,106 @@ TEST_F(SegmentTest, GetDataFile_NotFound) {
 
 TEST_F(SegmentTest, EndToEnd_ReadVectors) {
     const Dim dim = 32;
-    const uint32_t N = 25;
-    const uint32_t cluster_id = 7;
+    const uint32_t K = 2;
+    const uint32_t N = 20;
 
-    std::mt19937 rng(123);
-    std::normal_distribution<float> dist(0.0f, 1.0f);
+    auto built = BuildSegment(K, N, dim);
 
-    // Generate centroid and vectors
-    std::vector<float> centroid(dim);
-    for (uint32_t d = 0; d < dim; ++d) centroid[d] = dist(rng);
-
-    RotationMatrix rotation(dim);
-    rotation.GenerateRandom(42);
-    RaBitQEncoder encoder(dim, rotation);
-
-    std::string dat_path = TestPath("c7.dat");
-    DataFileWriter dat_writer;
-    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim, {}, 1).ok());
-
-    std::vector<std::vector<float>> original_vecs(N);
-    std::vector<AddressEntry> addrs;
-    std::vector<RaBitQCode> codes;
-
-    for (uint32_t i = 0; i < N; ++i) {
-        original_vecs[i].resize(dim);
-        for (uint32_t d = 0; d < dim; ++d) {
-            original_vecs[i][d] = dist(rng);
-        }
-
-        codes.push_back(
-            encoder.Encode(original_vecs[i].data(), centroid.data()));
-
-        AddressEntry addr;
-        ASSERT_TRUE(
-            dat_writer.WriteRecord(original_vecs[i].data(), {}, addr).ok());
-        addrs.push_back(addr);
-    }
-    ASSERT_TRUE(dat_writer.Finalize().ok());
-
-    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
-
-    // Write cluster store
-    std::string clu_path = TestPath("c7.clu");
-    RaBitQConfig config{1, 64, 5.75f};
-    ClusterStoreWriter clu_writer;
-    ASSERT_TRUE(clu_writer.Open(clu_path, cluster_id, dim, config).ok());
-    ASSERT_TRUE(clu_writer.WriteCentroid(centroid.data()).ok());
-    ASSERT_TRUE(clu_writer.WriteVectors(codes).ok());
-    ASSERT_TRUE(clu_writer.WriteAddressBlocks(addr_blocks).ok());
-    ASSERT_TRUE(clu_writer.Finalize(dat_path).ok());
-
-    auto info = clu_writer.info();
-
-    // Register with segment
     Segment seg;
-    ASSERT_TRUE(seg.AddCluster(info, clu_path, dat_path, dim).ok());
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
 
-    // Read back via segment
-    auto clu_reader = seg.GetCluster(cluster_id);
-    ASSERT_NE(clu_reader, nullptr);
+    for (uint32_t k = 0; k < K; ++k) {
+        ASSERT_TRUE(seg.EnsureClusterLoaded(k).ok());
 
-    auto dat_reader = seg.GetDataFile(cluster_id);
-    ASSERT_NE(dat_reader, nullptr);
+        for (uint32_t i = 0; i < N; ++i) {
+            auto addr = seg.GetAddress(k, i);
+            EXPECT_EQ(addr.offset, built.addrs[k][i].offset);
+            EXPECT_EQ(addr.size, built.addrs[k][i].size);
 
-    // For each record: get address, read vector, verify
-    for (uint32_t i = 0; i < N; ++i) {
-        auto addr = clu_reader->GetAddress(i);
-        EXPECT_EQ(addr.offset, addrs[i].offset) << "record " << i;
-        EXPECT_EQ(addr.size, addrs[i].size) << "record " << i;
+            std::vector<float> read_vec(dim);
+            ASSERT_TRUE(seg.ReadVector(addr, read_vec.data()).ok());
 
-        std::vector<float> read_vec(dim);
-        ASSERT_TRUE(dat_reader->ReadVector(addr, read_vec.data()).ok())
-            << "record " << i;
+            for (uint32_t d = 0; d < dim; ++d) {
+                EXPECT_FLOAT_EQ(read_vec[d], built.vecs[k][i][d])
+                    << "k=" << k << " i=" << i << " d=" << d;
+            }
+        }
+    }
+}
 
-        for (uint32_t d = 0; d < dim; ++d) {
-            EXPECT_FLOAT_EQ(read_vec[d], original_vecs[i][d])
-                << "record " << i << " dim " << d;
+TEST_F(SegmentTest, EndToEnd_LoadCodes) {
+    const Dim dim = 64;
+    const uint32_t K = 2;
+    const uint32_t N = 10;
+
+    auto built = BuildSegment(K, N, dim);
+
+    Segment seg;
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
+
+    for (uint32_t k = 0; k < K; ++k) {
+        ASSERT_TRUE(seg.EnsureClusterLoaded(k).ok());
+
+        for (uint32_t i = 0; i < N; ++i) {
+            std::vector<uint64_t> code;
+            ASSERT_TRUE(seg.LoadCode(k, i, code).ok());
+            ASSERT_EQ(code.size(), built.codes[k][i].code.size());
+            for (size_t w = 0; w < code.size(); ++w) {
+                EXPECT_EQ(code[w], built.codes[k][i].code[w]);
+            }
         }
     }
 }
 
 TEST_F(SegmentTest, EndToEnd_WithPayload) {
     const Dim dim = 16;
+    const uint32_t K = 1;
     const uint32_t N = 10;
-    const uint32_t cluster_id = 0;
 
     std::vector<ColumnSchema> schemas = {
         {0, "id", DType::INT64, false},
         {1, "label", DType::STRING, false},
     };
 
-    std::mt19937 rng(999);
-    std::normal_distribution<float> dist(0.0f, 1.0f);
+    auto built = BuildSegment(K, N, dim, schemas);
 
-    std::vector<float> centroid(dim, 0.0f);
-
-    RotationMatrix rotation(dim);
-    rotation.GenerateRandom(42);
-    RaBitQEncoder encoder(dim, rotation);
-
-    std::string dat_path = TestPath("c0.dat");
-    DataFileWriter dat_writer;
-    ASSERT_TRUE(dat_writer.Open(dat_path, cluster_id, dim, schemas, 1).ok());
-
-    std::vector<std::vector<float>> original_vecs(N);
-    std::vector<AddressEntry> addrs;
-    std::vector<RaBitQCode> codes;
-
-    for (uint32_t i = 0; i < N; ++i) {
-        original_vecs[i].resize(dim);
-        for (uint32_t d = 0; d < dim; ++d) {
-            original_vecs[i][d] = dist(rng);
-        }
-
-        codes.push_back(
-            encoder.Encode(original_vecs[i].data(), centroid.data()));
-
-        std::vector<Datum> payload = {
-            Datum::Int64(static_cast<int64_t>(i * 100)),
-            Datum::String("label_" + std::to_string(i)),
-        };
-
-        AddressEntry addr;
-        ASSERT_TRUE(
-            dat_writer.WriteRecord(original_vecs[i].data(), payload, addr)
-                .ok());
-        addrs.push_back(addr);
-    }
-    ASSERT_TRUE(dat_writer.Finalize().ok());
-
-    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
-
-    std::string clu_path = TestPath("c0.clu");
-    RaBitQConfig config{1, 64, 5.75f};
-    ClusterStoreWriter clu_writer;
-    ASSERT_TRUE(clu_writer.Open(clu_path, cluster_id, dim, config).ok());
-    ASSERT_TRUE(clu_writer.WriteCentroid(centroid.data()).ok());
-    ASSERT_TRUE(clu_writer.WriteVectors(codes).ok());
-    ASSERT_TRUE(clu_writer.WriteAddressBlocks(addr_blocks).ok());
-    ASSERT_TRUE(clu_writer.Finalize(dat_path).ok());
-
-    auto info = clu_writer.info();
-
-    // Register with segment, passing payload schemas
     Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info, clu_path, dat_path, dim, schemas).ok());
+    ASSERT_TRUE(seg.Open(test_dir_.string(), schemas).ok());
 
-    auto dat_reader = seg.GetDataFile(cluster_id);
-    ASSERT_NE(dat_reader, nullptr);
+    ASSERT_TRUE(seg.EnsureClusterLoaded(0).ok());
 
-    auto clu_reader = seg.GetCluster(cluster_id);
-    ASSERT_NE(clu_reader, nullptr);
-
-    // Read back and verify payload
     for (uint32_t i = 0; i < N; ++i) {
-        auto addr = clu_reader->GetAddress(i);
+        auto addr = seg.GetAddress(0, i);
 
         std::vector<float> read_vec(dim);
         std::vector<Datum> read_payload;
         ASSERT_TRUE(
-            dat_reader->ReadRecord(addr, read_vec.data(), read_payload).ok());
+            seg.ReadRecord(addr, read_vec.data(), read_payload).ok());
 
         // Verify vector
         for (uint32_t d = 0; d < dim; ++d) {
-            EXPECT_FLOAT_EQ(read_vec[d], original_vecs[i][d]);
+            EXPECT_FLOAT_EQ(read_vec[d], built.vecs[0][i][d]);
         }
 
         // Verify payload
         ASSERT_EQ(read_payload.size(), 2u);
-        EXPECT_EQ(read_payload[0].fixed.i64, static_cast<int64_t>(i * 100));
+        EXPECT_EQ(read_payload[0].fixed.i64,
+                  static_cast<int64_t>(0 * 1000 + i));
         EXPECT_EQ(read_payload[1].var_data,
-                  "label_" + std::to_string(i));
+                  "r_0_" + std::to_string(i));
     }
 }
 
-TEST_F(SegmentTest, MultiCluster_IndependentAccess) {
+TEST_F(SegmentTest, RaBitQConfig_Accessible) {
     const Dim dim = 32;
-
-    auto info0 = BuildCluster(0, dim, 10);
-    auto info1 = BuildCluster(1, dim, 20);
+    BuildSegment(1, 5, dim);
 
     Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info0,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
-    ASSERT_TRUE(
-        seg.AddCluster(info1,
-                       TestPath("cluster_1.clu"),
-                       TestPath("cluster_1.dat"),
-                       dim)
-            .ok());
+    ASSERT_TRUE(seg.Open(test_dir_.string()).ok());
 
-    // Access cluster 0
-    auto r0 = seg.GetCluster(0);
-    ASSERT_NE(r0, nullptr);
-    EXPECT_EQ(r0->num_records(), 10u);
-
-    // Access cluster 1
-    auto r1 = seg.GetCluster(1);
-    ASSERT_NE(r1, nullptr);
-    EXPECT_EQ(r1->num_records(), 20u);
-
-    // Both data files accessible
-    auto d0 = seg.GetDataFile(0);
-    ASSERT_NE(d0, nullptr);
-    auto d1 = seg.GetDataFile(1);
-    ASSERT_NE(d1, nullptr);
-
-    EXPECT_EQ(seg.total_records(), 30u);
-}
-
-TEST_F(SegmentTest, LoadCentroid_ThroughSegment) {
-    const Dim dim = 64;
-    const uint32_t N = 5;
-
-    auto info = BuildCluster(0, dim, N);
-
-    Segment seg;
-    ASSERT_TRUE(
-        seg.AddCluster(info,
-                       TestPath("cluster_0.clu"),
-                       TestPath("cluster_0.dat"),
-                       dim)
-            .ok());
-
-    auto reader = seg.GetCluster(0);
-    ASSERT_NE(reader, nullptr);
-
-    std::vector<float> centroid;
-    ASSERT_TRUE(reader->LoadCentroid(centroid).ok());
-    EXPECT_EQ(centroid.size(), dim);
-    // Centroid was generated, just verify it's not all zeros
-    bool has_nonzero = false;
-    for (uint32_t d = 0; d < dim; ++d) {
-        if (centroid[d] != 0.0f) { has_nonzero = true; break; }
-    }
-    EXPECT_TRUE(has_nonzero);
+    auto& cfg = seg.rabitq_config();
+    EXPECT_EQ(cfg.bits, 1u);
+    EXPECT_EQ(cfg.block_size, 64u);
+    EXPECT_FLOAT_EQ(cfg.c_factor, 5.75f);
 }
 

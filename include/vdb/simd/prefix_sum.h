@@ -31,5 +31,32 @@ void ExclusivePrefixSum(const uint32_t* VDB_RESTRICT in,
                         uint32_t* VDB_RESTRICT       out,
                         uint32_t                     count);
 
+/// Compute exclusive prefix sums for K independent streams simultaneously.
+///
+/// Input and output are in **interleaved layout**: for K streams each of
+/// length `count`, the buffer has `count × 8` uint32_t elements where
+///   buf[j * 8 + k] = stream_k[j]
+///
+/// The function treats each SIMD lane as an independent prefix sum:
+///   out[j * 8 + k] = sum of in[0*8+k] + in[1*8+k] + ... + in[(j-1)*8+k]
+///   out[0 * 8 + k] = 0  (exclusive)
+///
+/// When num_streams < 8, excess lanes in the input must be zero; the
+/// corresponding output lanes will also be zero.
+///
+/// Dispatch (compile-time):
+///   - VDB_USE_AVX2: one _mm256_add_epi32 per element index (G iterations
+///     for G elements per stream). No lane-crossing dependency.
+///   - Otherwise: scalar loop over K streams × count elements.
+///
+/// @param interleaved_in   Interleaved input  (count × 8 elements)
+/// @param interleaved_out  Interleaved output (count × 8 elements; may not alias in)
+/// @param count            Number of elements per stream
+/// @param num_streams      Number of active streams (1..8)
+void ExclusivePrefixSumMulti(const uint32_t* VDB_RESTRICT interleaved_in,
+                              uint32_t* VDB_RESTRICT       interleaved_out,
+                              uint32_t                     count,
+                              uint32_t                     num_streams);
+
 }  // namespace simd
 }  // namespace vdb

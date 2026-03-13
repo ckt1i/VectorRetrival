@@ -6,7 +6,6 @@
 #include <numeric>
 
 #include "vdb/simd/distance_l2.h"
-#include "vdb/storage/cluster_store.h"
 
 // FlatBuffers generated header
 #include "segment_meta_generated.h"
@@ -109,35 +108,19 @@ Status IvfIndex::Open(const std::string& dir) {
         }
     }
 
-    // --- 6. Register clusters ---
+    // --- 6. Open segment (unified cluster.clu + data.dat) ---
+    auto seg_status = segment_.Open(dir, payload_schemas_);
+    if (!seg_status.ok()) {
+        return seg_status;
+    }
+
+    // Build cluster_ids from segment
     const auto* clusters = seg_meta->clusters();
     if (clusters) {
         for (uint32_t i = 0; i < clusters->size(); ++i) {
             const auto* cm = clusters->Get(i);
             if (!cm) continue;
-
-            uint32_t cid = cm->cluster_id();
-            cluster_ids_.push_back(cid);
-
-            // Build .clu/.dat paths
-            char clu_name[32], dat_name[32];
-            std::snprintf(clu_name, sizeof(clu_name), "cluster_%04u.clu", cid);
-            std::snprintf(dat_name, sizeof(dat_name), "cluster_%04u.dat", cid);
-            std::string clu_path = dir + "/" + clu_name;
-            std::string dat_path = dir + "/" + dat_name;
-
-            // Read ClusterInfo from .clu trailer
-            storage::ClusterStoreWriter::ClusterInfo info;
-            auto s = storage::ClusterStoreReader::ReadInfo(clu_path, &info);
-            if (!s.ok()) {
-                return s;
-            }
-
-            s = segment_.AddCluster(info, clu_path, dat_path, dim_,
-                                     payload_schemas_);
-            if (!s.ok()) {
-                return s;
-            }
+            cluster_ids_.push_back(cm->cluster_id());
         }
     }
 
