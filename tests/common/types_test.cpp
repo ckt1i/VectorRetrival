@@ -220,58 +220,15 @@ TEST(TypesTest, AddressEntryFields) {
 // ============================================================================
 
 TEST(TypesTest, ReadTaskTypeValues) {
-  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::ALL), 0);
-  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::FRONT), 1);
-  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::VEC_ONLY), 2);
-  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::BACK), 3);
-  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::PAYLOAD), 4);
+  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::VEC_ONLY), 0);
+  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::ALL), 1);
+  EXPECT_EQ(static_cast<uint8_t>(ReadTaskType::PAYLOAD), 2);
 }
 
 TEST(TypesTest, ReadTaskTypeName) {
-  EXPECT_EQ(ReadTaskTypeName(ReadTaskType::ALL), "ALL");
-  EXPECT_EQ(ReadTaskTypeName(ReadTaskType::FRONT), "FRONT");
   EXPECT_EQ(ReadTaskTypeName(ReadTaskType::VEC_ONLY), "VEC_ONLY");
-  EXPECT_EQ(ReadTaskTypeName(ReadTaskType::BACK), "BACK");
+  EXPECT_EQ(ReadTaskTypeName(ReadTaskType::ALL), "ALL");
   EXPECT_EQ(ReadTaskTypeName(ReadTaskType::PAYLOAD), "PAYLOAD");
-}
-
-// ============================================================================
-// Phase 2.5: ReadTask
-// ============================================================================
-
-TEST(TypesTest, ReadTaskEquality) {
-  AddressEntry addr{1024, 256};
-  ReadTask a{0, 0, addr, ReadTaskType::ALL, 1024, 256, 0};
-  ReadTask b{0, 0, addr, ReadTaskType::ALL, 1024, 256, 0};
-  ReadTask c{1, 0, addr, ReadTaskType::ALL, 1024, 256, 0};
-  
-  EXPECT_EQ(a, b);
-  EXPECT_NE(a, c);
-}
-
-TEST(TypesTest, ReadTaskPriority) {
-  AddressEntry addr{0, 100};
-  ReadTask qv_task{0, 0, addr, ReadTaskType::VEC_ONLY, 0, 100, 0};  // Qv (high)
-  ReadTask qp_task{0, 0, addr, ReadTaskType::BACK, 0, 100, 1};      // Qp (low)
-  
-  EXPECT_EQ(qv_task.priority, 0);
-  EXPECT_EQ(qp_task.priority, 1);
-}
-
-// ============================================================================
-// Phase 2.5: CompletedRead
-// ============================================================================
-
-TEST(TypesTest, CompletedReadConstruction) {
-  AddressEntry addr{1024, 256};
-  ReadTask task{0, 5, addr, ReadTaskType::ALL, 1024, 256, 0};
-  
-  CompletedRead completed{task, std::vector<uint8_t>(256, 0xAB)};
-  
-  EXPECT_EQ(completed.task.cluster_id, 0u);
-  EXPECT_EQ(completed.task.local_idx, 5u);
-  EXPECT_EQ(completed.buffer.size(), 256u);
-  EXPECT_EQ(completed.buffer[0], 0xAB);
 }
 
 // ============================================================================
@@ -280,17 +237,16 @@ TEST(TypesTest, CompletedReadConstruction) {
 
 TEST(TypesTest, CandidateOrdering) {
   // Candidate uses reverse ordering for max-heap (larger dist = "less than")
-  Candidate near{1, 0.5f, ResultClass::SafeIn, 0, 0};
-  Candidate far{2, 2.0f, ResultClass::Uncertain, 1, 5};
-  
+  Candidate near{0.5f, ResultClass::SafeIn, 0, 0};
+  Candidate far{2.0f, ResultClass::Uncertain, 1, 5};
+
   // near has smaller dist → larger in max-heap sense
   EXPECT_TRUE(far < near);   // far.approx_dist > near.approx_dist → far < near
   EXPECT_TRUE(near > far);
 }
 
 TEST(TypesTest, CandidateFields) {
-  Candidate cand{999, 1.5f, ResultClass::SafeIn, 42, 7};
-  EXPECT_EQ(cand.vec_id, 999u);
+  Candidate cand{1.5f, ResultClass::SafeIn, 42, 7};
   EXPECT_FLOAT_EQ(cand.approx_dist, 1.5f);
   EXPECT_EQ(cand.result_class, ResultClass::SafeIn);
   EXPECT_EQ(cand.cluster_id, 42u);

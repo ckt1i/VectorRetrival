@@ -673,6 +673,15 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
     data.codes_offset = entry.block_offset;
     data.codes_length = entry.num_records * code_entry_size();
 
+    // Cache full codes region in memory for zero-syscall Probe access
+    if (data.codes_length > 0) {
+        data.codes_buffer.resize(data.codes_length);
+        if (!PreadBytes(fd_, static_cast<off_t>(data.codes_offset),
+                        data.codes_buffer.data(), data.codes_length)) {
+            return Status::IOError("Failed to read codes buffer");
+        }
+    }
+
     const uint64_t address_payload_offset = entry.block_offset + data.codes_length;
     if (address_payload_offset > block_end || data.codes_length > entry.block_size) {
         return Status::Corruption("Cluster block shorter than RaBitQ code region");
@@ -806,6 +815,22 @@ Status ClusterStoreReader::LoadCodes(
     }
 
     return Status::OK();
+}
+
+// ============================================================================
+// GetCodePtr — raw pointer into cached codes_buffer
+// ============================================================================
+
+const uint8_t* ClusterStoreReader::GetCodePtr(uint32_t cluster_id,
+                                               uint32_t record_idx) const {
+    auto it = loaded_clusters_.find(cluster_id);
+    if (it == loaded_clusters_.end()) return nullptr;
+
+    const uint32_t entry_sz = code_entry_size();
+    const uint32_t offset = record_idx * entry_sz;
+    if (offset + entry_sz > it->second.codes_buffer.size()) return nullptr;
+
+    return it->second.codes_buffer.data() + offset;
 }
 
 }  // namespace storage

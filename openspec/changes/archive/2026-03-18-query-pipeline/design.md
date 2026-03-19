@@ -9,76 +9,70 @@ SearchRequest(query_vec, top_k, nprobe)
   │
   ▼
 ┌────────────────────────────────────────────────────────────────────┐
-│  OverlapScheduler — 交错式主循环                                     │
+│  OverlapScheduler — 单线程两阶段                                    │
 │                                                                    │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  主循环: while (有cluster未probe || 队列非空 || InFlight>0)    │   │
+│  │  Phase 1: Probe + Submit                                    │   │
 │  │                                                             │   │
-│  │    ┌──────────┐    ┌──────────┐    ┌──────────┐             │   │
-│  │    │ 1. Probe │───▶│ 2. I/O   │───▶│ 3.Rerank │──┐          │   │
-│  │    │ NextBatch│    │ Submit   │    │ Process  │  │          │   │
-│  │    └──────────┘    └──────────┘    └──────────┘  │          │   │
-│  │        ▲                                         │          │   │
-│  │        └─────────────────────────────────────────┘          │   │
+│  │  for each cluster:                                          │   │
+│  │    EnsureClusterLoaded → PrepareQuery                       │   │
+│  │    EstimateBatch (mini-batch 64) → Classify                 │   │
+│  │    non-SafeOut → PrepRead × N → Submit (flush per cluster)  │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                              │                                     │
-│                              ▼ 主循环结束                            │
+│                              ▼                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Phase 2: 补读 Uncertain payload                             │   │
+│  │  Phase 2: Drain + Rerank                                    │   │
+│  │                                                             │   │
+│  │  while pending_ not empty:                                  │   │
+│  │    WaitAndPoll → InferType → ConsumeVec/All/Payload         │   │
+│  │    L2Sqr → TryInsert TopK                                   │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                              │                                     │
+│                              ▼                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │  Phase 3: 补读 Uncertain payload                             │   │
 │  │  TopK 中 payload=nullptr 的条目 → 批量 PAYLOAD 读取            │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 │                              │                                     │
 │                              ▼                                     │
 │  ┌─────────────────────────────────────────────────────────────┐   │
-│  │  Phase 3: 组装 SearchResults (RAII)                          │   │
+│  │  Phase 4: 组装 SearchResults (RAII)                          │   │
 │  │  从 payload_cache 查找 → 填入指针 → 返回                       │   │
 │  └─────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
-**执行模型**：交错式流水线，Probe / I/O / Rerank 在主循环中每轮迭代交替执行，深度重叠。
+**执行模型**：单线程、两阶段顺序执行。Phase 1 全速 Probe 所有 cluster 并提交 I/O 到
+io_uring SQ；Phase 2 从 io_uring CQ 逐个读取完成结果并 Rerank。CPU/IO 重叠来自
+内核——Phase 1 期间内核已开始处理 SQ 中的请求，Phase 2 开始时部分结果已就绪。
 
-**主循环（交错执行）**：
-- Step 1: Probe 一个批次（64 条或一个小聚类），产出 ReadTask → Push Qv/Qp
-- Step 2: 从 Qv/Qp 取 task → Submit io_uring
-- Step 3: Poll 已完成的 I/O → VEC_ONLY/ALL 做 L2Sqr 精排 → 更新 TopK；ALL 中 payload 直接入 cache；PAYLOAD 完成也入 cache
-- 重复直到所有 cluster 已 probe 且队列清空且无 in-flight I/O
+**无应用层队列**：io_uring 的 SQ/CQ 即为唯一的任务队列，不再需要 ReadQueue、
+SPSC queue 或任何中间队列。
 
-**Phase 2: 补读 Uncertain payload**：
-- Finalize 排序 TopK 结果
-- 检查哪些条目的 payload 不在 cache 中（Uncertain 条目）
-- 批量提交 PAYLOAD 读取 → 等待完成
-
-**Phase 3: 组装结果**：
-- 从 payload_cache 查找每条 TopK 条目的 payload
-- 组装为 SearchResults（RAII，自动管理 buffer 生命周期）
-
-**I/O 时序图**：
+**时序图**：
 
 ```
 假设 nprobe=4, 每cluster ~200条, dim=128
 
 时间 ─────────────────────────────────────────────────────────────────►
 
-CPU:   [Probe C0] [Probe C1]  [Probe C2]  [Probe C3]
-        ↓↓↓        ↓↓↓         ↓↓↓         ↓↓↓
-Qv:    ALL×30     ALL×25      ALL×35      ALL×28    (SafeIn ≤256KB)
-       VEC×50     VEC×35      VEC×55      VEC×42    (Uncertain)
-Qp:    PAY×2      PAY×1       PAY×3       PAY×1     (SafeIn >256KB payload)
+CPU      [Probe C0][Probe C1][Probe C2][Probe C3]  [Rerank: drain CQ]
+          ↓Submit   ↓Submit   ↓Submit   ↓Submit     ↑WaitAndPoll
+          │         │         │         │           │
+io_uring  ·····[C0 reads processing][C1 reads][C2+C3 reads]···[done]
+(kernel)  ─── SQ entries accumulate, kernel processes in background ──
 
-I/O:   [──Qv C0──][──Qv C1──][──Qv C1+C2──][──Qv C3──][──Qp──][Qp]
-                ↓           ↓              ↓          ↓
-Rerank:   [L2Sqr C0]  [L2Sqr C1]    [L2Sqr C2]  [L2Sqr C3]
+关键:
+  Phase 1: Probe 全速，每个 cluster probe 完毕就 Submit flush
+           内核开始执行 I/O，与后续 cluster 的 Probe CPU 计算重叠
+  Phase 2: 所有 Probe 完成后，开始 drain CQ
+           大部分 I/O 已由内核完成，CQ 中已有大量就绪结果
+           L2Sqr 精排穿插 WaitAndPoll
 
-                                                          Phase 2:
-                                                    [补读 Uncertain payload]
-                                                          ↓
-返回:                                                 [组装 SearchResults]
-
-关键: CPU Probe 和 I/O 读取深度重叠
-      Rerank 和下一批 Qv/Qp 读取深度重叠
-      SafeIn ≤256KB 通过 ALL 一次读完 vec+payload, 省一半 IOPS
-      SafeIn >256KB 的 payload 在 Rerank 期间通过 Qp 后台预读
+  vs 交错模型 (interleaved): TopK 阈值不能实时更新
+  → ~10-20% 额外 I/O 请求 (nprobe=8)，可接受
+  代价: 简单性、无队列、无线程同步
 ```
 
 ## 2. 组件详细设计
@@ -86,18 +80,10 @@ Rerank:   [L2Sqr C0]  [L2Sqr C1]    [L2Sqr C2]  [L2Sqr C3]
 ### 2.1 AsyncReader — I/O 后端接口
 
 薄封装设计（权衡 13：方案 A），调用方管理 fd 和 buffer。
+接口映射 io_uring 原语：`PrepRead` → `io_uring_prep_read`，`Submit` → `io_uring_submit`。
 
 ```cpp
 namespace vdb::query {
-
-/// 单次 I/O 请求
-struct IoRequest { 
-    int fd;                // 文件描述符
-    uint64_t offset;       // 读取偏移
-    uint32_t length;       // 读取长度
-    uint8_t* buffer;       // 输出 buffer（调用方预分配）
-    // user_data = (uint64_t)buffer，CQE 返回后直接还原为 buffer 指针
-};
 
 /// I/O 完成结果
 struct IoCompletion {
@@ -109,9 +95,15 @@ class AsyncReader {
 public:
     virtual ~AsyncReader() = default;
 
-    /// 提交一批读取请求
-    /// @return 实际提交数（SQ 满时 < count）
-    virtual uint32_t Submit(const IoRequest* requests, uint32_t count) = 0;
+    /// 准备一次读取（填 SQE，不提交）
+    /// 对应 io_uring_prep_read + io_uring_sqe_set_data
+    virtual Status PrepRead(int fd, uint8_t* buf,
+                            uint32_t len, uint64_t offset) = 0;
+
+    /// 提交所有已准备的 SQE
+    /// 对应 io_uring_submit
+    /// @return 本次提交的 SQE 数量
+    virtual uint32_t Submit() = 0;
 
     /// 轮询已完成请求（非阻塞）
     virtual uint32_t Poll(IoCompletion* out, uint32_t max_count) = 0;
@@ -129,56 +121,21 @@ public:
 **构建依赖**：liburing 为必须依赖，CMake `find_library(uring)` 失败则报错终止。
 
 **IoUringReader**（主实现）：
-- `Init(queue_depth=64)` → `io_uring_setup`
-- `Submit` → `io_uring_prep_read` + `io_uring_submit`
+- `Init(queue_depth=64, cq_entries=4096)` → `io_uring_queue_init_params`
+  - `IORING_SETUP_CQSIZE` 设置 CQ 容量为 4096，防止大 nprobe 场景 CQ 溢出
+- `PrepRead` → `io_uring_get_sqe` + `io_uring_prep_read` + `io_uring_sqe_set_data(sqe, buf)`
+- `Submit` → `io_uring_submit`，返回提交数量
 - `Poll` → `io_uring_peek_cqe` 循环
 - `WaitAndPoll` → `io_uring_wait_cqe` + 消费所有就绪的 CQE
 
 **PreadFallbackReader**（运行时降级）：
 - 当 io_uring 初始化失败时（如内核不支持），打印警告并自动降级到此实现
-- `Submit` → 同步执行 `pread` → 结果存入内部完成队列
+- `PrepRead` → 记录到内部 pending list
+- `Submit` → 同步执行所有 pending 的 `pread` → 结果存入内部完成队列
 - `Poll` → 从内部队列返回
 - `InFlight` → 始终返回 0（同步完成）
 
-### 2.2 ReadQueue — 双优先级队列
-
-```cpp
-class ReadQueue {
-public:
-    explicit ReadQueue(uint32_t max_capacity = 256);
-
-    /// 入队（根据 task.priority 自动分发到 Qv 或 Qp）
-    /// @return false if Qv is full (back-pressure signal to pause Probe)
-    bool Push(ReadTask task);
-
-    /// SafeIn payload 入队（总是进 Qp）
-    void PushQp(ReadTask task);
-
-    /// 批量出队（Qv 优先，余量取 Qp）
-    uint32_t PopBatch(ReadTask* out, uint32_t max_count);
-
-    uint32_t Size() const;
-    uint32_t SizeQv() const;
-    uint32_t SizeQp() const;
-    bool Empty() const;
-    bool QvFull() const;
-
-private:
-    uint32_t max_capacity_;     // Qv 容量上限 = 256
-    std::deque<ReadTask> qv_;   // 高优先: VEC_ONLY（向量读取，用于 Rerank）
-    std::deque<ReadTask> qp_;   // 低优先: PAYLOAD（SafeIn 的 payload 预读）
-};
-```
-
-**Qv/Qp 双队列职责**：
-- **Qv（高优先）**：存放 ALL 和 VEC_ONLY 任务——SafeIn 小 record 全量读取 (ALL) 或 Uncertain 仅向量读取 (VEC_ONLY)，用于 L2Sqr 精排
-- **Qp（低优先）**：存放 PAYLOAD 任务——SafeIn 大 record (>256KB) 的 payload 预读，在 Qv 有余量时才读取
-
-**PopBatch 策略**：Qv 全取优先（权衡 3：方案 A），余量从 Qp 取。
-
-**Back-pressure**：Qv 容量上限 256。当 Qv 满时 `Push` 返回 false，Scheduler 暂停 Probe，让 I/O 先消耗。Qp 无容量限制。
-
-### 2.3 ReadTaskType
+### 2.2 ReadTaskType
 
 ```cpp
 enum class ReadTaskType : uint8_t {
@@ -190,33 +147,42 @@ enum class ReadTaskType : uint8_t {
 
 **SafeIn 全量读取阈值**：256KB (`safein_all_threshold`)。
 - record_size ≤ 256KB 时，NVMe 读取延迟与 VEC_ONLY (512B) 在同一量级（~25μs），且省一半 IOPS 和 SQE 槽位
-- record_size > 256KB 时，ALL 占用 SQE 槽位过久（>50μs），拆分为 VEC_ONLY + PAYLOAD 避免阻塞 Qv
+- record_size > 256KB 时，ALL 占用 SQE 槽位过久（>50μs），拆分为 VEC_ONLY + PAYLOAD 避免阻塞
 
-**分类与 ReadTask 生成规则**：
+**分类与 I/O 提交规则**：
 
 ```
-Probe 产出:
+Phase 1 Probe 产出:
   SafeOut    → skip
 
   SafeIn + addr.size ≤ 256KB:
-             → ALL{addr, offset=addr.offset, length=addr.size}   → Push Qv
+             → PrepRead ALL{fd, buf, addr.size, addr.offset}
                (一次 I/O 读完 vec + payload)
 
   SafeIn + addr.size > 256KB:
-             → VEC_ONLY{addr, dim*4}       → Push Qv
-               PAYLOAD{addr, offset=dim*4}  → Push Qp
-               (拆分：向量快速到达 Rerank, payload 后台预读)
+             → PrepRead VEC_ONLY{fd, buf, dim*4, addr.offset}
+               PrepRead PAYLOAD{fd, buf, payload_len, addr.offset + dim*4}
+               (拆分：向量快速到达 Rerank, payload 分开读取)
 
-  Uncertain  → VEC_ONLY{addr, dim*4}       → Push Qv
+  Uncertain  → PrepRead VEC_ONLY{fd, buf, dim*4, addr.offset}
 
-Phase 2 补读:
-  TopK 中 payload 不在 cache 的条目 (Uncertain 或被淘汰后重新需要的)
-             → PAYLOAD{addr, offset=dim*4}  → Submit 直接提交
+Phase 3 补读:
+  TopK 中 payload 不在 cache 的条目 (Uncertain)
+             → PrepRead PAYLOAD{fd, buf, payload_len, addr.offset + dim*4}
 ```
 
-### 2.4 ResultCollector — Top-K 收集
+### 2.3 ResultCollector — Top-K 收集
 
 ```cpp
+/// 独立 struct（非嵌套），RerankConsumer 和 OverlapScheduler 均引用
+struct CollectorEntry {
+    float distance;
+    AddressEntry addr;
+    bool operator<(const CollectorEntry& o) const {
+        return distance < o.distance;  // max-heap
+    }
+};
+
 class ResultCollector {
 public:
     explicit ResultCollector(uint32_t top_k);
@@ -238,13 +204,6 @@ public:
 
 private:
     uint32_t top_k_;
-    struct CollectorEntry {
-        float distance;
-        AddressEntry addr;
-        bool operator<(const CollectorEntry& o) const {
-            return distance < o.distance;  // max-heap
-        }
-    };
     // max-heap: 堆顶是最大距离
     std::priority_queue<CollectorEntry> heap_;
 };
@@ -252,7 +211,7 @@ private:
 
 **无 VecID**：堆只存 `(distance, AddressEntry)`。不返回 ID，最终结果只包含距离和原始数据。
 
-### 2.5 SearchResult 与 SearchResults (RAII)
+### 2.4 SearchResult 与 SearchResults (RAII)
 
 ```cpp
 /// 单条搜索结果
@@ -291,7 +250,7 @@ private:
 
 **生命周期**：用户拿到 `SearchResults` 后，`payload` 指针在 `SearchResults` 存活期间有效。离开作用域自动释放所有 buffer。
 
-### 2.6 SearchContext — 查询上下文
+### 2.5 SearchContext — 查询上下文
 
 ```cpp
 struct SearchConfig {
@@ -300,7 +259,7 @@ struct SearchConfig {
     uint32_t probe_batch_size = 64;              // mini-batch 大小（大聚类分批用）
     uint32_t cluster_atomic_threshold = 1024;    // ≤ 此值的聚类原子 probe
     uint32_t io_queue_depth = 64;                // io_uring SQ 深度
-    uint32_t qv_capacity = 256;                  // Qv back-pressure 阈值
+    uint32_t cq_entries = 4096;                  // io_uring CQ 容量
     uint32_t safein_all_threshold = 256 * 1024;  // SafeIn 全量读取上限 (256KB)
 };
 
@@ -312,9 +271,8 @@ struct SearchStats {
     uint32_t total_io_submitted = 0;
     uint32_t total_reranked = 0;
     uint32_t total_payload_prefetched = 0;   // SafeIn payload 预读数
-    uint32_t total_payload_补读 = 0;         // Phase 2 Uncertain payload 补读数
+    uint32_t total_payload_fetched = 0;      // Phase 3 Uncertain payload 补读数
     double   probe_time_ms = 0;
-    double   io_time_ms = 0;
     double   rerank_time_ms = 0;
     double   total_time_ms = 0;
 };
@@ -336,7 +294,7 @@ private:
 };
 ```
 
-### 2.7 RerankConsumer — 流式 Rerank + Payload Cache
+### 2.6 RerankConsumer — Rerank + Payload Cache
 
 ```cpp
 class RerankConsumer {
@@ -376,21 +334,19 @@ private:
 ```
 
 **ConsumeVec 逻辑**（Uncertain 的向量读取）：
-1. 从 `read.buffer` 解析 raw vector（前 `dim * 4` 字节）
+1. 从 `buffer` 解析 raw vector（前 `dim * 4` 字节）
 2. `L2Sqr(query_vec, parsed_vec, dim)` 计算精确距离
 3. `collector.TryInsert(exact_dist, addr)`
 4. 调用方释放 buffer
 
 **ConsumeAll 逻辑**（SafeIn ≤256KB 的全量读取）：
-1. 从 `read.buffer` 解析 raw vector（`buffer[0..dim*4]`）
+1. 从 `buffer` 解析 raw vector（`buffer[0..dim*4]`）
 2. `L2Sqr(query_vec, parsed_vec, dim)` 计算精确距离
 3. `collector.TryInsert(exact_dist, addr)`
 4. 若进入 TopK：
    - `memcpy` payload 部分（`buffer[dim*4..]`）到新分配的 payload buffer
    - `payload_cache_[addr.offset] = new_payload_buf`（payload 从 offset 0 开始）
-   - 返回 false（**原始 ALL buffer 始终由调用方释放**）
-5. 若未进入 TopK：不做额外操作
-6. **调用方始终释放原始 ALL buffer**（无论是否进入 TopK）
+5. **调用方始终释放原始 ALL buffer**（无论是否进入 TopK）
 
 > 设计决策：ALL buffer 拆分而非保留整个 buffer。这确保 payload_cache 中所有条目
 > 的 payload 均从 offset 0 开始，AssembleResults 无需区分 buffer 类型。
@@ -400,7 +356,47 @@ private:
 1. 将 buffer 所有权转移到 `payload_cache_[addr.offset]`
 2. 不释放 buffer（后续组装 SearchResults 时使用）
 
-### 2.8 OverlapScheduler — 交错式调度主循环
+### 2.7 OverlapScheduler — 单线程两阶段调度
+
+**调度模型**：单线程顺序执行 Probe + Submit → Drain + Rerank。CPU/IO 重叠依靠内核：
+Phase 1 中每个 cluster probe 完毕后 `Submit` flush，内核立即开始处理 SQ 中的请求；
+Phase 2 开始 drain CQ 时，大部分 I/O 已完成或正在完成中。
+
+**无应用层队列**：io_uring SQ/CQ 即为唯一队列，不需要 ReadQueue、SPSC queue。
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  单线程两阶段模型                                                  │
+│                                                                  │
+│  Phase 1: ProbeAndSubmit                                         │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │ for each cluster (0..nprobe):                                ││
+│  │   EnsureClusterLoaded(c)                                     ││
+│  │   PrepareQuery(c)                                            ││
+│  │   for batch(offset, 64):                                     ││
+│  │     EstimateBatch → Classify                                 ││
+│  │     non-SafeOut → pool.Acquire → pending_[buf] = {...}       ││
+│  │                    reader.PrepRead(fd, buf, len, off)        ││
+│  │   reader.Submit()   // flush: 内核开始执行本 cluster 的 I/O  ││
+│  └──────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  Phase 2: DrainAndRerank                                         │
+│  ┌──────────────────────────────────────────────────────────────┐│
+│  │ while !pending_.empty():                                     ││
+│  │   n = reader.WaitAndPoll(completions, 32)                    ││
+│  │   for each completion:                                       ││
+│  │     p = pending_.extract(buf)                                ││
+│  │     type = InferType(p, dim)                                 ││
+│  │     switch(type):                                            ││
+│  │       VEC_ONLY → ConsumeVec → pool.Release(buf)              ││
+│  │       ALL      → ConsumeAll → pool.Release(buf)              ││
+│  │       PAYLOAD  → ConsumePayload (所有权转移, 不释放)          ││
+│  └──────────────────────────────────────────────────────────────┘│
+│                                                                  │
+│  全部状态 local（单线程，无锁）:                                   │
+│    pending_ map, BufferPool, RerankConsumer, ResultCollector     │
+└──────────────────────────────────────────────────────────────────┘
+```
 
 ```cpp
 /// 用于 pending_ map：记录每个 in-flight buffer 的元信息
@@ -420,110 +416,134 @@ public:
     SearchResults Search(const float* query_vec);
 
 private:
-    /// Probe 一个批次（64条 或 一个小 cluster）
-    void ProbeNextBatch(SearchContext& ctx);
+    /// Phase 1: Probe 所有 cluster + Submit I/O
+    void ProbeAndSubmit(SearchContext& ctx);
 
-    /// 主循环：交错 Probe + I/O + Rerank
-    void InterleavedLoop(SearchContext& ctx);
+    /// Phase 2: Drain CQ + L2Sqr Rerank
+    void DrainAndRerank(SearchContext& ctx);
 
-    /// Phase 2: 补读 Uncertain payload
+    /// Phase 3: 补读 Uncertain payload
     void FetchMissingPayloads(SearchContext& ctx,
                               const std::vector<CollectorEntry>& results);
 
-    /// Phase 3: 组装最终结果
+    /// Phase 4: 组装最终结果
     SearchResults AssembleResults(const std::vector<CollectorEntry>& results);
 
-    /// 从 PendingRead 参数推断 ReadTaskType（无需显式存储 type）
-    /// - read_length == dim * sizeof(float)              → VEC_ONLY
-    /// - read_offset == addr.offset && read_length == addr.size → ALL
-    /// - 其他（read_offset == addr.offset + dim*4）       → PAYLOAD
+    /// 从 PendingRead 参数推断 ReadTaskType
     ReadTaskType InferType(const PendingRead& p, uint32_t dim) const;
 
-    ReadQueue queue_;
+    // ── 成员（全部单线程访问，无锁）──
+    index::IvfIndex& index_;
+    AsyncReader& reader_;
+    SearchConfig config_;
     BufferPool buffer_pool_;
     RerankConsumer reranker_;
-
-    /// buffer 指针 → 元信息映射
-    /// Submit 时插入，Poll 完成时查找并移除
     std::unordered_map<uint8_t*, PendingRead> pending_;
 };
 ```
 
-**调度循环伪代码（交错模式）**：
+**调度循环伪代码**：
 
 ```
 Search(query):
   clusters = FindNearestClusters(query, nprobe)
-  for c in clusters: EnsureClusterLoaded(c)
   ctx = SearchContext(query, config)
 
-  // ═══ 交错主循环 ═══
-  InterleavedLoop(ctx)
+  // ═══ Phase 1: Probe + Submit ═══
+  ProbeAndSubmit(ctx)
 
-  // ═══ Phase 2: 补读 Uncertain payload ═══
+  // ═══ Phase 2: Drain CQ + Rerank ═══
+  DrainAndRerank(ctx)
+
+  // ═══ Phase 3: 补读 Uncertain payload ═══
   results = ctx.collector().Finalize()    // sorted (dist, addr)[]
   FetchMissingPayloads(ctx, results)
 
-  // ═══ Phase 3: 组装 ═══
+  // ═══ Phase 4: 组装 ═══
   return AssembleResults(results)
 
 
-InterleavedLoop(ctx):
-  cluster_idx = 0
-  record_offset = 0
+ProbeAndSubmit(ctx):
+  for c in clusters:
+    EnsureClusterLoaded(c)
+    pq = PrepareQuery(c)       // RaBitQ per-cluster prepare
+    num = segment.GetNumRecords(c)
 
-  while true:
-    // ── Step 1: Probe 一个批次（如果 Qv 未满且有 cluster 剩余）──
-    if cluster_idx < nprobe && !queue.QvFull():
-      c = clusters[cluster_idx]
-      num = segment.GetNumRecords(c)
+    // Probe: 以 64 条为 mini-batch
+    for offset = 0; offset < num; offset += 64:
+      batch = min(64, num - offset)
+      code_ptrs = GetCodePtrs(c, offset, batch)
 
-      if num <= cluster_atomic_threshold:
-        ProbeClusterFull(ctx, c)
-        cluster_idx++
-      else:
-        batch = min(64, num - record_offset)
-        ProbeClusterBatch(ctx, c, record_offset, batch)
-        record_offset += batch
-        if record_offset >= num:
-          cluster_idx++; record_offset = 0
+      float distances[64]
+      EstimateDistanceBatch(pq, code_ptrs, batch, distances)
 
-    // ── Step 2: Submit I/O（Qv 优先）──
-    can_submit = io_queue_depth - reader.InFlight()
-    if can_submit > 0 && !queue.Empty():
-      tasks = queue.PopBatch(can_submit)    // Qv 优先, 余量取 Qp
-      for t in tasks:
-        buf = pool.Acquire(t.read_length)
-        pending_[buf] = PendingRead{t.addr, t.read_offset, t.read_length}
-        reader.Submit(IoRequest{fd, t.read_offset, t.read_length, buf})
+      for i in 0..batch:
+        cls = conann.Classify(distances[i])
 
-    // ── Step 3: Poll 完成项 ──
-    n = reader.Poll(completions, 32)
-    if n == 0 && reader.InFlight() > 0 && (cluster_idx >= nprobe || queue.QvFull()):
-      // 没有更多 Probe 工作（或 Qv 满），阻塞等 I/O
-      n = reader.WaitAndPoll(completions, 32)
+        if cls == SafeOut:
+          ctx.stats().total_safe_out++
+          continue
 
-    // ── Step 4: 处理完成项（从 pending_ 推断类型）──
+        addr = segment.GetAddress(c, offset + i)
+
+        if cls == SafeIn:
+          ctx.stats().total_safe_in++
+
+          if addr.size <= safein_all_threshold:
+            // SafeIn 小 record: 全量读取 (vec + payload)
+            buf = pool.Acquire(addr.size)
+            pending_[buf] = PendingRead{addr, addr.offset, addr.size}
+            reader.PrepRead(fd, buf, addr.size, addr.offset)
+          else:
+            // SafeIn 大 record: 拆分
+            vec_len = dim * sizeof(float)
+            buf_v = pool.Acquire(vec_len)
+            pending_[buf_v] = PendingRead{addr, addr.offset, vec_len}
+            reader.PrepRead(fd, buf_v, vec_len, addr.offset)
+
+            payload_len = addr.size - vec_len
+            buf_p = pool.Acquire(payload_len)
+            pending_[buf_p] = PendingRead{addr, addr.offset + vec_len, payload_len}
+            reader.PrepRead(fd, buf_p, payload_len, addr.offset + vec_len)
+
+        else:  // Uncertain
+          ctx.stats().total_uncertain++
+          vec_len = dim * sizeof(float)
+          buf = pool.Acquire(vec_len)
+          pending_[buf] = PendingRead{addr, addr.offset, vec_len}
+          reader.PrepRead(fd, buf, vec_len, addr.offset)
+
+      ctx.stats().total_probed += batch
+
+    // 每个 cluster probe 完毕后 flush Submit
+    submitted = reader.Submit()
+    ctx.stats().total_io_submitted += submitted
+
+
+DrainAndRerank(ctx):
+  while !pending_.empty():
+    IoCompletion completions[32]
+    n = reader.WaitAndPoll(completions, 32)
+
     for i in 0..n:
-      buf = completions[i].buffer          // 从 CQE user_data 还原
-      p = pending_.extract(buf)            // 查找并移除元信息
+      buf = completions[i].buffer
+      p = pending_.extract(buf)
       type = InferType(p, dim)
 
       if type == VEC_ONLY:
         reranker.ConsumeVec(buf, p.addr)
         pool.Release(buf)
+        ctx.stats().total_reranked++
 
       elif type == ALL:
-        reranker.ConsumeAll(buf, p.addr)   // 内部 memcpy payload 到新 buffer
-        pool.Release(buf)                  // ALL buffer 始终释放
+        reranker.ConsumeAll(buf, p.addr)
+        pool.Release(buf)       // 原始 ALL buffer 始终释放
+        ctx.stats().total_reranked++
 
       elif type == PAYLOAD:
         reranker.ConsumePayload(buf, p.addr)
+        ctx.stats().total_payload_prefetched++
         // buffer 所有权转移到 cache，不释放
-
-    // ── 终止条件 ──
-    if cluster_idx >= nprobe && queue.Empty() && reader.InFlight() == 0:
-      break
 
 
 FetchMissingPayloads(ctx, results):
@@ -534,15 +554,17 @@ FetchMissingPayloads(ctx, results):
       buf = pool.Acquire(payload_len)
       offset = r.addr.offset + dim * sizeof(float)
       pending_[buf] = PendingRead{r.addr, offset, payload_len}
-      reader.Submit(IoRequest{fd, offset, payload_len, buf})
-      ctx.stats().total_payload_补读++
+      reader.PrepRead(fd, offset, payload_len, buf)
+      ctx.stats().total_payload_fetched++
 
-  while reader.InFlight() > 0:
+  reader.Submit()
+
+  while !pending_.empty():
     completions = WaitAndPoll()
     for c in completions:
       buf = c.buffer
       p = pending_.extract(buf)
-      reranker.CachePayload(p.addr.offset, buf)
+      reranker.CachePayload(p.addr.offset, unique_ptr(buf))
 
 
 AssembleResults(results):
@@ -559,143 +581,59 @@ AssembleResults(results):
   return sr
 ```
 
-**Probe 内部流程（mini-batch 64 条）**：
+**InferType 逻辑**：
 
-```
-ProbeClusterBatch(ctx, cluster_id, offset, count):
-  // codes 已在 EnsureClusterLoaded 时缓存到内存
-  code_ptrs = GetCodePtrs(cluster_id, offset, count)
-
-  // mini-batch 距离估算
-  float distances[64]
-  EstimateDistanceBatch(pq, code_ptrs, count, distances)
-
-  // 分类 + 生成 ReadTask
-  for i in 0..count:
-    cls = conann.Classify(distances[i])
-    if cls == SafeOut:
-      ctx.stats().total_safe_out++
-      continue
-
-    addr = segment.GetAddress(cluster_id, offset + i)
-
-    if cls == SafeIn:
-      ctx.stats().total_safe_in++
-
-      if addr.size <= safein_all_threshold:
-        // SafeIn 小 record: 全量读取 → Qv (一次 I/O)
-        queue.Push(ReadTask{
-          .addr = addr,
-          .task_type = ALL,
-          .read_offset = addr.offset,
-          .read_length = addr.size,
-          .priority = 0  // Qv
-        })
-      else:
-        // SafeIn 大 record: 拆分为向量 + payload
-        queue.Push(ReadTask{
-          .addr = addr,
-          .task_type = VEC_ONLY,
-          .read_offset = addr.offset,
-          .read_length = dim * sizeof(float),
-          .priority = 0  // Qv
-        })
-        queue.PushQp(ReadTask{
-          .addr = addr,
-          .task_type = PAYLOAD,
-          .read_offset = addr.offset + dim * sizeof(float),
-          .read_length = addr.size - dim * sizeof(float),
-          .priority = 1  // Qp
-        })
-
-    else:  // Uncertain
-      ctx.stats().total_uncertain++
-      queue.Push(ReadTask{
-        .addr = addr,
-        .task_type = VEC_ONLY,
-        .read_offset = addr.offset,
-        .read_length = dim * sizeof(float),
-        .priority = 0  // Qv
-      })
-
-  ctx.stats().total_probed += count
+```cpp
+ReadTaskType InferType(const PendingRead& p, uint32_t dim) const {
+    uint32_t vec_bytes = dim * sizeof(float);
+    if (p.read_length == vec_bytes)
+        return ReadTaskType::VEC_ONLY;
+    if (p.read_offset == p.addr.offset && p.read_length == p.addr.size)
+        return ReadTaskType::ALL;
+    return ReadTaskType::PAYLOAD;
+}
 ```
 
 ## 3. 数据流详图
 
 ```
-═══════════════ 交错主循环 ═══════════════
+═══════════════ Phase 1: Probe + Submit ═══════════════
 
-每轮迭代:
-
-  Step 1: Probe 一个批次 (64条 或 一个小cluster)
+  for each cluster:
   ┌──────────────────────────────────────────────────────────────┐
+  │  EnsureClusterLoaded → PrepareQuery                          │
   │  EstimateDistanceBatch → Classify                            │
   │                                                              │
   │  SafeOut ──→ skip                                            │
+  │  SafeIn (≤256KB) → PrepRead ALL{fd, buf, addr.size, off}    │
+  │  SafeIn (>256KB) → PrepRead VEC_ONLY + PrepRead PAYLOAD     │
+  │  Uncertain ──────→ PrepRead VEC_ONLY{fd, buf, dim*4, off}   │
   │                                                              │
-  │  SafeIn (≤256KB) → ALL{addr, addr.size}       ──→ Push Qv   │
-  │                     (一次读完 vec + payload)                   │
-  │                                                              │
-  │  SafeIn (>256KB) → VEC_ONLY{addr, dim*4}      ──→ Push Qv   │
-  │                    PAYLOAD{addr, offset=dim*4} ──→ Push Qp   │
-  │                                                              │
-  │  Uncertain ──────→ VEC_ONLY{addr, dim*4}       ──→ Push Qv   │
+  │  pending_[buf] = PendingRead{addr, read_offset, read_length}│
+  │  → reader.Submit()  // flush per cluster                     │
   └──────────────────────────────────────────────────────────────┘
-                    │                    │
-                    ▼                    ▼
-              ┌──────────┐        ┌──────────┐
-              │    Qv    │        │    Qp    │
-              │ (高优先)  │        │ (低优先)  │
-              │ ALL +    │        │ PAYLOAD  │
-              │ VEC_ONLY │        │ (大SafeIn)│
-              │ 上限 256  │        │ 无上限   │
-              └────┬─────┘        └────┬─────┘
-                   │                   │
-                   └───────┬───────────┘
-                           ▼
-  Step 2: I/O Submit (Qv 优先, 余量取 Qp)
-  ┌──────────────────────────────────────────────────────────┐
-  │  can_submit = io_queue_depth - InFlight()                │
-  │  PopBatch(Qv first, then Qp, up to can_submit)          │
-  │  → AsyncReader::Submit()                                  │
-  └──────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-  Step 3: Poll 完成项
-  ┌──────────────────────────────────────────────────────────┐
-  │  Poll() / WaitAndPoll()                                  │
-  │  → IoCompletion[]                                        │
-  └──────────────────────────────────────────────────────────┘
-                           │
-                           ▼
-  Step 4: 处理完成项（从 pending_ map 推断类型）
-  ┌──────────────────────────────────────────────────────────┐
-  │  buf = CQE.user_data → 还原 buffer 指针                   │
-  │  p = pending_.extract(buf) → 取出 PendingRead 元信息      │
-  │  type = InferType(p, dim)                                │
-  │                                                          │
-  │  VEC_ONLY (Uncertain / SafeIn>256KB 的向量):              │
-  │    parse vec → L2Sqr(query, vec, dim) → exact_dist       │
-  │    collector.TryInsert(exact_dist, addr)                  │
-  │    release buffer → pool                                 │
-  │                                                          │
-  │  ALL (SafeIn ≤256KB):                                    │
-  │    parse vec (buffer[0..dim*4]) → L2Sqr → exact_dist     │
-  │    collector.TryInsert(exact_dist, addr)                  │
-  │    if 进入 TopK:                                          │
-  │      memcpy buffer[dim*4..] → new_buf (仅 payload)       │
-  │      payload_cache[addr.offset] = new_buf                │
-  │    release original buffer → pool (始终释放原始 buffer)    │
-  │                                                          │
-  │  PAYLOAD (SafeIn >256KB 的 payload):                     │
-  │    payload_cache[addr.offset] = buffer                   │
-  │    (不释放 buffer, 转移所有权到 cache)                     │
-  │                                                          │
-  └──────────────────────────────────────────────────────────┘
+         │
+         │ io_uring SQ → kernel processing
+         │
+         ▼
+
+═══════════════ Phase 2: Drain CQ + Rerank ═══════════════
+
+  ┌──────────────────────────────────────────────────────────────┐
+  │  while !pending_.empty():                                    │
+  │    WaitAndPoll(completions, 32)                              │
+  │    for each completion:                                      │
+  │      extract PendingRead from pending_                       │
+  │      InferType → dispatch:                                   │
+  │                                                              │
+  │      VEC_ONLY: L2Sqr → TryInsert → pool.Release(buf)        │
+  │      ALL:      L2Sqr → TryInsert → memcpy payload           │
+  │                → pool.Release(buf)                           │
+  │      PAYLOAD:  → payload_cache (转移所有权)                   │
+  └──────────────────────────────────────────────────────────────┘
 
 
-═══════════════ Phase 2: 补读 Uncertain payload ═══════════════
+═══════════════ Phase 3: 补读 Uncertain payload ═══════════════
 
   results = collector.Finalize()
   // results: [(dist, addr), ...] 按 distance 升序
@@ -706,13 +644,12 @@ ProbeClusterBatch(ctx, cluster_id, offset, count):
       continue
     else:
       // Uncertain, 需要补读 payload
-      Submit PAYLOAD{addr, offset=dim*4, length=payload_size}
+      PrepRead PAYLOAD{fd, buf, payload_len, addr.offset + dim*4}
 
-  while InFlight() > 0:
-    WaitAndPoll → payload_cache[addr.offset] = buffer
+  Submit() → WaitAndPoll → payload_cache[addr.offset] = buffer
 
 
-═══════════════ Phase 3: 组装 SearchResults (RAII) ═══════════════
+═══════════════ Phase 4: 组装 SearchResults (RAII) ═══════════════
 
   SearchResults sr;
   for r in results:
@@ -733,32 +670,36 @@ ProbeClusterBatch(ctx, cluster_id, offset, count):
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│  Buffer 生命周期                                              │
+│  Buffer 生命周期（单线程，直接管理）                            │
 ├──────────────────────────────────────────────────────────────┤
 │                                                              │
 │  VEC_ONLY buffer:                                            │
-│    pool.Acquire() → Submit → Complete → L2Sqr → Release()    │
-│    生命周期: I/O 完成 + Rerank 后立即回收                      │
+│    Phase 1: pool.Acquire() → PrepRead → Submit               │
+│    Phase 2: WaitAndPoll → L2Sqr → pool.Release()             │
+│    生命周期: Acquire → I/O → Rerank → Release                │
 │                                                              │
 │  ALL buffer (SafeIn ≤256KB, 含 vec+payload):                 │
-│    pool.Acquire(addr.size) → Submit → Complete → L2Sqr       │
-│    进入 TopK → memcpy payload 到 new_buf → cache new_buf      │
-│    原始 ALL buffer 始终 Release() (无论是否进入 TopK)          │
-│    new_buf 生命周期: cache → 若在最终 TopK → 转移到 SearchResults │
-│                       若被后续淘汰 → CleanupUnusedCache 惰性释放 │
+│    Phase 1: pool.Acquire(addr.size) → PrepRead → Submit      │
+│    Phase 2: WaitAndPoll → L2Sqr → memcpy payload → Release() │
+│    new_buf 生命周期: memcpy 新建 → cache → TopK→SearchResults │
+│                       或: 被淘汰 → CleanupUnusedCache 惰性释放 │
 │                                                              │
 │  PAYLOAD buffer (SafeIn >256KB, 仅 payload):                 │
-│    pool.Acquire() → Submit → Complete → payload_cache        │
-│    生命周期: 转移到 cache → 若在 TopK 中, 转移到 SearchResults │
-│              若不在 TopK, CleanupUnusedCache 释放              │
+│    Phase 1: pool.Acquire() → PrepRead → Submit               │
+│    Phase 2: WaitAndPoll → payload_cache (所有权转移)          │
+│    生命周期: 转移到 cache → TopK → SearchResults              │
+│              或: 不在 TopK → CleanupUnusedCache 释放          │
 │                                                              │
-│  PAYLOAD buffer (Uncertain, Phase 2 补读):                   │
-│    pool.Acquire() → Submit → Complete → payload_cache        │
-│    生命周期: 转移到 cache → 转移到 SearchResults               │
+│  PAYLOAD buffer (Uncertain, Phase 3 补读):                   │
+│    Phase 3: pool.Acquire() → PrepRead → Submit → WaitAndPoll │
+│    → payload_cache → SearchResults                           │
 │                                                              │
 │  SearchResults 析构:                                          │
 │    ~SearchResults() → 释放所有 owned_buffers_                 │
 │    用户持有期间, payload 指针有效                               │
+│                                                              │
+│  注: 单线程模型下，所有 pool.Acquire/Release 都是直接调用，     │
+│  无需跨线程归还机制 (无 pool_return_q_)                       │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -781,23 +722,22 @@ float L2Sqr(const float* a, const float* b, uint32_t dim);
 }  // namespace vdb
 ```
 
-初期标量实现，后续可加 AVX2/AVX-512 优化路径。
+薄包装，委托 `simd::L2Sqr`（已存在 AVX2 + 标量回退）。
 
 ### 5.2 BufferPool
 
 ```cpp
 class BufferPool {
 public:
-    explicit BufferPool(uint32_t max_buffers, uint32_t default_size = 4096);
-
-    /// 获取一个 buffer（如果 pool 空则 new）
+    /// 获取一个 buffer（pool 中有 capacity >= size 的则复用，否则 new）
     uint8_t* Acquire(uint32_t size);
 
     /// 归还一个 buffer
     void Release(uint8_t* buf);
 
 private:
-    std::vector<std::unique_ptr<uint8_t[]>> pool_;
+    // buffer + capacity 对
+    std::vector<std::pair<std::unique_ptr<uint8_t[]>, uint32_t>> pool_;
 };
 ```
 
@@ -817,6 +757,15 @@ const uint8_t* GetCodePtr(uint32_t cluster_id, uint32_t record_idx) const;
 
 Probe 循环中的 `LoadCode` 变为纯内存访问，零系统调用。
 
+### 5.4 DataFileReader fd 访问器
+
+`OverlapScheduler` 需要 fd 传给 `PrepRead`，在 `DataFileReader` 中添加：
+
+```cpp
+/// 获取文件描述符（用于 io_uring 直接提交）
+int fd() const { return fd_; }
+```
+
 ## 6. CMake 集成
 
 ```cmake
@@ -830,7 +779,6 @@ endif()
 add_library(vdb_query STATIC
     src/query/io_uring_reader.cpp
     src/query/pread_fallback_reader.cpp
-    src/query/read_queue.cpp
     src/query/result_collector.cpp
     src/query/rerank_consumer.cpp
     src/query/overlap_scheduler.cpp
@@ -842,24 +790,28 @@ target_link_libraries(vdb_query PUBLIC
 target_link_libraries(vdb_query PRIVATE ${URING_LIB})
 ```
 
+**对比之前**：移除了 Taskflow FetchContent、`spsc_queue.cpp`、`read_queue.cpp`。
+
 ## 7. 已确定决策
 
 | # | 决策 | 选择 | 理由 |
 |---|------|------|------|
-| - | 调度模型 | **交错式流水线** | Probe/I/O/Rerank 每轮交替执行，深度重叠，最大化 CPU 和 I/O 利用率 |
-| 8 | Payload 策略 | **混合策略 + SafeIn ALL** | SafeIn ≤256KB → ALL 一次读完(Qv)；SafeIn >256KB → VEC_ONLY(Qv)+PAYLOAD(Qp)；Uncertain → Rerank 后批量补读 |
+| - | 调度模型 | **单线程两阶段** | Phase 1 Probe+Submit → Phase 2 Drain+Rerank；内核处理 I/O 提供 CPU/IO 重叠；无线程、无锁、无队列 |
+| - | I/O 后端 | **io_uring SQ/CQ** | SQ 替代应用层任务队列，CQ 替代完成队列；PrepRead+Submit 映射 io_uring 原语 |
+| - | CQ 容量 | **4096 (IORING_SETUP_CQSIZE)** | Phase 1 全部 Probe 完才 drain CQ，需要容纳所有请求；默认 CQ=2×SQ 不够 |
+| 8 | Payload 策略 | **混合策略 + SafeIn ALL** | SafeIn ≤256KB → ALL 一次读完；SafeIn >256KB → VEC_ONLY+PAYLOAD；Uncertain → Rerank 后批量补读 |
 | - | ReadTaskType | **VEC_ONLY + ALL + PAYLOAD** | 3 种类型：Uncertain 用 VEC_ONLY，小 SafeIn 用 ALL，大 SafeIn 拆分 |
-| - | SafeIn ALL 阈值 | **256KB** | ≤256KB 时 NVMe 延迟与 512B 同量级(~25μs)，省一半 IOPS 和 SQE 槽位；>256KB 拆分避免阻塞 Qv |
+| - | SafeIn ALL 阈值 | **256KB** | ≤256KB 时 NVMe 延迟与 512B 同量级(~25μs)，省一半 IOPS 和 SQE 槽位；>256KB 拆分 |
 | - | VecID | **移除** | SearchResult 不返回 ID，只返回 distance + payload |
 | - | SearchResult 生命周期 | **RAII (SearchResults 类)** | 自动管理 payload buffer，离开作用域自动释放 |
-| - | Qv back-pressure | **容量 256** | Qv 满时暂停 Probe，让 I/O 先消耗 |
+| - | TopK 阈值更新 | **Phase 1 不更新** | Probe 使用初始 ConANN 阈值，不实时更新 TopK；~10-20% 额外 I/O (nprobe=8)，换取无 Rerank 穿插的简单性 |
 | 9 | Probe 粒度 | mini-batch 64 条 | 与 address block 粒度一致 |
 | - | 聚类原子性 | ≤ 1024 原子，> 1024 分批 | 小聚类省状态管理，大聚类避免 CPU 长时间霸占 |
 | 1 | O_DIRECT | 初期 buffered | 简单，后续加 O_DIRECT 选项 |
 | 5 | codes 加载 | 全量到内存 | Probe 零系统调用 |
-| 13 | AsyncReader 抽象 | 薄封装 | 单 fd，调用方管理 buffer |
+| 13 | AsyncReader 抽象 | 薄封装 (PrepRead+Submit) | 映射 io_uring 原语，单 fd，调用方管理 buffer |
 | - | liburing 依赖 | 构建必须，运行时降级 | 构建时 CMake REQUIRED；运行时 io_uring init 失败则警告 + fallback 到 pread |
-| - | 精排距离计算 | `L2Sqr` 独立函数 in `common/` | 不依赖 RaBitQ，语义清晰，可独立 SIMD 优化 |
+| - | 精排距离计算 | `L2Sqr` 薄包装 in `common/` | 委托 `simd::L2Sqr`，不重复实现 |
 | - | 错误处理 | 直接返回错误 + 调试信息 | 初期从简，不做 skip/retry |
 | - | CQE user_data | **buffer 指针** | `user_data = (uint64_t)buffer`，CQE 返回后还原指针；配合 `pending_` map 查元信息 |
 | - | 类型推断 | **从 PendingRead 参数推断** | `read_length==dim*4` → VEC_ONLY，`offset==addr.offset && length==addr.size` → ALL，其他 → PAYLOAD |
@@ -872,8 +824,11 @@ target_link_libraries(vdb_query PRIVATE ${URING_LIB})
 
 | 优化 | 描述 | 预期收益 |
 |------|------|----------|
-| 模式 Y：攒批 Rerank | 积累完成项后批量 L2Sqr（prefetch 优化） | L2Sqr 吞吐提升 |
+| 多线程并发 (Taskflow) | 将 Probe/I/O/Rerank 拆分为 3 个并发 task，SPSC queue 解耦 | 大 nprobe 场景吞吐提升，真并行 |
+| 交错式 Rerank | Phase 2 中穿插 Probe，实时更新 TopK 阈值减少 I/O | 减少 10-20% 无效 I/O |
+| io_uring provided buffers | VEC_ONLY 使用内核管理的固定大小 buffer pool | 减少用户态 buffer 分配开销 |
 | O_DIRECT | 绕过 page cache，避免大数据集污染 | 减少内存拷贝 |
 | Early termination | TopK 满 + 剩余 cluster 距离 > 堆顶 + 2ε → 跳过 | 减少无效 probe |
 | ALL 阈值自适应 | 根据运行时 I/O 延迟统计自动调整 safein_all_threshold | 适配不同存储设备 |
 | Slab buffer pool | 按大小分级的 buffer 复用 | 减少 alloc/free |
+| 并行 EnsureClusterLoaded | 并行加载 nprobe 个 cluster | 减少 Probe 前的串行加载延迟 |

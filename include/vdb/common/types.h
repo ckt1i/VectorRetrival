@@ -384,57 +384,24 @@ struct AddressEntry {
   bool operator!=(const AddressEntry& other) const { return !(*this == other); }
 };
 
-/// I/O task type for read queue scheduling
+/// I/O task type for query pipeline read classification
 enum class ReadTaskType : uint8_t {
-  ALL = 0,         // SafeIn small record: read entire record (vec + payload)
-  FRONT = 1,       // SafeIn large record: read front part (vec + partial payload)
-  VEC_ONLY = 2,    // Uncertain: read only vector for exact distance computation
-  BACK = 3,        // Rerank confirmed: read remaining payload after exact dist check
-  PAYLOAD = 4,     // Remaining payload part (for large SafeIn records)
+  VEC_ONLY = 0,    // Read only vector part (dim * sizeof(float) bytes)
+  ALL = 1,         // Read entire record (vec + payload, for SafeIn ≤256KB)
+  PAYLOAD = 2,     // Read only payload part (from offset + dim*4)
 };
 
 inline std::string_view ReadTaskTypeName(ReadTaskType ty) {
   switch (ty) {
-    case ReadTaskType::ALL: return "ALL";
-    case ReadTaskType::FRONT: return "FRONT";
     case ReadTaskType::VEC_ONLY: return "VEC_ONLY";
-    case ReadTaskType::BACK: return "BACK";
+    case ReadTaskType::ALL: return "ALL";
     case ReadTaskType::PAYLOAD: return "PAYLOAD";
     default: return "UNKNOWN";
   }
 }
 
-/// Single I/O task for read queue (before submission to io_uring)
-struct ReadTask {
-  ClusterID cluster_id;      // Which cluster to read from
-  uint32_t local_idx;        // Record index within cluster (used for logging)
-  AddressEntry addr;         // Physical address (offset, size) in DataFile
-  ReadTaskType task_type;    // How much data to read
-  uint64_t read_offset;      // Actual byte offset to read (may be offset + partial start)
-  uint32_t read_length;      // Actual byte length to read
-  uint8_t priority;          // 0=Qv (high, vector), 1=Qp (low, payload)
-
-  bool operator==(const ReadTask& other) const {
-    return cluster_id == other.cluster_id &&
-           addr == other.addr &&
-           task_type == other.task_type &&
-           read_offset == other.read_offset &&
-           read_length == other.read_length &&
-           priority == other.priority;
-  }
-  bool operator!=(const ReadTask& other) const { return !(*this == other); }
-};
-
-/// Completed I/O read result
-struct CompletedRead {
-  ReadTask task;
-  std::vector<uint8_t> buffer;  // Read data
-  // status could be added here if error handling needed
-};
-
 /// Candidate vector for progressive reranking
 struct Candidate {
-  VecID vec_id;
   float approx_dist;         // RaBitQ estimated distance
   ResultClass result_class;  // ConANN classification
   ClusterID cluster_id;      // Source cluster

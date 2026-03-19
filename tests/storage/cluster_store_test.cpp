@@ -622,3 +622,65 @@ TEST_F(ClusterStoreTest, Reader_RejectsVersion3) {
     EXPECT_FALSE(s.ok());
     EXPECT_TRUE(s.IsNotSupported());
 }
+
+// ============================================================================
+// GetCodePtr — verify consistency with LoadCode
+// ============================================================================
+
+TEST_F(ClusterStoreTest, GetCodePtr_MatchesLoadCode) {
+    const Dim dim = 64;
+    RaBitQConfig config{1, 64, 5.75f};
+    const uint32_t N = 16;
+
+    // Build a cluster store with one cluster
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(TestPath("codes.clu"), 1, dim, config).ok());
+
+    // Generate random vectors and encode
+    std::mt19937 rng(42);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, rotation);
+
+    std::vector<float> centroid(dim, 0.0f);
+
+    ASSERT_TRUE(writer.BeginCluster(0, centroid.data()).ok());
+
+    for (uint32_t i = 0; i < N; ++i) {
+        std::vector<float> vec(dim);
+        for (auto& v : vec) v = dist(rng);
+
+        auto code = encoder.Encode(vec.data(), centroid.data());
+        AddressEntry addr{i * 512, 512};
+        ASSERT_TRUE(writer.WriteVectors(0, &code, &addr, 1).ok());
+    }
+
+    ASSERT_TRUE(writer.EndCluster(0).ok());
+    ASSERT_TRUE(writer.Finalize().ok());
+
+    // Read back and verify GetCodePtr matches LoadCode
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(TestPath("codes.clu")).ok());
+    ASSERT_TRUE(reader.EnsureClusterLoaded(0).ok());
+
+    const uint32_t nwords = (dim + 63) / 64;
+
+    for (uint32_t i = 0; i < N; ++i) {
+        const uint8_t* ptr = reader.GetCodePtr(0, i);
+        ASSERT_NE(ptr, nullptr);
+
+        std::vector<uint64_t> loaded_code;
+        ASSERT_TRUE(reader.LoadCode(0, i, loaded_code).ok());
+
+        EXPECT_EQ(std::memcmp(ptr, loaded_code.data(),
+                              nwords * sizeof(uint64_t)), 0)
+            << "Mismatch at record " << i;
+    }
+
+    // Out-of-range returns nullptr
+    EXPECT_EQ(reader.GetCodePtr(0, N), nullptr);
+    // Non-loaded cluster returns nullptr
+    EXPECT_EQ(reader.GetCodePtr(999, 0), nullptr);
+}

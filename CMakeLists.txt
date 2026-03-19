@@ -201,6 +201,31 @@ target_include_directories(vdb_index PUBLIC
 target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema)
 
 # =============================================================================
+# VDB Query Library (Phase 7)
+# Single-threaded two-phase query pipeline: Probe+Submit → Drain+Rerank.
+# =============================================================================
+find_library(URING_LIB uring)
+if(NOT URING_LIB)
+    message(FATAL_ERROR "liburing not found. Install with: sudo apt install liburing-dev")
+endif()
+
+add_library(vdb_query STATIC
+    src/common/distance.cpp
+    src/query/pread_fallback_reader.cpp
+    src/query/io_uring_reader.cpp
+    src/query/result_collector.cpp
+    src/query/rerank_consumer.cpp
+    src/query/overlap_scheduler.cpp
+    src/query/buffer_pool.cpp
+)
+target_include_directories(vdb_query PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_query PUBLIC vdb_index vdb_storage vdb_simd vdb_rabitq)
+target_link_libraries(vdb_query PRIVATE ${URING_LIB})
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -334,6 +359,37 @@ if(VDB_BUILD_TESTS)
     # ----- Benchmark (Phase 6) -----
     add_executable(bench_ivf_quality tests/index/bench_ivf_quality.cpp)
     target_link_libraries(bench_ivf_quality PRIVATE vdb_index)
+
+    # -------------------------------------------------------------------------
+    # Query Pipeline tests (Phase 7)
+    # -------------------------------------------------------------------------
+    add_executable(test_distance tests/common/distance_test.cpp)
+    target_link_libraries(test_distance PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_distance COMMAND test_distance)
+
+    add_executable(test_pread_fallback_reader tests/query/pread_fallback_reader_test.cpp)
+    target_link_libraries(test_pread_fallback_reader PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_pread_fallback_reader COMMAND test_pread_fallback_reader)
+
+    add_executable(test_io_uring_reader tests/query/io_uring_reader_test.cpp)
+    target_link_libraries(test_io_uring_reader PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_io_uring_reader COMMAND test_io_uring_reader)
+
+    add_executable(test_result_collector tests/query/result_collector_test.cpp)
+    target_link_libraries(test_result_collector PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_result_collector COMMAND test_result_collector)
+
+    add_executable(test_buffer_pool tests/query/buffer_pool_test.cpp)
+    target_link_libraries(test_buffer_pool PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_buffer_pool COMMAND test_buffer_pool)
+
+    add_executable(test_rerank_consumer tests/query/rerank_consumer_test.cpp)
+    target_link_libraries(test_rerank_consumer PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_rerank_consumer COMMAND test_rerank_consumer)
+
+    add_executable(test_overlap_scheduler tests/query/overlap_scheduler_test.cpp)
+    target_link_libraries(test_overlap_scheduler PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_overlap_scheduler COMMAND test_overlap_scheduler)
 endif()
 
 # =============================================================================

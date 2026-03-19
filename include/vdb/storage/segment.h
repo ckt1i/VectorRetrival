@@ -99,6 +99,12 @@ class Segment {
         return clu_reader_.LoadCodes(cluster_id, indices, out_codes);
     }
 
+    /// Get raw pointer to a code entry in the cached codes_buffer.
+    const uint8_t* GetCodePtr(uint32_t cluster_id,
+                              uint32_t record_idx) const {
+        return clu_reader_.GetCodePtr(cluster_id, record_idx);
+    }
+
     // ---- DataFileReader forwarding ----
 
     /// Read a raw vector from a record.

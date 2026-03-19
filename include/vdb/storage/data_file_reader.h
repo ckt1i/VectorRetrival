@@ -90,16 +90,24 @@ class DataFileReader {
     /// File path.
     const std::string& path() const { return path_; }
 
- private:
-    int fd_ = -1;
-    std::string path_;
-    Dim dim_ = 0;
-    std::vector<ColumnSchema> payload_schemas_;
+    /// File descriptor (for io_uring direct submission).
+    int fd() const { return fd_; }
+
+    /// Payload column schemas.
+    const std::vector<ColumnSchema>& payload_schemas() const {
+        return payload_schemas_;
+    }
 
     /// Parse payload columns from a raw buffer starting at `buf_offset`.
     Status ParsePayload(const uint8_t* buf, uint32_t buf_len,
                         uint32_t buf_offset,
                         std::vector<Datum>& out_payload) const;
+
+ private:
+    int fd_ = -1;
+    std::string path_;
+    Dim dim_ = 0;
+    std::vector<ColumnSchema> payload_schemas_;
 };
 
 }  // namespace storage

@@ -1,0 +1,55 @@
+#pragma once
+
+#include <cstdint>
+
+#include "vdb/common/types.h"
+#include "vdb/query/result_collector.h"
+
+namespace vdb {
+namespace query {
+
+struct SearchConfig {
+    uint32_t top_k = 10;
+    uint32_t nprobe = 8;
+    uint32_t probe_batch_size = 64;
+    uint32_t cluster_atomic_threshold = 1024;
+    uint32_t io_queue_depth = 64;
+    uint32_t cq_entries = 4096;
+    uint32_t safein_all_threshold = 256 * 1024;  // 256KB
+};
+
+struct SearchStats {
+    uint32_t total_probed = 0;
+    uint32_t total_safe_in = 0;
+    uint32_t total_safe_out = 0;
+    uint32_t total_uncertain = 0;
+    uint32_t total_io_submitted = 0;
+    uint32_t total_reranked = 0;
+    uint32_t total_payload_prefetched = 0;
+    uint32_t total_payload_fetched = 0;
+    double probe_time_ms = 0;
+    double rerank_time_ms = 0;
+    double total_time_ms = 0;
+};
+
+class SearchContext {
+ public:
+    SearchContext(const float* query_vec, const SearchConfig& config)
+        : query_vec_(query_vec), config_(config),
+          collector_(config.top_k) {}
+
+    const float* query_vec() const { return query_vec_; }
+    const SearchConfig& config() const { return config_; }
+    SearchStats& stats() { return stats_; }
+    const SearchStats& stats() const { return stats_; }
+    ResultCollector& collector() { return collector_; }
+
+ private:
+    const float* query_vec_;
+    SearchConfig config_;
+    SearchStats stats_;
+    ResultCollector collector_;
+};
+
+}  // namespace query
+}  // namespace vdb

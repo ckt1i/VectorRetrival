@@ -244,6 +244,12 @@ class ClusterStoreReader {
                      const std::vector<uint32_t>& indices,
                      std::vector<rabitq::RaBitQCode>& out_codes) const;
 
+    /// Get raw pointer to a code entry in the cached codes_buffer.
+    /// Returns nullptr if cluster not loaded or record_idx out of range.
+    /// Requires EnsureClusterLoaded() to have been called.
+    const uint8_t* GetCodePtr(uint32_t cluster_id,
+                              uint32_t record_idx) const;
+
     /// Whether the file is open.
     bool is_open() const { return fd_ >= 0; }
 
@@ -261,6 +267,9 @@ class ClusterStoreReader {
         // Code region offset (absolute in .clu file)
         uint64_t codes_offset = 0;
         uint32_t codes_length = 0;
+
+        // Full codes region cached in memory (loaded by EnsureClusterLoaded)
+        std::vector<uint8_t> codes_buffer;
 
         // Address layout, block payloads, and decoded addresses
         AddressColumnLayout address_layout;
