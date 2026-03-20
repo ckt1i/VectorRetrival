@@ -2,12 +2,14 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "vdb/common/macros.h"
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
+#include "vdb/query/parsed_cluster.h"
 #include "vdb/storage/cluster_store.h"
 #include "vdb/storage/data_file_reader.h"
 
@@ -103,6 +105,26 @@ class Segment {
     const uint8_t* GetCodePtr(uint32_t cluster_id,
                               uint32_t record_idx) const {
         return clu_reader_.GetCodePtr(cluster_id, record_idx);
+    }
+
+    // ---- Async query support (Phase 8) ----
+
+    /// .clu file descriptor for io_uring direct submission.
+    int clu_fd() const { return clu_reader_.clu_fd(); }
+
+    /// Look up cluster block location (pure memory).
+    std::optional<query::ClusterBlockLocation> GetBlockLocation(
+        uint32_t cluster_id) const {
+        return clu_reader_.GetBlockLocation(cluster_id);
+    }
+
+    /// Parse a raw block buffer into a ParsedCluster (pure CPU, no I/O).
+    Status ParseClusterBlock(uint32_t cluster_id,
+                              std::unique_ptr<uint8_t[]> block_buf,
+                              uint64_t block_size,
+                              query::ParsedCluster& out) {
+        return clu_reader_.ParseClusterBlock(
+            cluster_id, std::move(block_buf), block_size, out);
     }
 
     // ---- DataFileReader forwarding ----

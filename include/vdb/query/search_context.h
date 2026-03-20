@@ -16,6 +16,11 @@ struct SearchConfig {
     uint32_t io_queue_depth = 64;
     uint32_t cq_entries = 4096;
     uint32_t safein_all_threshold = 256 * 1024;  // 256KB
+
+    // Phase 8: Async cluster prefetch
+    uint32_t prefetch_depth = 16;      // Initial cluster block prefetch count
+    uint32_t refill_threshold = 2;     // Refill when inflight_clusters drops below
+    uint32_t refill_count = 2;         // Number of clusters to refill per check
 };
 
 struct SearchStats {

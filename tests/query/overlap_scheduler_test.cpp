@@ -137,3 +137,94 @@ TEST_F(OverlapSchedulerTest, StatsArePopulated) {
     auto results = scheduler.Search(query.data());
     EXPECT_GT(results.size(), 0u);
 }
+
+// ============================================================================
+// Phase 8: Async cluster prefetch tests
+// ============================================================================
+
+TEST_F(OverlapSchedulerTest, PrefetchConfig_SmallDepth) {
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.probe_batch_size = 64;
+    config.prefetch_depth = 4;
+    config.refill_threshold = 1;
+    config.refill_count = 1;
+
+    OverlapScheduler scheduler(*index_, reader, config);
+
+    std::mt19937 rng(456);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    for (int q = 0; q < 5; ++q) {
+        std::vector<float> query(kDim);
+        for (auto& v : query) v = dist(rng);
+
+        auto results = scheduler.Search(query.data());
+        auto ground_truth = BruteForceTopK(query.data(), kTopK);
+
+        ASSERT_EQ(results.size(), kTopK) << "Query " << q;
+        for (uint32_t i = 0; i < kTopK; ++i) {
+            EXPECT_NEAR(results[i].distance, ground_truth[i].first, 1e-4f)
+                << "Query " << q << " rank " << i;
+        }
+    }
+}
+
+TEST_F(OverlapSchedulerTest, PrefetchDepth_ExceedsNprobe) {
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 100;  // >> nprobe=4
+    config.refill_threshold = 2;
+    config.refill_count = 2;
+
+    OverlapScheduler scheduler(*index_, reader, config);
+
+    std::mt19937 rng(789);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    for (int q = 0; q < 3; ++q) {
+        std::vector<float> query(kDim);
+        for (auto& v : query) v = dist(rng);
+
+        auto results = scheduler.Search(query.data());
+        auto ground_truth = BruteForceTopK(query.data(), kTopK);
+
+        ASSERT_EQ(results.size(), kTopK) << "Query " << q;
+        for (uint32_t i = 0; i < kTopK; ++i) {
+            EXPECT_NEAR(results[i].distance, ground_truth[i].first, 1e-4f)
+                << "Query " << q << " rank " << i;
+        }
+    }
+}
+
+TEST_F(OverlapSchedulerTest, MultipleQueries_StateReset) {
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 4;
+
+    OverlapScheduler scheduler(*index_, reader, config);
+
+    std::mt19937 rng(999);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    // Run 10 sequential queries on the same scheduler
+    for (int q = 0; q < 10; ++q) {
+        std::vector<float> query(kDim);
+        for (auto& v : query) v = dist(rng);
+
+        auto results = scheduler.Search(query.data());
+        auto ground_truth = BruteForceTopK(query.data(), kTopK);
+
+        ASSERT_EQ(results.size(), kTopK) << "Query " << q;
+        for (uint32_t i = 0; i < kTopK; ++i) {
+            EXPECT_NEAR(results[i].distance, ground_truth[i].first, 1e-4f)
+                << "Query " << q << " rank " << i;
+        }
+    }
+}

@@ -4,9 +4,11 @@
 #include <cstring>
 #include <filesystem>
 #include <random>
+#include <unistd.h>
 #include <vector>
 
 #include "vdb/common/types.h"
+#include "vdb/query/parsed_cluster.h"
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/storage/address_column.h"
@@ -632,10 +634,6 @@ TEST_F(ClusterStoreTest, GetCodePtr_MatchesLoadCode) {
     RaBitQConfig config{1, 64, 5.75f};
     const uint32_t N = 16;
 
-    // Build a cluster store with one cluster
-    ClusterStoreWriter writer;
-    ASSERT_TRUE(writer.Open(TestPath("codes.clu"), 1, dim, config).ok());
-
     // Generate random vectors and encode
     std::mt19937 rng(42);
     std::normal_distribution<float> dist(0.0f, 1.0f);
@@ -646,19 +644,27 @@ TEST_F(ClusterStoreTest, GetCodePtr_MatchesLoadCode) {
 
     std::vector<float> centroid(dim, 0.0f);
 
-    ASSERT_TRUE(writer.BeginCluster(0, centroid.data()).ok());
-
+    std::vector<RaBitQCode> codes;
     for (uint32_t i = 0; i < N; ++i) {
         std::vector<float> vec(dim);
         for (auto& v : vec) v = dist(rng);
-
-        auto code = encoder.Encode(vec.data(), centroid.data());
-        AddressEntry addr{i * 512, 512};
-        ASSERT_TRUE(writer.WriteVectors(0, &code, &addr, 1).ok());
+        codes.push_back(encoder.Encode(vec.data(), centroid.data()));
     }
 
-    ASSERT_TRUE(writer.EndCluster(0).ok());
-    ASSERT_TRUE(writer.Finalize().ok());
+    std::vector<AddressEntry> addrs;
+    for (uint32_t i = 0; i < N; ++i) {
+        addrs.push_back({i * 512ULL, 512});
+    }
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
+
+    // Build a cluster store with one cluster
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(TestPath("codes.clu"), 1, dim, config).ok());
+    ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
+    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
+    ASSERT_TRUE(writer.EndCluster().ok());
+    ASSERT_TRUE(writer.Finalize("c.dat").ok());
 
     // Read back and verify GetCodePtr matches LoadCode
     ClusterStoreReader reader;
@@ -683,4 +689,190 @@ TEST_F(ClusterStoreTest, GetCodePtr_MatchesLoadCode) {
     EXPECT_EQ(reader.GetCodePtr(0, N), nullptr);
     // Non-loaded cluster returns nullptr
     EXPECT_EQ(reader.GetCodePtr(999, 0), nullptr);
+}
+
+// ============================================================================
+// Phase 8: Async query support — clu_fd, GetBlockLocation, ParseClusterBlock
+// ============================================================================
+
+TEST_F(ClusterStoreTest, CluFd) {
+    const Dim dim = 16;
+    std::string path = TestPath("fd_test.clu");
+
+    RaBitQConfig config{1, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
+    float centroid[16] = {0};
+    ASSERT_TRUE(writer.BeginCluster(0, 0, centroid).ok());
+    ASSERT_TRUE(writer.WriteVectors({}).ok());
+    ASSERT_TRUE(writer.WriteAddressBlocks(EncodedAddressColumn{}).ok());
+    ASSERT_TRUE(writer.EndCluster().ok());
+    ASSERT_TRUE(writer.Finalize("d.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+    EXPECT_GE(reader.clu_fd(), 0);
+
+    reader.Close();
+    EXPECT_LT(reader.clu_fd(), 0);
+}
+
+TEST_F(ClusterStoreTest, GetBlockLocation) {
+    const Dim dim = 32;
+    const uint32_t K = 3;
+    const uint32_t N_per_cluster = 10;
+    std::string path = TestPath("bloc_loc.clu");
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, rotation);
+
+    std::mt19937 rng(500);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    RaBitQConfig config{1, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, K, dim, config).ok());
+
+    for (uint32_t k = 0; k < K; ++k) {
+        std::vector<float> centroid(dim, 0.0f);
+        for (uint32_t d = 0; d < dim; ++d) centroid[d] = dist(rng);
+
+        std::vector<RaBitQCode> codes;
+        for (uint32_t i = 0; i < N_per_cluster; ++i) {
+            std::vector<float> vec(dim);
+            for (uint32_t d = 0; d < dim; ++d) vec[d] = dist(rng);
+            codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+        }
+
+        std::vector<AddressEntry> addrs;
+        uint64_t off = k * 10000;
+        for (uint32_t i = 0; i < N_per_cluster; ++i) {
+            addrs.push_back({off, dim * 4u});
+            off += dim * 4;
+        }
+        auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
+
+        ASSERT_TRUE(writer.BeginCluster(k, N_per_cluster, centroid.data()).ok());
+        ASSERT_TRUE(writer.WriteVectors(codes).ok());
+        ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
+        ASSERT_TRUE(writer.EndCluster().ok());
+    }
+    ASSERT_TRUE(writer.Finalize("data.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+
+    for (uint32_t k = 0; k < K; ++k) {
+        auto loc = reader.GetBlockLocation(k);
+        ASSERT_TRUE(loc.has_value()) << "cluster " << k;
+        EXPECT_EQ(loc->offset, writer.info().lookup_table[k].block_offset);
+        EXPECT_EQ(loc->size, writer.info().lookup_table[k].block_size);
+        EXPECT_EQ(loc->num_records, N_per_cluster);
+    }
+
+    // Non-existent cluster
+    EXPECT_FALSE(reader.GetBlockLocation(999).has_value());
+}
+
+TEST_F(ClusterStoreTest, ParseClusterBlock_MatchesEnsureClusterLoaded) {
+    const Dim dim = 32;
+    const uint32_t K = 3;
+    std::string path = TestPath("parse_block.clu");
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, rotation);
+
+    std::mt19937 rng(600);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    RaBitQConfig config{1, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, K, dim, config).ok());
+
+    // Variable cluster sizes
+    std::vector<uint32_t> cluster_sizes = {15, 0, 25};  // include empty cluster
+    std::vector<std::vector<AddressEntry>> all_addrs(K);
+
+    for (uint32_t k = 0; k < K; ++k) {
+        uint32_t N = cluster_sizes[k];
+        std::vector<float> centroid(dim, 0.0f);
+        for (uint32_t d = 0; d < dim; ++d) centroid[d] = dist(rng);
+
+        std::vector<RaBitQCode> codes;
+        for (uint32_t i = 0; i < N; ++i) {
+            std::vector<float> vec(dim);
+            for (uint32_t d = 0; d < dim; ++d) vec[d] = dist(rng);
+            codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+        }
+
+        uint64_t off = k * 100000;
+        for (uint32_t i = 0; i < N; ++i) {
+            uint32_t sz = dim * 4u + i * 8;
+            all_addrs[k].push_back({off, sz});
+            off += sz;
+        }
+        auto addr_blocks = (N > 0) ? AddressColumn::Encode(all_addrs[k], 64, 1)
+                                     : EncodedAddressColumn{};
+
+        ASSERT_TRUE(writer.BeginCluster(k, N, centroid.data()).ok());
+        ASSERT_TRUE(writer.WriteVectors(codes).ok());
+        ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
+        ASSERT_TRUE(writer.EndCluster().ok());
+    }
+    ASSERT_TRUE(writer.Finalize("data.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+
+    const uint32_t code_entry_sz = ((dim + 63) / 64) * sizeof(uint64_t);
+
+    for (uint32_t k = 0; k < K; ++k) {
+        uint32_t N = cluster_sizes[k];
+
+        // --- Path A: EnsureClusterLoaded (existing sync path) ---
+        ASSERT_TRUE(reader.EnsureClusterLoaded(k).ok());
+
+        // --- Path B: ParseClusterBlock (new async path) ---
+        auto loc = reader.GetBlockLocation(k);
+        ASSERT_TRUE(loc.has_value());
+
+        auto block_buf = std::make_unique<uint8_t[]>(
+            static_cast<size_t>(loc->size));
+        ssize_t bytes = ::pread(reader.clu_fd(),
+                                block_buf.get(),
+                                static_cast<size_t>(loc->size),
+                                static_cast<off_t>(loc->offset));
+        ASSERT_EQ(bytes, static_cast<ssize_t>(loc->size));
+
+        vdb::query::ParsedCluster pc;
+        ASSERT_TRUE(reader.ParseClusterBlock(
+            k, std::move(block_buf), loc->size, pc).ok());
+
+        // --- Verify consistency ---
+        EXPECT_EQ(pc.num_records, N);
+        EXPECT_EQ(pc.code_entry_size, code_entry_sz);
+        EXPECT_EQ(pc.decoded_addresses.size(), N);
+
+        if (N > 0) {
+            ASSERT_NE(pc.codes_start, nullptr);
+        }
+
+        for (uint32_t i = 0; i < N; ++i) {
+            // Codes must match
+            const uint8_t* sync_code = reader.GetCodePtr(k, i);
+            ASSERT_NE(sync_code, nullptr);
+            const uint8_t* async_code = pc.codes_start + i * pc.code_entry_size;
+            EXPECT_EQ(std::memcmp(sync_code, async_code, code_entry_sz), 0)
+                << "cluster " << k << " record " << i << " codes mismatch";
+
+            // Addresses must match
+            auto sync_addr = reader.GetAddress(k, i);
+            EXPECT_EQ(pc.decoded_addresses[i].offset, sync_addr.offset)
+                << "cluster " << k << " record " << i;
+            EXPECT_EQ(pc.decoded_addresses[i].size, sync_addr.size)
+                << "cluster " << k << " record " << i;
+        }
+    }
 }

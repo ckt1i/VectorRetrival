@@ -4,12 +4,14 @@
 #include <fstream>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "vdb/common/macros.h"
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
+#include "vdb/query/parsed_cluster.h"
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/storage/address_column.h"
 
@@ -249,6 +251,23 @@ class ClusterStoreReader {
     /// Requires EnsureClusterLoaded() to have been called.
     const uint8_t* GetCodePtr(uint32_t cluster_id,
                               uint32_t record_idx) const;
+
+    // ---- Async query support (Phase 8) ------------------------------------
+
+    /// File descriptor for the .clu file (for io_uring direct submission).
+    int clu_fd() const { return fd_; }
+
+    /// Look up a cluster's block location in the lookup table (pure memory).
+    /// Returns nullopt if cluster_id not found.
+    std::optional<query::ClusterBlockLocation> GetBlockLocation(
+        uint32_t cluster_id) const;
+
+    /// Parse a raw block buffer (already read from disk) into a ParsedCluster.
+    /// Pure CPU operation — no I/O.  block_buf ownership transfers to out.
+    Status ParseClusterBlock(uint32_t cluster_id,
+                              std::unique_ptr<uint8_t[]> block_buf,
+                              uint64_t block_size,
+                              query::ParsedCluster& out);
 
     /// Whether the file is open.
     bool is_open() const { return fd_ >= 0; }

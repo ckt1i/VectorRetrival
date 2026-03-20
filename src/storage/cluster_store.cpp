@@ -728,6 +728,165 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
 }
 
 // ============================================================================
+// Async query support (Phase 8)
+// ============================================================================
+
+std::optional<query::ClusterBlockLocation>
+ClusterStoreReader::GetBlockLocation(uint32_t cluster_id) const {
+    auto it = cluster_index_.find(cluster_id);
+    if (it == cluster_index_.end()) return std::nullopt;
+    const auto& entry = info_.lookup_table[it->second];
+    return query::ClusterBlockLocation{
+        entry.block_offset, entry.block_size, entry.num_records};
+}
+
+Status ClusterStoreReader::ParseClusterBlock(
+    uint32_t cluster_id,
+    std::unique_ptr<uint8_t[]> block_buf,
+    uint64_t block_size,
+    query::ParsedCluster& out) {
+
+    auto idx_it = cluster_index_.find(cluster_id);
+    if (idx_it == cluster_index_.end()) {
+        return Status::InvalidArgument(
+            "Cluster " + std::to_string(cluster_id) + " not found");
+    }
+    const auto& entry = info_.lookup_table[idx_it->second];
+
+    if (block_size != entry.block_size) {
+        return Status::InvalidArgument("block_size mismatch");
+    }
+
+    // --- Read mini-trailer from buffer (last 8 bytes = trailer_size + magic) ---
+    if (block_size < 8) {
+        return Status::Corruption("Block too small for trailer footer");
+    }
+
+    uint32_t mini_trailer_size = 0, block_magic = 0;
+    std::memcpy(&mini_trailer_size, block_buf.get() + block_size - 8,
+                sizeof(uint32_t));
+    std::memcpy(&block_magic, block_buf.get() + block_size - 4,
+                sizeof(uint32_t));
+    if (block_magic != kBlockMagic) {
+        return Status::Corruption("Invalid block magic");
+    }
+    if (mini_trailer_size > block_size) {
+        return Status::Corruption("Mini-trailer size exceeds block");
+    }
+
+    // Read entire mini-trailer from buffer
+    const uint8_t* trailer_ptr = block_buf.get() + block_size - mini_trailer_size;
+
+    // Parse mini-trailer
+    size_t tpos = 0;
+    auto ReadT = [&](auto& val) -> bool {
+        if (tpos + sizeof(val) > mini_trailer_size) return false;
+        std::memcpy(&val, trailer_ptr + tpos, sizeof(val));
+        tpos += sizeof(val);
+        return true;
+    };
+
+    AddressColumnLayout address_layout;
+    if (!ReadT(address_layout.page_size) ||
+        !ReadT(address_layout.bit_width) ||
+        !ReadT(address_layout.block_granularity) ||
+        !ReadT(address_layout.fixed_packed_size) ||
+        !ReadT(address_layout.last_packed_size) ||
+        !ReadT(address_layout.num_address_blocks)) {
+        return Status::Corruption(
+            "Mini-trailer: failed to read shared address layout");
+    }
+
+    const uint32_t num_blocks = address_layout.num_address_blocks;
+
+    if (entry.num_records == 0) {
+        if (num_blocks != 0 || address_layout.last_packed_size != 0) {
+            return Status::Corruption(
+                "Empty cluster has invalid address layout");
+        }
+    } else if (num_blocks == 0) {
+        return Status::Corruption("Non-empty cluster has zero address blocks");
+    }
+
+    std::vector<AddressBlock> address_blocks(num_blocks);
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+        if (!ReadT(address_blocks[i].base_offset)) {
+            return Status::Corruption(
+                "Mini-trailer: failed to parse block " + std::to_string(i));
+        }
+    }
+
+    uint32_t stored_trailer_size = 0;
+    uint32_t stored_block_magic = 0;
+    if (!ReadT(stored_trailer_size) || !ReadT(stored_block_magic)) {
+        return Status::Corruption(
+            "Mini-trailer: failed to read trailer footer");
+    }
+    if (stored_trailer_size != mini_trailer_size ||
+        stored_block_magic != kBlockMagic) {
+        return Status::Corruption("Mini-trailer footer mismatch");
+    }
+    if (tpos != mini_trailer_size) {
+        return Status::Corruption("Mini-trailer has trailing bytes");
+    }
+    if (num_blocks > 0 && address_layout.block_granularity == 0) {
+        return Status::Corruption("Invalid address block granularity");
+    }
+
+    // --- Codes: zero-copy pointer into block_buf ---
+    const uint32_t codes_length = entry.num_records * code_entry_size();
+
+    // --- Validate address payload region ---
+    if (codes_length > block_size) {
+        return Status::Corruption(
+            "Cluster block shorter than RaBitQ code region");
+    }
+    uint64_t expected_payload_bytes = 0;
+    if (num_blocks > 0) {
+        expected_payload_bytes =
+            static_cast<uint64_t>(num_blocks - 1) *
+                address_layout.fixed_packed_size +
+            address_layout.last_packed_size;
+    }
+    const uint64_t payload_and_trailer = block_size - codes_length;
+    if (payload_and_trailer < mini_trailer_size) {
+        return Status::Corruption("Cluster block shorter than trailer");
+    }
+    const uint64_t actual_payload_bytes =
+        payload_and_trailer - mini_trailer_size;
+    if (actual_payload_bytes != expected_payload_bytes) {
+        return Status::Corruption("Address payload size mismatch");
+    }
+
+    // --- Read address block packed data from buffer ---
+    uint64_t addr_offset = codes_length;
+    for (uint32_t i = 0; i < num_blocks; ++i) {
+        auto& block = address_blocks[i];
+        const uint32_t packed_size =
+            AddressColumn::BlockPackedSize(address_layout, i);
+        if (packed_size > 0) {
+            block.packed.assign(block_buf.get() + addr_offset,
+                                block_buf.get() + addr_offset + packed_size);
+        }
+        addr_offset += packed_size;
+    }
+
+    // --- SIMD decode all addresses ---
+    std::vector<AddressEntry> decoded;
+    VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
+        address_layout, address_blocks, entry.num_records, decoded));
+
+    // --- Fill output ---
+    out.codes_start = block_buf.get();
+    out.code_entry_size = code_entry_size();
+    out.num_records = entry.num_records;
+    out.decoded_addresses = std::move(decoded);
+    out.block_buf = std::move(block_buf);
+
+    return Status::OK();
+}
+
+// ============================================================================
 // GetAddress / GetAddresses
 // ============================================================================
 
