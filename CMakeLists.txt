@@ -226,6 +226,20 @@ target_link_libraries(vdb_query PUBLIC vdb_index vdb_storage vdb_simd vdb_rabitq
 target_link_libraries(vdb_query PRIVATE ${URING_LIB})
 
 # =============================================================================
+# VDB IO Library (Phase 8)
+# Npy/Jsonl file loaders for dataset ingestion.
+# =============================================================================
+add_library(vdb_io STATIC
+    src/io/npy_reader.cpp
+    src/io/jsonl_reader.cpp
+)
+target_include_directories(vdb_io PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_io PUBLIC vdb_common)
+
+# =============================================================================
 # Tests
 # =============================================================================
 if(VDB_BUILD_TESTS)
@@ -356,6 +370,10 @@ if(VDB_BUILD_TESTS)
     target_link_libraries(test_ivf_builder PRIVATE vdb_index GTest::gtest GTest::gtest_main)
     add_test(NAME test_ivf_builder COMMAND test_ivf_builder)
 
+    add_executable(test_payload_pipeline tests/index/payload_pipeline_test.cpp)
+    target_link_libraries(test_payload_pipeline PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_payload_pipeline COMMAND test_payload_pipeline)
+
     # ----- Benchmark (Phase 6) -----
     add_executable(bench_ivf_quality tests/index/bench_ivf_quality.cpp)
     target_link_libraries(bench_ivf_quality PRIVATE vdb_index)
@@ -390,6 +408,21 @@ if(VDB_BUILD_TESTS)
     add_executable(test_overlap_scheduler tests/query/overlap_scheduler_test.cpp)
     target_link_libraries(test_overlap_scheduler PRIVATE vdb_query GTest::gtest GTest::gtest_main)
     add_test(NAME test_overlap_scheduler COMMAND test_overlap_scheduler)
+
+    add_executable(test_early_stop tests/query/early_stop_test.cpp)
+    target_link_libraries(test_early_stop PRIVATE vdb_query GTest::gtest GTest::gtest_main)
+    add_test(NAME test_early_stop COMMAND test_early_stop)
+
+    # -------------------------------------------------------------------------
+    # IO tests (Phase 8)
+    # -------------------------------------------------------------------------
+    add_executable(test_npy_reader tests/io/npy_reader_test.cpp)
+    target_link_libraries(test_npy_reader PRIVATE vdb_io GTest::gtest GTest::gtest_main)
+    add_test(NAME test_npy_reader COMMAND test_npy_reader)
+
+    add_executable(test_jsonl_reader tests/io/jsonl_reader_test.cpp)
+    target_link_libraries(test_jsonl_reader PRIVATE vdb_io GTest::gtest GTest::gtest_main)
+    add_test(NAME test_jsonl_reader COMMAND test_jsonl_reader)
 endif()
 
 # =============================================================================

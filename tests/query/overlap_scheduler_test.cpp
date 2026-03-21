@@ -86,6 +86,7 @@ TEST_F(OverlapSchedulerTest, EndToEnd_PreadFallback) {
     config.top_k = kTopK;
     config.nprobe = kNprobe;
     config.probe_batch_size = 64;
+    config.early_stop = false;  // Exact results needed
 
     OverlapScheduler scheduler(*index_, reader, config);
 
@@ -151,6 +152,7 @@ TEST_F(OverlapSchedulerTest, PrefetchConfig_SmallDepth) {
     config.prefetch_depth = 4;
     config.refill_threshold = 1;
     config.refill_count = 1;
+    config.early_stop = false;  // Exact results needed
 
     OverlapScheduler scheduler(*index_, reader, config);
 
@@ -180,6 +182,7 @@ TEST_F(OverlapSchedulerTest, PrefetchDepth_ExceedsNprobe) {
     config.prefetch_depth = 100;  // >> nprobe=4
     config.refill_threshold = 2;
     config.refill_count = 2;
+    config.early_stop = false;  // Exact results needed
 
     OverlapScheduler scheduler(*index_, reader, config);
 
@@ -207,6 +210,7 @@ TEST_F(OverlapSchedulerTest, MultipleQueries_StateReset) {
     config.top_k = kTopK;
     config.nprobe = kNprobe;
     config.prefetch_depth = 4;
+    config.early_stop = false;  // Exact results needed
 
     OverlapScheduler scheduler(*index_, reader, config);
 

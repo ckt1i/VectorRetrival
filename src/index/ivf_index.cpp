@@ -108,7 +108,23 @@ Status IvfIndex::Open(const std::string& dir) {
         }
     }
 
-    // --- 6. Open segment (unified cluster.clu + data.dat) ---
+    // --- 6. Load payload schemas ---
+    const auto* ps = seg_meta->payload_schemas();
+    if (ps) {
+        payload_schemas_.reserve(ps->size());
+        for (uint32_t i = 0; i < ps->size(); ++i) {
+            const auto* entry = ps->Get(i);
+            if (!entry) continue;
+            ColumnSchema cs;
+            cs.id = entry->id();
+            cs.name = entry->name() ? entry->name()->str() : "";
+            cs.dtype = static_cast<DType>(entry->dtype());
+            cs.nullable = entry->nullable();
+            payload_schemas_.push_back(cs);
+        }
+    }
+
+    // --- 7. Open segment (unified cluster.clu + data.dat) ---
     auto seg_status = segment_.Open(dir, payload_schemas_);
     if (!seg_status.ok()) {
         return seg_status;

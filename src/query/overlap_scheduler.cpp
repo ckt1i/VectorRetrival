@@ -41,7 +41,9 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     auto results = ctx.collector().Finalize();
 
     FetchMissingPayloads(ctx, reranker, results);
-    return AssembleResults(reranker, results);
+    auto sr = AssembleResults(reranker, results);
+    sr.stats() = ctx.stats();
+    return sr;
 }
 
 // ============================================================================
@@ -232,6 +234,18 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
         // 4. Submit vec reads produced by this cluster's probe
         uint32_t submitted = reader_.Submit();
         ctx.stats().total_io_submitted += submitted;
+
+        // Early stop: check if TopK quality already exceeds calibration
+        // baseline d_k. TopK reflects completions consumed during
+        // WaitAndPoll above (naturally interleaved with cluster waits).
+        if (config_.early_stop &&
+            ctx.collector().Full() &&
+            ctx.collector().TopDistance() < index_.conann().d_k()) {
+            ctx.stats().early_stopped = true;
+            ctx.stats().clusters_skipped =
+                static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+            break;
+        }
 
         // 5. Sliding window refill
         if (inflight_clusters_ < config_.refill_threshold &&

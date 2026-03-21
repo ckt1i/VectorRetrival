@@ -88,6 +88,9 @@ class IvfIndex {
     /// The directory this index was loaded from.
     const std::string& dir() const { return dir_; }
 
+    /// Payload column schemas (loaded from segment.meta).
+    const std::vector<ColumnSchema>& payload_schemas() const { return payload_schemas_; }
+
  private:
     std::string dir_;
     Dim dim_ = 0;

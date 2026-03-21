@@ -226,6 +226,18 @@ table InvertedListMeta {
 }
 
 // ============================================================
+// Payload Column Schema (Phase 8: Payload Pipeline)
+// ============================================================
+
+/// Payload 列的 schema 描述 (持久化到 segment.meta)
+table PayloadColumnSchema {
+    id: uint32;              // Column ID
+    name: string;            // Column name (e.g. "id", "data")
+    dtype: uint8;            // Maps to C++ DType enum value
+    nullable: bool;          // Whether the column allows null values
+}
+
+// ============================================================
 // Segment 状态
 // ============================================================
 
@@ -383,7 +395,10 @@ table SegmentMeta {
     
     // 父 Segment (合并来源)
     parent_segments: [uint64];
-    
+
+    // Payload column schemas (Phase 8: Payload Pipeline)
+    payload_schemas: [PayloadColumnSchema];
+
     // 校验
     checksum: uint32;
 }

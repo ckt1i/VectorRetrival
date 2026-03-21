@@ -3,6 +3,7 @@
 #include <vector>
 
 #include "vdb/common/types.h"
+#include "vdb/query/search_context.h"
 
 namespace vdb {
 namespace query {
@@ -38,8 +39,12 @@ class SearchResults {
     const std::vector<SearchResult>& results() const { return results_; }
     std::vector<SearchResult>& results() { return results_; }
 
+    const SearchStats& stats() const { return stats_; }
+    SearchStats& stats() { return stats_; }
+
  private:
     std::vector<SearchResult> results_;
+    SearchStats stats_;
 };
 
 }  // namespace query

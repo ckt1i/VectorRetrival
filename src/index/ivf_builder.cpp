@@ -35,7 +35,8 @@ IvfBuilder::~IvfBuilder() = default;
 // ============================================================================
 
 Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
-                         const std::string& output_dir) {
+                         const std::string& output_dir,
+                         PayloadFn payload_fn) {
     if (!vectors || N == 0 || dim == 0) {
         return Status::InvalidArgument("vectors, N, or dim is zero/null");
     }
@@ -54,7 +55,7 @@ Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
     CalibrateDk(vectors, N, dim);
 
     // Phase C+D: write everything to disk
-    s = WriteIndex(vectors, N, dim, output_dir);
+    s = WriteIndex(vectors, N, dim, output_dir, std::move(payload_fn));
     return s;
 }
 
@@ -255,7 +256,8 @@ void IvfBuilder::CalibrateDk(const float* vectors, uint32_t N, Dim dim) {
 // ============================================================================
 
 Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
-                              const std::string& output_dir) {
+                              const std::string& output_dir,
+                              PayloadFn payload_fn) {
     const uint32_t K = config_.nlist;
 
     // --- Create output directory ---
@@ -318,7 +320,8 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         for (uint32_t idx : members) {
             const float* vec = vectors + static_cast<size_t>(idx) * dim;
             AddressEntry entry;
-            s = dat_writer.WriteRecord(vec, {}, entry);
+            auto pl = payload_fn ? payload_fn(idx) : std::vector<Datum>{};
+            s = dat_writer.WriteRecord(vec, pl, entry);
             if (!s.ok()) return s;
             addr_entries_per_cluster[k].push_back(entry);
         }
@@ -436,23 +439,29 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     }
     auto clusters_vec = fbb.CreateVector(cluster_offsets);
 
-    // SegmentMeta
-    auto seg = vdb::schema::CreateSegmentMeta(
-        fbb,
-        config_.segment_id,                         // segment_id
-        1,                                           // version
-        vdb::schema::SegmentState::ACTIVE,           // state
-        dim,                                         // dimension
-        vdb::schema::MetricType::L2,                 // metric_type
-        vdb::schema::VectorDType::FLOAT32,           // vector_dtype
-        ivf_params,
-        0,    // pq_params
-        0,    // opq_params
-        0,    // hnsw_params
-        rabitq_params,
-        conann_params,
-        clusters_vec
-    );
+    // PayloadColumnSchema array
+    std::vector<flatbuffers::Offset<vdb::schema::PayloadColumnSchema>> ps_offsets;
+    for (const auto& cs : config_.payload_schemas) {
+        auto name_off = fbb.CreateString(cs.name);
+        ps_offsets.push_back(vdb::schema::CreatePayloadColumnSchema(
+            fbb, cs.id, name_off, static_cast<uint8_t>(cs.dtype), cs.nullable));
+    }
+    auto payload_schemas_vec = fbb.CreateVector(ps_offsets);
+
+    // SegmentMeta (use builder pattern to include payload_schemas)
+    vdb::schema::SegmentMetaBuilder smb(fbb);
+    smb.add_segment_id(config_.segment_id);
+    smb.add_version(1);
+    smb.add_state(vdb::schema::SegmentState::ACTIVE);
+    smb.add_dimension(dim);
+    smb.add_metric_type(vdb::schema::MetricType::L2);
+    smb.add_vector_dtype(vdb::schema::VectorDType::FLOAT32);
+    smb.add_ivf_params(ivf_params);
+    smb.add_rabitq_params(rabitq_params);
+    smb.add_conann_params(conann_params);
+    smb.add_clusters(clusters_vec);
+    smb.add_payload_schemas(payload_schemas_vec);
+    auto seg = smb.Finish();
 
     fbb.Finish(seg, vdb::schema::SegmentMetaIdentifier());
 

@@ -69,6 +69,15 @@ struct IvfBuilderConfig {
 };
 
 // ============================================================================
+// PayloadFn — callback to supply per-vector payload during Build
+// ============================================================================
+
+/// Callback to supply payload columns for a given vector index.
+/// Returns a vector of Datum values matching config_.payload_schemas.
+/// Return empty vector if no payload for this vector.
+using PayloadFn = std::function<std::vector<Datum>(uint32_t vec_index)>;
+
+// ============================================================================
 // IvfBuilder — builds an IVF+RaBitQ index to disk
 // ============================================================================
 
@@ -105,9 +114,12 @@ class IvfBuilder {
     /// @param N          Number of vectors
     /// @param dim        Vector dimensionality
     /// @param output_dir Output directory (will be created if missing)
+    /// @param payload_fn Optional callback to supply per-vector payload.
+    ///                   If nullptr, records are written with empty payload.
     /// @return Status
     Status Build(const float* vectors, uint32_t N, Dim dim,
-                 const std::string& output_dir);
+                 const std::string& output_dir,
+                 PayloadFn payload_fn = nullptr);
 
     /// Optional progress callback: called once per cluster written.
     /// Arguments: (cluster_index, total_clusters)
@@ -135,7 +147,8 @@ class IvfBuilder {
 
     /// Phase C+D: write per-cluster files + global metadata.
     Status WriteIndex(const float* vectors, uint32_t N, Dim dim,
-                      const std::string& output_dir);
+                      const std::string& output_dir,
+                      PayloadFn payload_fn);
 
     IvfBuilderConfig config_;
     std::vector<uint32_t> assignments_;  // vector → cluster index

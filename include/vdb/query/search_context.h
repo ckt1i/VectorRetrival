@@ -17,6 +17,9 @@ struct SearchConfig {
     uint32_t cq_entries = 4096;
     uint32_t safein_all_threshold = 256 * 1024;  // 256KB
 
+    // Early stop: skip remaining clusters when TopK quality exceeds d_k
+    bool early_stop = true;
+
     // Phase 8: Async cluster prefetch
     uint32_t prefetch_depth = 16;      // Initial cluster block prefetch count
     uint32_t refill_threshold = 2;     // Refill when inflight_clusters drops below
@@ -32,6 +35,8 @@ struct SearchStats {
     uint32_t total_reranked = 0;
     uint32_t total_payload_prefetched = 0;
     uint32_t total_payload_fetched = 0;
+    bool early_stopped = false;
+    uint32_t clusters_skipped = 0;
     double probe_time_ms = 0;
     double rerank_time_ms = 0;
     double total_time_ms = 0;
