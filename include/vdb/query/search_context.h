@@ -40,6 +40,7 @@ struct SearchStats {
     double probe_time_ms = 0;
     double rerank_time_ms = 0;
     double total_time_ms = 0;
+    double io_wait_time_ms = 0;
 };
 
 class SearchContext {

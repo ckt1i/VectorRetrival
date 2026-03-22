@@ -1,5 +1,7 @@
 #include "vdb/query/overlap_scheduler.h"
 
+#include <chrono>
+#include <cstdio>
 #include <cstring>
 
 #include "vdb/common/distance.h"
@@ -28,6 +30,8 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     next_to_submit_ = 0;
     inflight_clusters_ = 0;
 
+    auto t_search_start = std::chrono::steady_clock::now();
+
     SearchContext ctx(query_vec, config_);
     RerankConsumer reranker(ctx, index_.dim());
 
@@ -43,6 +47,8 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     FetchMissingPayloads(ctx, reranker, results);
     auto sr = AssembleResults(reranker, results);
     sr.stats() = ctx.stats();
+    sr.stats().total_time_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t_search_start).count();
     return sr;
 }
 
@@ -218,15 +224,23 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
 
         // 1. Wait until target cluster is ready (consuming other CQEs meanwhile)
         while (ready_clusters_.find(cid) == ready_clusters_.end()) {
+            auto tw0 = std::chrono::steady_clock::now();
             uint32_t n = reader_.WaitAndPoll(
                 comps.data(), static_cast<uint32_t>(comps.size()));
+            ctx.stats().io_wait_time_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tw0).count();
             for (uint32_t j = 0; j < n; ++j) {
                 DispatchCompletion(comps[j].buffer, ctx, reranker);
             }
         }
 
         // 2. Probe this cluster
-        ProbeCluster(ready_clusters_[cid], cid, ctx, reranker);
+        {
+            auto tp0 = std::chrono::steady_clock::now();
+            ProbeCluster(ready_clusters_[cid], cid, ctx, reranker);
+            ctx.stats().probe_time_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tp0).count();
+        }
 
         // 3. Release ParsedCluster memory
         ready_clusters_.erase(cid);
@@ -272,13 +286,38 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
 void OverlapScheduler::FinalDrain(SearchContext& ctx,
                                    RerankConsumer& reranker) {
     std::vector<IoCompletion> comps(128);
-    while (!pending_.empty()) {
+    // Phase 1: Drain all in-flight async IOs (io_uring path).
+    while (reader_.InFlight() > 0) {
+        auto tw0 = std::chrono::steady_clock::now();
         uint32_t n = reader_.WaitAndPoll(
             comps.data(), static_cast<uint32_t>(comps.size()));
+        ctx.stats().io_wait_time_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - tw0).count();
         for (uint32_t j = 0; j < n; ++j) {
             DispatchCompletion(comps[j].buffer, ctx, reranker);
         }
     }
+    // Phase 2: Drain any already-completed reads (sync pread path).
+    // PreadFallbackReader completes reads in Submit() so InFlight() == 0,
+    // but completions still sit in its internal deque.
+    for (;;) {
+        uint32_t n = reader_.Poll(
+            comps.data(), static_cast<uint32_t>(comps.size()));
+        if (n == 0) break;
+        for (uint32_t j = 0; j < n; ++j) {
+            DispatchCompletion(comps[j].buffer, ctx, reranker);
+        }
+    }
+    // Phase 3: Free any orphaned pending buffers (stale completions from
+    // a previous query whose buffers no longer match pending_ entries).
+    for (auto& [buf, pio] : pending_) {
+        if (pio.type == PendingIO::Type::CLUSTER_BLOCK) {
+            delete[] buf;
+        } else {
+            buffer_pool_.Release(buf);
+        }
+    }
+    pending_.clear();
 }
 
 // ============================================================================
@@ -313,9 +352,21 @@ void OverlapScheduler::FetchMissingPayloads(
         ctx.stats().total_payload_fetched += submitted;
 
         std::vector<IoCompletion> comps(128);
-        while (!pending_.empty()) {
+        while (reader_.InFlight() > 0) {
+            auto tw0 = std::chrono::steady_clock::now();
             uint32_t n = reader_.WaitAndPoll(
                 comps.data(), static_cast<uint32_t>(comps.size()));
+            ctx.stats().io_wait_time_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tw0).count();
+            for (uint32_t i = 0; i < n; ++i) {
+                DispatchCompletion(comps[i].buffer, ctx, reranker);
+            }
+        }
+        // Drain sync completions (pread path)
+        for (;;) {
+            uint32_t n = reader_.Poll(
+                comps.data(), static_cast<uint32_t>(comps.size()));
+            if (n == 0) break;
             for (uint32_t i = 0; i < n; ++i) {
                 DispatchCompletion(comps[i].buffer, ctx, reranker);
             }
