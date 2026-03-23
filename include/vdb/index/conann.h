@@ -16,28 +16,31 @@ namespace index {
 /// ConANN performs a three-way classification of candidate vectors based on
 /// their approximate (RaBitQ) distance to the query vector.
 ///
-/// The classification uses **additive thresholds** derived from a globally
-/// precomputed reference distance d_k and the RaBitQ error bound ε:
+/// The classification uses a dynamic margin derived from the inner-product
+/// estimation error ε_ip and vector norms:
 ///
-///   - **SafeIn**:    approx_dist < d_k − 2ε   (definitely in top-K)
-///   - **SafeOut**:   approx_dist > d_k + 2ε   (definitely not in top-K)
-///   - **Uncertain**: otherwise                 (needs exact distance check)
+///   margin = 2 · r_max · r_q · ε_ip
+///
+///   - **SafeIn**:    approx_dist < d_k − margin
+///   - **SafeOut**:   approx_dist > d_k + margin
+///   - **Uncertain**: otherwise
 ///
 /// where:
-///   - d_k is a globally precomputed top-k reference distance, determined by
-///     sampling the full dataset during build time.
-///   - ε = c_factor · 2^(−bits/2) / √dim   (RaBitQ error bound)
+///   - d_k is a globally precomputed top-k reference distance (L2²).
+///   - ε_ip is the global inner-product estimation error bound (stored here).
+///   - r_max = max(‖o-c‖) within a cluster (stored in .clu lookup entry).
+///   - r_q = ‖q-c‖ (query residual norm, computed at query time).
 ///
-/// This design makes the thresholds fixed (precomputed at build time) rather
-/// than dynamic (no dependency on the runtime top-K heap state), which
-/// simplifies the hot loop and enables early I/O scheduling decisions.
+/// The margin is computed per (cluster, query) pair at query time via
+/// Classify(approx_dist, margin). The legacy Classify(approx_dist) overload
+/// uses the stored epsilon as a fixed margin for backward compatibility.
 ///
 class ConANN {
  public:
     /// Construct a ConANN classifier with explicit epsilon and d_k values.
     ///
-    /// @param epsilon  RaBitQ error bound: c · 2^(−B/2) / √D
-    /// @param d_k      Precomputed global top-k reference distance
+    /// @param epsilon  ε_ip: inner-product estimation error bound (P95)
+    /// @param d_k      Precomputed global top-k reference distance (L2²)
     ConANN(float epsilon, float d_k);
 
     /// Construct from RaBitQ config and a precomputed d_k.
@@ -51,11 +54,22 @@ class ConANN {
     /// @return     ConANN instance
     static ConANN FromConfig(const RaBitQConfig& cfg, Dim dim, float d_k);
 
-    /// Classify a candidate based on its approximate distance.
+    /// Classify a candidate using the stored epsilon as a fixed margin.
+    /// Legacy overload — prefer Classify(approx_dist, margin) for correct
+    /// error bounds.
     ///
     /// @param approx_dist  Approximate squared L2 distance from RaBitQ
     /// @return             SafeIn / SafeOut / Uncertain
     ResultClass Classify(float approx_dist) const;
+
+    /// Classify a candidate using a dynamic margin.
+    ///
+    /// The caller computes: margin = 2 · r_max · r_q · ε_ip
+    ///
+    /// @param approx_dist  Approximate squared L2 distance from RaBitQ
+    /// @param margin       Dynamic distance error bound for this (cluster, query)
+    /// @return             SafeIn / SafeOut / Uncertain
+    ResultClass Classify(float approx_dist, float margin) const;
 
     /// Calibrate the global distance threshold d_k by sampling from the dataset.
     ///
@@ -86,7 +100,7 @@ class ConANN {
         float percentile = 0.99f,
         uint64_t seed = 42);
 
-    /// Get the RaBitQ error bound epsilon.
+    /// Get the inner-product estimation error bound ε_ip.
     float epsilon() const { return epsilon_; }
 
     /// Get the precomputed global top-k reference distance.
@@ -99,7 +113,7 @@ class ConANN {
     float tau_out() const { return tau_out_; }
 
  private:
-    float epsilon_;    // ε = c · 2^(−B/2) / √D
+    float epsilon_;    // ε_ip: inner-product estimation error bound
     float d_k_;        // Global precomputed top-k reference distance
     float tau_in_;     // = d_k − 2ε
     float tau_out_;    // = d_k + 2ε

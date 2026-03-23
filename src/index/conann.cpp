@@ -43,6 +43,16 @@ ResultClass ConANN::Classify(float approx_dist) const {
     return ResultClass::Uncertain;
 }
 
+ResultClass ConANN::Classify(float approx_dist, float margin) const {
+    if (approx_dist > d_k_ + 2 * margin) {
+        return ResultClass::SafeOut;
+    }
+    if (approx_dist < d_k_ - 2 * margin) {
+        return ResultClass::SafeIn;
+    }
+    return ResultClass::Uncertain;
+}
+
 // ============================================================================
 // Calibration
 // ============================================================================

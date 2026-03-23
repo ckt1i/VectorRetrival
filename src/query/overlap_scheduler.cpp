@@ -138,7 +138,6 @@ void OverlapScheduler::ProbeCluster(
     const ParsedCluster& pc, uint32_t cluster_id,
     SearchContext& ctx, RerankConsumer& reranker) {
 
-    index::ConANN conann(pc.epsilon, index_.conann().d_k());
     rabitq::RaBitQEstimator estimator(index_.dim());
     int dat_fd = index_.segment().data_reader().fd();
 
@@ -147,6 +146,11 @@ void OverlapScheduler::ProbeCluster(
     const float* centroid = index_.centroid(cluster_id);
     auto pq = estimator.PrepareQuery(
         ctx.query_vec(), centroid, index_.rotation());
+
+    // Dynamic margin: margin = 2 · r_max · r_q · ε_ip
+    float r_max = pc.epsilon;  // .clu lookup field stores r_max
+    float eps_ip = index_.conann().epsilon();
+    float margin = 2.0f * r_max * pq.norm_qc * eps_ip;
 
     const uint32_t batch_size = config_.probe_batch_size;
     std::vector<float> dists(batch_size);
@@ -167,7 +171,7 @@ void OverlapScheduler::ProbeCluster(
         }
 
         for (uint32_t i = 0; i < actual; ++i) {
-            ResultClass rc = conann.Classify(dists[i]);
+            ResultClass rc = index_.conann().Classify(dists[i], margin);
             AddressEntry addr = pc.decoded_addresses[offset + i];
 
             if (rc == ResultClass::SafeOut) {

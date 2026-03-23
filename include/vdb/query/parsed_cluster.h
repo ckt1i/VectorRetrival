@@ -27,7 +27,7 @@ struct ParsedCluster {
     const uint8_t* codes_start = nullptr;  // Zero-copy into block_buf
     uint32_t code_entry_size = 0;          // Bytes per RaBitQ code entry
     uint32_t num_records = 0;
-    float epsilon = 0.0f;                  // Per-cluster RaBitQ reconstruction error (P95)
+    float epsilon = 0.0f;                  // r_max = max(‖o-c‖) within cluster
     std::vector<AddressEntry> decoded_addresses;
 
     ParsedCluster() = default;

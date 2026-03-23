@@ -11,8 +11,10 @@
 
 #include "vdb/index/conann.h"
 #include "vdb/rabitq/rabitq_encoder.h"
+#include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
+#include "vdb/simd/popcount.h"
 #include "vdb/storage/address_column.h"
 #include "vdb/storage/cluster_store.h"
 #include "vdb/storage/data_file_writer.h"
@@ -252,71 +254,92 @@ void IvfBuilder::CalibrateDk(const float* vectors, uint32_t N, Dim dim) {
 }
 
 // ============================================================================
-// ComputeClusterEpsilon — per-cluster RaBitQ reconstruction error (P95)
+// CalibrateEpsilonIp — global inner-product estimation error bound
 // ============================================================================
+//
+// For each cluster, sample pseudo-queries (vectors from the same cluster) and
+// compute |ŝ - s| where ŝ is the popcount-based IP estimate and s is the
+// accurate float dot product.  Collect all errors into a global pool and
+// return the configured percentile.
 
-static float ComputeClusterEpsilon(
-    const float* member_vecs,
-    const std::vector<rabitq::RaBitQCode>& codes,
-    const float* centroid,
+static float CalibrateEpsilonIp(
+    const std::vector<std::vector<rabitq::RaBitQCode>>& all_codes,
+    const std::vector<std::vector<uint32_t>>& cluster_members,
+    const float* vectors,
+    const float* centroids,
     const rabitq::RotationMatrix& rotation,
     Dim dim,
-    uint32_t n_members,
-    uint32_t max_samples,
+    uint32_t K,
+    uint32_t max_samples_per_cluster,
+    float percentile,
     uint64_t seed) {
 
-    if (n_members == 0) return 0.0f;
-
-    // Sampling strategy: if cluster is small, reduce sample count
-    uint32_t n_samples = max_samples;
-    if (n_members < 2 * max_samples) {
-        n_samples = std::max(n_members / 2, 1u);
-    }
-    n_samples = std::min(n_samples, n_members);
-
-    // Select sample indices
-    std::vector<uint32_t> indices(n_members);
-    std::iota(indices.begin(), indices.end(), 0u);
-    if (n_samples < n_members) {
-        std::mt19937 rng(seed);
-        std::shuffle(indices.begin(), indices.end(), rng);
-        indices.resize(n_samples);
-    }
-
+    const uint32_t num_words = (dim + 63) / 64;
     const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
-    std::vector<float> sign_vec(dim);
-    std::vector<float> recon_normalized(dim);
-    std::vector<float> errors(n_samples);
+    rabitq::RaBitQEstimator estimator(dim);
 
-    for (uint32_t s = 0; s < n_samples; ++s) {
-        const uint32_t idx = indices[s];
-        const float* original = member_vecs + static_cast<size_t>(idx) * dim;
-        const auto& code = codes[idx];
+    std::vector<float> ip_errors;
 
-        // Step 1: bits → ±1/√dim (quantized unit vector in rotated space)
-        for (size_t i = 0; i < dim; ++i) {
-            int bit = (code.code[i / 64] >> (i % 64)) & 1;
-            sign_vec[i] = (2.0f * bit - 1.0f) * inv_sqrt_dim;
+    for (uint32_t k = 0; k < K; ++k) {
+        const auto& members = cluster_members[k];
+        const auto& codes = all_codes[k];
+        const uint32_t n_members = static_cast<uint32_t>(members.size());
+        if (n_members < 2) continue;
+
+        // Sampling: pick pseudo-queries from this cluster
+        uint32_t n_queries = max_samples_per_cluster;
+        if (n_members < 2 * max_samples_per_cluster) {
+            n_queries = std::max(n_members / 2, 1u);
         }
+        n_queries = std::min(n_queries, n_members);
 
-        // Step 2: inverse rotate back to original space
-        rotation.ApplyInverse(sign_vec.data(), recon_normalized.data());
+        std::vector<uint32_t> indices(n_members);
+        std::iota(indices.begin(), indices.end(), 0u);
+        std::mt19937 rng(seed + k);
+        std::shuffle(indices.begin(), indices.end(), rng);
 
-        // Step 3: v̂ = centroid + norm * recon_normalized; error = L2(v, v̂)
-        float err_sq = 0.0f;
-        for (size_t i = 0; i < dim; ++i) {
-            float diff = original[i] -
-                         (centroid[i] + code.norm * recon_normalized[i]);
-            err_sq += diff * diff;
+        const float* centroid = centroids + static_cast<size_t>(k) * dim;
+
+        for (uint32_t q = 0; q < n_queries; ++q) {
+            const uint32_t q_idx = indices[q];
+            const float* query = vectors +
+                static_cast<size_t>(members[q_idx]) * dim;
+
+            // PrepareQuery gives us the rotated normalized residual and sign code
+            auto pq = estimator.PrepareQuery(query, centroid, rotation);
+
+            // Compare popcount IP vs accurate IP for all other codes in cluster
+            for (uint32_t t = 0; t < n_members; ++t) {
+                if (t == q_idx) continue;
+                const auto& code = codes[t];
+
+                // Popcount path: ŝ = 1 - 2·hamming/dim
+                uint32_t hamming = simd::PopcountXor(
+                    pq.sign_code.data(), code.code.data(), num_words);
+                float ip_hat = 1.0f - 2.0f * static_cast<float>(hamming) /
+                                              static_cast<float>(dim);
+
+                // Accurate path: s = (1/√dim) · Σ rotated_q[i] × (2·bit[i]-1)
+                float dot = 0.0f;
+                for (size_t i = 0; i < dim; ++i) {
+                    int bit = (code.code[i / 64] >> (i % 64)) & 1;
+                    float sign = 2.0f * bit - 1.0f;
+                    dot += pq.rotated[i] * sign;
+                }
+                float ip_accurate = dot * inv_sqrt_dim;
+
+                ip_errors.push_back(std::abs(ip_hat - ip_accurate));
+            }
         }
-        errors[s] = std::sqrt(err_sq);
     }
 
-    // Sort and return P95
-    std::sort(errors.begin(), errors.end());
-    size_t p95_idx = static_cast<size_t>(
-        static_cast<float>(n_samples - 1) * 0.95f);
-    return errors[p95_idx];
+    if (ip_errors.empty()) return 0.0f;
+
+    std::sort(ip_errors.begin(), ip_errors.end());
+    float findex = percentile * static_cast<float>(ip_errors.size() - 1);
+    auto idx = static_cast<size_t>(std::min(
+        findex, static_cast<float>(ip_errors.size() - 1)));
+    return ip_errors[idx];
 }
 
 // ============================================================================
@@ -357,8 +380,6 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         cluster_members[assignments_[i]].push_back(i);
     }
 
-    // epsilon is now per-cluster (computed from reconstruction error below)
-
     // --- Build encoder ---
     rabitq::RaBitQEncoder encoder(dim, rotation);
 
@@ -395,7 +416,38 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     s = dat_writer.Finalize();
     if (!s.ok()) return s;
 
-    // --- Phase 2: write unified cluster.clu ---
+    // --- Phase 2a: RaBitQ encode all clusters, compute r_max ---
+    std::vector<std::vector<rabitq::RaBitQCode>> all_codes(K);
+    std::vector<float> r_max_per_cluster(K, 0.0f);
+
+    for (uint32_t k = 0; k < K; ++k) {
+        const auto& members = cluster_members[k];
+        const uint32_t n_members = static_cast<uint32_t>(members.size());
+        const float* centroid = centroids_.data() + static_cast<size_t>(k) * dim;
+
+        // Gather member vectors contiguously
+        std::vector<float> member_vecs(static_cast<size_t>(n_members) * dim);
+        for (uint32_t m = 0; m < n_members; ++m) {
+            std::memcpy(member_vecs.data() + static_cast<size_t>(m) * dim,
+                         vectors + static_cast<size_t>(members[m]) * dim,
+                         dim * sizeof(float));
+        }
+
+        all_codes[k] = encoder.EncodeBatch(member_vecs.data(), n_members, centroid);
+
+        // r_max = max(‖o-c‖) in this cluster
+        for (const auto& code : all_codes[k]) {
+            r_max_per_cluster[k] = std::max(r_max_per_cluster[k], code.norm);
+        }
+    }
+
+    // --- Phase 2b: calibrate global ε_ip ---
+    calibrated_eps_ip_ = CalibrateEpsilonIp(
+        all_codes, cluster_members, vectors, centroids_.data(),
+        rotation, dim, K,
+        config_.epsilon_samples, config_.epsilon_percentile, config_.seed);
+
+    // --- Phase 2c: write unified cluster.clu ---
     storage::ClusterStoreWriter clu_writer;
     s = clu_writer.Open(clu_path, K, dim, config_.rabitq);
     if (!s.ok()) return s;
@@ -405,30 +457,15 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         const uint32_t n_members = static_cast<uint32_t>(members.size());
         const float* centroid = centroids_.data() + static_cast<size_t>(k) * dim;
 
-        // RaBitQ encode all members (gather contiguously)
-        std::vector<float> member_vecs(static_cast<size_t>(n_members) * dim);
-        for (uint32_t m = 0; m < n_members; ++m) {
-            std::memcpy(member_vecs.data() + static_cast<size_t>(m) * dim,
-                         vectors + static_cast<size_t>(members[m]) * dim,
-                         dim * sizeof(float));
-        }
-
-        auto codes = encoder.EncodeBatch(member_vecs.data(), n_members, centroid);
-
-        // Compute per-cluster epsilon from RaBitQ reconstruction error
-        float cluster_epsilon = ComputeClusterEpsilon(
-            member_vecs.data(), codes, centroid, rotation, dim,
-            n_members, config_.epsilon_samples, config_.seed + k);
-
         // AddressColumn encode
         auto addr_blocks = storage::AddressColumn::Encode(
             addr_entries_per_cluster[k], 64 /*fixed packed size*/, config_.page_size);
 
-        // Write cluster block
-        s = clu_writer.BeginCluster(k, n_members, centroid, cluster_epsilon);
+        // Write cluster block (epsilon field stores r_max)
+        s = clu_writer.BeginCluster(k, n_members, centroid, r_max_per_cluster[k]);
         if (!s.ok()) return s;
 
-        s = clu_writer.WriteVectors(codes);
+        s = clu_writer.WriteVectors(all_codes[k]);
         if (!s.ok()) return s;
 
         s = clu_writer.WriteAddressBlocks(addr_blocks);
@@ -473,7 +510,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     auto conann_params = vdb::schema::CreateConANNParams(
         fbb,
         0.0f, 0.0f,                     // deprecated tau_in/tau_out factors
-        0.0f,                            // epsilon (now per-cluster in .clu lookup table)
+        calibrated_eps_ip_,              // epsilon = ε_ip (inner-product error bound)
         calibrated_dk_,                  // d_k
         config_.calibration_samples,     // calibration_samples
         config_.calibration_topk,        // calibration_topk

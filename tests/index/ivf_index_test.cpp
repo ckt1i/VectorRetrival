@@ -133,9 +133,9 @@ TEST_F(IvfIndexTest, ConANN_LoadedCorrectly) {
     IvfIndex idx;
     ASSERT_TRUE(idx.Open(test_dir_).ok());
 
-    // Global epsilon is 0 (per-cluster epsilon is in .clu lookup table).
+    // Global epsilon stores calibrated ε_ip (inner-product error bound).
     // d_k should still be positive after calibration.
-    EXPECT_EQ(idx.conann().epsilon(), 0.0f);
+    EXPECT_GT(idx.conann().epsilon(), 0.0f);
     EXPECT_GT(idx.conann().d_k(), 0.0f);
 }
 

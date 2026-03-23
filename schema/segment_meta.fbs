@@ -116,7 +116,7 @@ table HnswParams {
 table RaBitQParams {
     bits: uint8;                 // 量化位数 (1/2/4/8, 默认 1)
     block_size: uint32;          // SIMD 块粒度 (默认 64)
-    c_factor: float;             // 误差界因子: epsilon = c * 2^(-B/2) / sqrt(D)
+    c_factor: float;             // (deprecated) 误差界因子，不再参与 epsilon 计算
     
     // 码本数据位置
     codebook_offset: uint64;     // 码本数据偏移
@@ -129,16 +129,16 @@ table RaBitQParams {
 
 /// ConANN (Cluster Architecture Nearest Neighbor Analysis) 参数
 ///
-/// Phase 6 新公式：SafeIn if approx_dist < d_k − 2ε,  SafeOut if approx_dist > d_k + 2ε
-/// 其中 d_k 是全量数据集预计算的 top-k 参考距离，ε = c·2^(−B/2)/√D
+/// margin = 2·r_max·r_q·ε_ip; SafeIn if d̂² < d_k − margin; SafeOut if d̂² > d_k + margin
+/// 其中 d_k 是全量数据集预计算的 top-k 参考距离，ε_ip 是内积估计误差上界
 table ConANNParams {
     // DEPRECATED: 旧乘性门限因子，保留向后兼容
     tau_in_factor: float;        // (deprecated) SafeIn 门限因子
     tau_out_factor: float;       // (deprecated) SafeOut 门限因子
 
     // Phase 6 新增: 加性阈值参数
-    epsilon: float;              // ε = c·2^(−B/2)/√D (RaBitQ 误差界)
-    d_k: float;                  // 全局预计算的 top-k 参考距离
+    epsilon: float;              // ε_ip: 全局内积估计误差上界 P95(|ŝ-s|)
+    d_k: float;                  // 全局预计算的 top-k 参考距离 (L2²)
 
     // 校准参数 (记录供复现)
     calibration_samples: uint32;     // 校准时采样 query 数量

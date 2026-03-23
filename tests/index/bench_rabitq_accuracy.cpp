@@ -29,6 +29,7 @@
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
+#include "vdb/simd/popcount.h"
 
 using namespace vdb;
 using namespace vdb::rabitq;
@@ -141,9 +142,10 @@ int main(int argc, char* argv[]) {
     int q_limit = GetIntArg(argc, argv, "--queries", 100);
     uint32_t top_k = static_cast<uint32_t>(GetIntArg(argc, argv, "--topk", 10));
     uint32_t p_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 90));
-    uint32_t p_for_epsilon = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-epsilon", 90));
+    uint32_t p_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps-ip", 95));
     uint32_t samples_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-dk", 100));
-    uint32_t samples_for_epsilon = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-epsilon", 100));
+    uint32_t samples_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-eps-ip", 20));
+
 
     Log("=== RaBitQ Accuracy Benchmark ===\n");
     Log("Dataset: %s\n", data_dir.c_str());
@@ -197,9 +199,9 @@ int main(int argc, char* argv[]) {
     Log("  Encoded %u vectors.\n\n", N);
 
     // ================================================================
-    // Phase 2b: Compute per-cluster epsilon (reconstruction error P90)
+    // Phase 2b: Compute per-cluster r_max and global ε_ip
     // ================================================================
-    Log("[Phase 2b] Computing per-cluster epsilon (reconstruction error)...\n");
+    Log("[Phase 2b] Computing per-cluster r_max and global ε_ip...\n");
 
     // Count members per cluster
     std::vector<std::vector<uint32_t>> cluster_members(nlist);
@@ -208,49 +210,80 @@ int main(int argc, char* argv[]) {
     }
 
     const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
-    std::vector<float> per_cluster_epsilon(nlist, 0.0f);
+    const uint32_t num_words = (dim + 63) / 64;
 
+    // Per-cluster r_max
+    std::vector<float> per_cluster_r_max(nlist, 0.0f);
+    for (uint32_t k = 0; k < nlist; ++k) {
+        for (uint32_t idx : cluster_members[k]) {
+            per_cluster_r_max[k] = std::max(per_cluster_r_max[k], codes[idx].norm);
+        }
+    }
+
+    // Global ε_ip calibration: sample pseudo-queries, compute |ŝ - s|
+    std::vector<float> ip_errors;
     for (uint32_t k = 0; k < nlist; ++k) {
         const auto& members = cluster_members[k];
-        if (members.empty()) continue;
+        if (members.size() < 2) continue;
 
+        uint32_t n_queries = std::min(samples_for_eps_ip,
+                                       static_cast<uint32_t>(members.size()));
         const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
-        std::vector<float> sign_vec(dim);
-        std::vector<float> recon_norm(dim);
-        std::vector<float> errors;
-        errors.reserve(members.size());
 
-        for (uint32_t idx : members) {
-            const auto& code = codes[idx];
-            const float* original = img.data.data() + static_cast<size_t>(idx) * dim;
+        std::vector<uint32_t> indices(members.size());
+        std::iota(indices.begin(), indices.end(), 0u);
+        std::mt19937 rng(42 + k);
+        std::shuffle(indices.begin(), indices.end(), rng);
 
-            // Reconstruct: bits → ±1/√dim → inverse rotate → scale + centroid
-            for (size_t d = 0; d < dim; ++d) {
-                int bit = (code.code[d / 64] >> (d % 64)) & 1;
-                sign_vec[d] = (2.0f * bit - 1.0f) * inv_sqrt_dim;
+        for (uint32_t q = 0; q < n_queries; ++q) {
+            uint32_t q_global = members[indices[q]];
+            const float* q_vec = img.data.data() +
+                static_cast<size_t>(q_global) * dim;
+            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+
+            for (uint32_t t = 0; t < static_cast<uint32_t>(members.size()); ++t) {
+                if (t == indices[q]) continue;
+                uint32_t t_global = members[t];
+                const auto& code = codes[t_global];
+
+                // Popcount path: ŝ = 1 - 2·hamming/dim
+                uint32_t hamming = simd::PopcountXor(
+                    pq.sign_code.data(), code.code.data(), num_words);
+                float ip_hat = 1.0f - 2.0f * static_cast<float>(hamming) /
+                                              static_cast<float>(dim);
+
+                // Accurate path
+                float dot = 0.0f;
+                for (size_t d = 0; d < dim; ++d) {
+                    int bit = (code.code[d / 64] >> (d % 64)) & 1;
+                    dot += pq.rotated[d] * (2.0f * bit - 1.0f);
+                }
+                float ip_accurate = dot * inv_sqrt_dim;
+
+                ip_errors.push_back(std::abs(ip_hat - ip_accurate));
             }
-            rotation.ApplyInverse(sign_vec.data(), recon_norm.data());
-
-            float err_sq = 0.0f;
-            for (size_t d = 0; d < dim; ++d) {
-                float diff = original[d] - (centroid[d] + code.norm * recon_norm[d]);
-                err_sq += diff * diff;
-            }
-            errors.push_back(std::sqrt(err_sq));
         }
-
-        std::sort(errors.begin(), errors.end());
-        float epsilon = Percentile(errors, static_cast<float>(p_for_epsilon) / 100.0f);
-        per_cluster_epsilon[k] = epsilon;
     }
+
+    float eps_ip = 0.0f;
+    if (!ip_errors.empty()) {
+        std::sort(ip_errors.begin(), ip_errors.end());
+        float p = static_cast<float>(p_for_eps_ip) / 100.0f;
+        auto idx = static_cast<size_t>(
+            p * static_cast<float>(ip_errors.size() - 1));
+        eps_ip = ip_errors[idx];
+    }
+
+    Log("  ε_ip = %.6f (P%u of %zu samples)\n",
+        eps_ip, p_for_eps_ip, ip_errors.size());
 
     // Print per-cluster statistics table
     Log("\n  Per-Cluster Statistics:\n");
-    Log("  %-10s %-14s %-12s\n", "Cluster", "Num Vectors", "Epsilon");
-    Log("  %-10s %-14s %-12s\n", "-------", "-----------", "-------");
+    Log("  %-10s %-14s %-12s\n", "Cluster", "Num Vectors", "r_max");
+    Log("  %-10s %-14s %-12s\n", "-------", "-----------", "-----");
     for (uint32_t k = 0; k < nlist; ++k) {
         Log("  %-10u %-14zu %.6f\n", k, cluster_members[k].size(),
-            per_cluster_epsilon[k]);
+            per_cluster_r_max[k]);
     }
     Log("\n");
 
@@ -261,7 +294,7 @@ int main(int argc, char* argv[]) {
     float p_dk = static_cast<float>(p_for_dk) / 100.0f;
     float d_k = ConANN::CalibrateDistanceThreshold(
         img.data.data(), N, dim, samples_for_dk, top_k, p_dk, 42);
-    Log("  d_k=%.4f\n\n", d_k);
+    Log("  d_k=%.4f (L2²)\n\n", d_k);
 
     // ================================================================
     // Phase 4: Per-query distance comparison
@@ -335,12 +368,19 @@ int main(int argc, char* argv[]) {
         recall_hit_5 += count_hits(5);
         recall_hit_10 += count_hits(10);
 
-        // SafeIn/SafeOut classification accuracy (per-cluster epsilon)
+        // SafeIn/SafeOut classification accuracy (dynamic margin)
+        // Cache norm_qc per cluster for this query
+        std::vector<float> margin_per_cluster(nlist);
+        ConANN conann(eps_ip, d_k);
+        for (uint32_t k = 0; k < nlist; ++k) {
+            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
+            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+            margin_per_cluster[k] = 2.0f * per_cluster_r_max[k] * pq.norm_qc * eps_ip;
+        }
         for (uint32_t i = 0; i < N; ++i) {
             uint32_t vec_id = rabitq_dists[i].second;
-            float eps = per_cluster_epsilon[assignments[vec_id]];
-            ConANN cluster_conann(eps, d_k);
-            ResultClass rc = cluster_conann.Classify(rabitq_dists[i].first);
+            uint32_t k = assignments[vec_id];
+            ResultClass rc = conann.Classify(rabitq_dists[i].first, margin_per_cluster[k]);
             bool is_true_topk = true_topk_set.count(vec_id) > 0;
 
             switch (rc) {

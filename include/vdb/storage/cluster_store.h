@@ -63,7 +63,7 @@ class ClusterStoreWriter {
     struct ClusterLookupEntry {
         uint32_t cluster_id;
         uint32_t num_records;
-        float epsilon = 0.0f;          // per-cluster RaBitQ reconstruction error (P95)
+        float epsilon = 0.0f;          // r_max: max residual norm in cluster
         std::vector<float> centroid;   // dim floats
         uint64_t block_offset;         // absolute byte offset in .clu
         uint64_t block_size;           // byte length of block

@@ -67,9 +67,12 @@ struct IvfBuilderConfig {
     /// Default nprobe stored in segment.meta.
     uint32_t nprobe = 1;
 
-    /// Number of vectors to sample per cluster for epsilon calibration.
+    /// Number of pseudo-query samples per cluster for ε_ip calibration.
     /// If cluster_size < 2 * epsilon_samples, uses max(cluster_size / 2, 1).
     uint32_t epsilon_samples = 20;
+
+    /// Percentile for ε_ip calibration (0–1, e.g. 0.95).
+    float epsilon_percentile = 0.95f;
 };
 
 // ============================================================================
@@ -158,6 +161,7 @@ class IvfBuilder {
     std::vector<uint32_t> assignments_;  // vector → cluster index
     std::vector<float> centroids_;       // nlist × dim row-major
     float calibrated_dk_ = 0.0f;
+    float calibrated_eps_ip_ = 0.0f;
     ProgressCallback progress_cb_;
 };
 
