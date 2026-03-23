@@ -91,21 +91,13 @@ Status IvfIndex::Open(const std::string& dir) {
     rotation_ = std::make_unique<rabitq::RotationMatrix>(std::move(rot_result.value()));
 
     // --- 5. Load ConANN params ---
+    // Global epsilon may be 0 when per-cluster epsilon is used (stored in .clu
+    // lookup table). d_k is always global and must be loaded.
     const auto* conann_params = seg_meta->conann_params();
     if (conann_params) {
         float eps = conann_params->epsilon();
         float dk = conann_params->d_k();
-        if (eps > 0.0f) {
-            conann_ = ConANN(eps, dk);
-        } else {
-            // Fallback: use tau_in_factor/tau_out_factor (deprecated path)
-            // tau_in_factor = 1 - eps, tau_out_factor = 1 + eps → eps = (tau_out - 1)
-            float tau_in = conann_params->tau_in_factor();
-            float tau_out = conann_params->tau_out_factor();
-            float fallback_eps = (tau_out - tau_in) / 2.0f;
-            float fallback_dk = (tau_out + tau_in) / 2.0f;
-            conann_ = ConANN(fallback_eps, fallback_dk);
-        }
+        conann_ = ConANN(eps, dk);
     }
 
     // --- 6. Load payload schemas ---

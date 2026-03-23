@@ -7,7 +7,6 @@
 #include "vdb/common/distance.h"
 #include "vdb/query/rerank_consumer.h"
 #include "vdb/rabitq/rabitq_estimator.h"
-#include "vdb/simd/popcount.h"
 
 namespace vdb {
 namespace query {
@@ -139,7 +138,7 @@ void OverlapScheduler::ProbeCluster(
     const ParsedCluster& pc, uint32_t cluster_id,
     SearchContext& ctx, RerankConsumer& reranker) {
 
-    const auto& conann = index_.conann();
+    index::ConANN conann(pc.epsilon, index_.conann().d_k());
     rabitq::RaBitQEstimator estimator(index_.dim());
     int dat_fd = index_.segment().data_reader().fd();
 
@@ -149,23 +148,23 @@ void OverlapScheduler::ProbeCluster(
     auto pq = estimator.PrepareQuery(
         ctx.query_vec(), centroid, index_.rotation());
 
-    uint32_t batch_size = config_.probe_batch_size;
-    std::vector<rabitq::RaBitQCode> batch_codes(batch_size);
+    const uint32_t batch_size = config_.probe_batch_size;
     std::vector<float> dists(batch_size);
+    const uint32_t norm_byte_offset = num_words_ * sizeof(uint64_t);
 
     for (uint32_t offset = 0; offset < pc.num_records; offset += batch_size) {
         uint32_t actual = std::min(batch_size, pc.num_records - offset);
 
+        // Zero-copy: read code/norm directly from block_buf, no heap allocation
         for (uint32_t i = 0; i < actual; ++i) {
-            const uint64_t* words = reinterpret_cast<const uint64_t*>(
-                pc.codes_start + (offset + i) * pc.code_entry_size);
-            batch_codes[i].code.assign(words, words + num_words_);
-            batch_codes[i].norm = 0.0f;
-            batch_codes[i].sum_x = simd::PopcountTotal(words, num_words_);
+            const auto* entry =
+                pc.codes_start + (offset + i) * pc.code_entry_size;
+            const auto* words = reinterpret_cast<const uint64_t*>(entry);
+            float norm_oc;
+            std::memcpy(&norm_oc, entry + norm_byte_offset, sizeof(float));
+            dists[i] = estimator.EstimateDistanceRaw(
+                pq, words, num_words_, norm_oc);
         }
-
-        estimator.EstimateDistanceBatch(
-            pq, batch_codes.data(), actual, dists.data());
 
         for (uint32_t i = 0; i < actual; ++i) {
             ResultClass rc = conann.Classify(dists[i]);

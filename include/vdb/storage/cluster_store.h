@@ -63,6 +63,7 @@ class ClusterStoreWriter {
     struct ClusterLookupEntry {
         uint32_t cluster_id;
         uint32_t num_records;
+        float epsilon = 0.0f;          // per-cluster RaBitQ reconstruction error (P95)
         std::vector<float> centroid;   // dim floats
         uint64_t block_offset;         // absolute byte offset in .clu
         uint64_t block_size;           // byte length of block
@@ -100,7 +101,8 @@ class ClusterStoreWriter {
     /// @return Status
     Status BeginCluster(uint32_t cluster_id,
                         uint32_t num_records,
-                        const float* centroid);
+                        const float* centroid,
+                        float epsilon = 0.0f);
 
     /// Write RaBitQ encoded vectors for the current cluster.
     ///
@@ -212,6 +214,10 @@ class ClusterStoreReader {
     /// Returns nullptr if cluster_id not found.
     const float* GetCentroid(uint32_t cluster_id) const;
 
+    /// Get the per-cluster epsilon (RaBitQ reconstruction error P95).
+    /// Returns 0.0f if cluster_id not found.
+    float GetEpsilon(uint32_t cluster_id) const;
+
     /// Total records across all clusters.
     uint64_t total_records() const;
 
@@ -301,9 +307,9 @@ class ClusterStoreReader {
     /// Number of uint64_t words per code
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }
 
-    /// Byte size of one code entry
+    /// Byte size of one code entry (v5: code_bits + norm(f32) + sum_x(u32))
     uint32_t code_entry_size() const {
-        return num_code_words() * sizeof(uint64_t);
+        return num_code_words() * sizeof(uint64_t) + sizeof(float) + sizeof(uint32_t);
     }
 };
 

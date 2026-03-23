@@ -133,13 +133,10 @@ TEST_F(IvfIndexTest, ConANN_LoadedCorrectly) {
     IvfIndex idx;
     ASSERT_TRUE(idx.Open(test_dir_).ok());
 
-    // epsilon and d_k should be positive after calibration
-    EXPECT_GT(idx.conann().epsilon(), 0.0f);
+    // Global epsilon is 0 (per-cluster epsilon is in .clu lookup table).
+    // d_k should still be positive after calibration.
+    EXPECT_EQ(idx.conann().epsilon(), 0.0f);
     EXPECT_GT(idx.conann().d_k(), 0.0f);
-
-    // tau_in < d_k < tau_out
-    EXPECT_LT(idx.conann().tau_in(), idx.conann().d_k());
-    EXPECT_GT(idx.conann().tau_out(), idx.conann().d_k());
 }
 
 TEST_F(IvfIndexTest, SegmentAccessible) {

@@ -127,6 +127,21 @@ class RaBitQEstimator {
                                 uint32_t n,
                                 float* out_dist) const;
 
+    /// Zero-copy distance estimate from raw memory layout.
+    ///
+    /// Avoids constructing a RaBitQCode; reads code words directly from
+    /// a contiguous buffer (e.g. mmap'd .clu block).
+    ///
+    /// @param pq          Prepared query
+    /// @param code_words  Pointer to packed binary code (num_words uint64_t)
+    /// @param num_words   Number of uint64_t words in the code
+    /// @param norm_oc     ‖o - c‖₂ (stored in the .clu entry)
+    /// @return            Estimated ‖o - q‖² (clamped to ≥ 0)
+    float EstimateDistanceRaw(const PreparedQuery& pq,
+                               const uint64_t* code_words,
+                               uint32_t num_words,
+                               float norm_oc) const;
+
     Dim dim() const { return dim_; }
 
  private:

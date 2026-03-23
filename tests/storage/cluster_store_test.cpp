@@ -105,7 +105,8 @@ TEST_F(ClusterStoreTest, Writer_MultipleClusters) {
         }
         auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
 
-        ASSERT_TRUE(writer.BeginCluster(k, N_per_cluster, centroid.data()).ok());
+        float epsilon = 0.1f * (k + 1);
+        ASSERT_TRUE(writer.BeginCluster(k, N_per_cluster, centroid.data(), epsilon).ok());
         ASSERT_TRUE(writer.WriteVectors(codes).ok());
         ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
         ASSERT_TRUE(writer.EndCluster().ok());
@@ -119,6 +120,7 @@ TEST_F(ClusterStoreTest, Writer_MultipleClusters) {
         EXPECT_EQ(info.lookup_table[k].cluster_id, k);
         EXPECT_EQ(info.lookup_table[k].num_records, N_per_cluster);
         EXPECT_GT(info.lookup_table[k].block_size, 0u);
+        EXPECT_FLOAT_EQ(info.lookup_table[k].epsilon, 0.1f * (k + 1));
     }
 }
 
@@ -142,14 +144,14 @@ TEST_F(ClusterStoreTest, Reader_OpenAndReadLookupTable) {
         centroid1[d] = static_cast<float>(d + 100);
     }
 
-    // Cluster 0: empty
-    ASSERT_TRUE(writer.BeginCluster(0, 0, centroid0.data()).ok());
+    // Cluster 0: empty, epsilon=0.25
+    ASSERT_TRUE(writer.BeginCluster(0, 0, centroid0.data(), 0.25f).ok());
     ASSERT_TRUE(writer.WriteVectors({}).ok());
     ASSERT_TRUE(writer.WriteAddressBlocks(EncodedAddressColumn{}).ok());
     ASSERT_TRUE(writer.EndCluster().ok());
 
-    // Cluster 1: empty
-    ASSERT_TRUE(writer.BeginCluster(1, 0, centroid1.data()).ok());
+    // Cluster 1: empty, epsilon=0.50
+    ASSERT_TRUE(writer.BeginCluster(1, 0, centroid1.data(), 0.50f).ok());
     ASSERT_TRUE(writer.WriteVectors({}).ok());
     ASSERT_TRUE(writer.WriteAddressBlocks(EncodedAddressColumn{}).ok());
     ASSERT_TRUE(writer.EndCluster().ok());
@@ -171,6 +173,10 @@ TEST_F(ClusterStoreTest, Reader_OpenAndReadLookupTable) {
 
     EXPECT_EQ(reader.GetNumRecords(0), 0u);
     EXPECT_EQ(reader.GetNumRecords(1), 0u);
+
+    // Verify epsilon roundtrip
+    EXPECT_FLOAT_EQ(reader.GetEpsilon(0), 0.25f);
+    EXPECT_FLOAT_EQ(reader.GetEpsilon(1), 0.50f);
 
     // Verify centroids
     const float* c0 = reader.GetCentroid(0);
@@ -294,6 +300,11 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes_Batch) {
         for (size_t w = 0; w < out_codes[i].code.size(); ++w) {
             EXPECT_EQ(out_codes[i].code[w], codes[idx].code[w]);
         }
+        // Verify norm and sum_x roundtrip (v5 format)
+        EXPECT_FLOAT_EQ(out_codes[i].norm, codes[idx].norm)
+            << "norm mismatch at index " << idx;
+        EXPECT_EQ(out_codes[i].sum_x, codes[idx].sum_x)
+            << "sum_x mismatch at index " << idx;
     }
 }
 
@@ -826,7 +837,8 @@ TEST_F(ClusterStoreTest, ParseClusterBlock_MatchesEnsureClusterLoaded) {
     ClusterStoreReader reader;
     ASSERT_TRUE(reader.Open(path).ok());
 
-    const uint32_t code_entry_sz = ((dim + 63) / 64) * sizeof(uint64_t);
+    const uint32_t code_entry_sz =
+        ((dim + 63) / 64) * sizeof(uint64_t) + sizeof(float) + sizeof(uint32_t);
 
     for (uint32_t k = 0; k < K; ++k) {
         uint32_t N = cluster_sizes[k];

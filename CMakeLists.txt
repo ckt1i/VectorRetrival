@@ -382,6 +382,10 @@ if(VDB_BUILD_TESTS)
     add_executable(bench_e2e tests/index/bench_e2e.cpp)
     target_link_libraries(bench_e2e PRIVATE vdb_query vdb_io)
 
+    # ----- RaBitQ Accuracy Benchmark -----
+    add_executable(bench_rabitq_accuracy tests/index/bench_rabitq_accuracy.cpp)
+    target_link_libraries(bench_rabitq_accuracy PRIVATE vdb_index vdb_io)
+
     # -------------------------------------------------------------------------
     # Query Pipeline tests (Phase 7)
     # -------------------------------------------------------------------------

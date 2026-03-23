@@ -66,6 +66,10 @@ struct IvfBuilderConfig {
 
     /// Default nprobe stored in segment.meta.
     uint32_t nprobe = 1;
+
+    /// Number of vectors to sample per cluster for epsilon calibration.
+    /// If cluster_size < 2 * epsilon_samples, uses max(cluster_size / 2, 1).
+    uint32_t epsilon_samples = 20;
 };
 
 // ============================================================================

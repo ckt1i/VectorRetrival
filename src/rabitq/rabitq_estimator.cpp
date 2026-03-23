@@ -86,57 +86,32 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
 float RaBitQEstimator::EstimateDistance(
     const PreparedQuery& pq,
     const RaBitQCode& code) const {
+    return EstimateDistanceRaw(pq, code.code.data(), num_words_, code.norm);
+}
+
+// ============================================================================
+// EstimateDistanceRaw — zero-copy fast XOR+popcount path
+// ============================================================================
+
+float RaBitQEstimator::EstimateDistanceRaw(
+    const PreparedQuery& pq,
+    const uint64_t* code_words,
+    uint32_t num_words,
+    float norm_oc) const {
     // Hamming distance = popcount(q_sign XOR db_code)
     uint32_t hamming = simd::PopcountXor(
-        pq.sign_code.data(), code.code.data(), num_words_);
+        pq.sign_code.data(), code_words, num_words);
 
-    // Inner product estimation:
-    //   ⟨q̄, ô⟩ ≈ (2/√L) × (sum_x - 2 × hamming) × (1/√L) ... no, let's be precise.
+    // Popcount-based inner product estimate:
+    //   ⟨q̄, ô⟩ ≈ 1 - 2·hamming/L
     //
-    // From the RaBitQ paper:
-    //   The quantized vector ô ∈ {-1/√L, +1/√L}^L
-    //   ⟨q', ô⟩ = (1/√L) Σ q'[i] × sign(ô[i])
-    //   where sign(ô[i]) = +1 if x[i]=1, -1 if x[i]=0
-    //
-    //   = (1/√L) × [Σ_{x=1} q'[i] - Σ_{x=0} q'[i]]
-    //   = (1/√L) × [2·Σ_{x=1} q'[i] - Σ q'[i]]
-    //
-    // For the popcount approximation, we use the fact that:
-    //   Σ_{x=1} q'[i] ≈ Σ_{q_sign=x} |q'[i]| - Σ_{q_sign≠x} |q'[i]|
-    //
-    // With the simplification that |q'[i]| ≈ 1/√L for well-rotated vectors:
-    //   Σ_{x=1} q'[i] ≈ (1/√L) × (sum_x - 2 × hamming_between_matching_bits)
-    //
-    // More precisely, using the codebook structure:
-    //   ⟨q̄, ô⟩ ≈ (2/√L) × ((sum_x) - 2·hamming(q_sign, x)) / √L + some_correction
-    //
-    // The standard practical formula:
-    //   ⟨q̄, ô⟩ ≈ (1/√L) × (2·(L - 2·hamming) / √L)
-    //
-    // Actually, the cleanest formulation from the implementation perspective:
-    //   Let match = L - hamming (number of dimensions where q_sign == x)
-    //   Let differ = hamming
-    //   ⟨q̄, ô⟩ = (1/√L) × (match - differ) / √L ... no
-    //
-    // Let's use the direct formulation:
-    //   ô[i] = (2·x[i] - 1) / √L
-    //   ⟨q̄, ô⟩ = Σ q̄_rotated[i] × ô[i]
-    //           = (1/√L) × Σ q'[i] × (2·x[i] - 1)
-    //
-    // For the popcount path, approximate q'[i] ≈ sign(q'[i]) / √L:
+    // Derivation: approximate q'[i] ≈ sign(q'[i]) / √L, then
     //   ⟨q̄, ô⟩ ≈ (1/L) × Σ sign(q'[i]) × (2·x[i] - 1)
-    //           = (1/L) × Σ (2·[q_sign[i]==x[i]] - 1)
-    //           = (1/L) × (2·(L - hamming) - L)
-    //           = (1/L) × (L - 2·hamming)
-    //           = 1 - 2·hamming/L
-    //
-    // This is the simplest and most commonly used popcount-based estimate.
-
+    //           = (1/L) × (L - 2·hamming) = 1 - 2·hamming/L
     float ip_est = 1.0f - 2.0f * static_cast<float>(hamming) /
                                   static_cast<float>(dim_);
 
     // Full distance: ‖o-q‖² ≈ ‖o-c‖² + ‖q-c‖² - 2·‖o-c‖·‖q-c‖·⟨q̄,ô⟩
-    float norm_oc = code.norm;
     float dist_sq = norm_oc * norm_oc + pq.norm_qc_sq
                     - 2.0f * norm_oc * pq.norm_qc * ip_est;
 

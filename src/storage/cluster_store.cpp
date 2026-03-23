@@ -17,7 +17,7 @@ namespace storage {
 
 /// Global file header magic: "VCML" (0x4C4D4356 little-endian)
 static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
-static constexpr uint32_t kFileVersion = 4;
+static constexpr uint32_t kFileVersion = 6;
 
 /// Per-cluster block mini-trailer magic: "VCLB" (0x424C4356 little-endian)
 static constexpr uint32_t kBlockMagic = 0x424C4356;
@@ -63,8 +63,8 @@ ClusterStoreWriter::~ClusterStoreWriter() {
 }
 
 uint64_t ClusterStoreWriter::lookup_entry_size() const {
-    // cluster_id(4) + num_records(4) + centroid(dim*4) + block_offset(8) + block_size(8)
-    return 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8;
+    // cluster_id(4) + num_records(4) + epsilon(4) + centroid(dim*4) + block_offset(8) + block_size(8)
+    return 4 + 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8;
 }
 
 // ============================================================================
@@ -148,7 +148,8 @@ Status ClusterStoreWriter::Open(const std::string& path,
 
 Status ClusterStoreWriter::BeginCluster(uint32_t cluster_id,
                                          uint32_t num_records,
-                                         const float* centroid) {
+                                         const float* centroid,
+                                         float epsilon) {
     if (!file_.is_open()) {
         return Status::InvalidArgument("ClusterStoreWriter not open");
     }
@@ -167,6 +168,7 @@ Status ClusterStoreWriter::BeginCluster(uint32_t cluster_id,
     auto& entry = info_.lookup_table[current_cluster_index_];
     entry.cluster_id = cluster_id;
     entry.num_records = num_records;
+    entry.epsilon = epsilon;
     entry.centroid.assign(centroid, centroid + info_.dim);
 
     block_start_ = current_offset_;
@@ -191,10 +193,12 @@ Status ClusterStoreWriter::WriteVectors(
         const uint32_t code_bytes =
             static_cast<uint32_t>(code.code.size()) * sizeof(uint64_t);
         file_.write(reinterpret_cast<const char*>(code.code.data()), code_bytes);
+        file_.write(reinterpret_cast<const char*>(&code.norm), sizeof(float));
+        file_.write(reinterpret_cast<const char*>(&code.sum_x), sizeof(uint32_t));
         if (!file_.good()) {
             return Status::IOError("Failed to write RaBitQ code");
         }
-        current_offset_ += code_bytes;
+        current_offset_ += code_bytes + sizeof(float) + sizeof(uint32_t);
     }
 
     vectors_written_ = true;
@@ -308,6 +312,7 @@ Status ClusterStoreWriter::EndCluster() {
 
     WriteVal(file_, entry.cluster_id);
     WriteVal(file_, entry.num_records);
+    WriteVal(file_, entry.epsilon);
     file_.write(reinterpret_cast<const char*>(entry.centroid.data()),
                 static_cast<std::streamsize>(info_.dim * sizeof(float)));
     WriteVal(file_, entry.block_offset);
@@ -514,6 +519,12 @@ Status ClusterStoreReader::Open(const std::string& path) {
         }
         pos += sizeof(uint32_t);
 
+        if (!PreadValue(fd_, pos, entry.epsilon)) {
+            Close();
+            return Status::IOError("Failed to read epsilon");
+        }
+        pos += sizeof(float);
+
         entry.centroid.resize(info_.dim);
         if (!PreadBytes(fd_, pos, entry.centroid.data(),
                         info_.dim * sizeof(float))) {
@@ -563,6 +574,12 @@ const float* ClusterStoreReader::GetCentroid(uint32_t cluster_id) const {
     auto it = cluster_index_.find(cluster_id);
     if (it == cluster_index_.end()) return nullptr;
     return info_.lookup_table[it->second].centroid.data();
+}
+
+float ClusterStoreReader::GetEpsilon(uint32_t cluster_id) const {
+    auto it = cluster_index_.find(cluster_id);
+    if (it == cluster_index_.end()) return 0.0f;
+    return info_.lookup_table[it->second].epsilon;
 }
 
 uint64_t ClusterStoreReader::total_records() const {
@@ -880,6 +897,7 @@ Status ClusterStoreReader::ParseClusterBlock(
     out.codes_start = block_buf.get();
     out.code_entry_size = code_entry_size();
     out.num_records = entry.num_records;
+    out.epsilon = entry.epsilon;
     out.decoded_addresses = std::move(decoded);
     out.block_buf = std::move(block_buf);
 
@@ -967,10 +985,18 @@ Status ClusterStoreReader::LoadCodes(
         VDB_RETURN_IF_ERROR(LoadCode(cluster_id, indices[i], code));
 
         out_codes[i].code = std::move(code);
-        out_codes[i].norm = 0.0f;
-        out_codes[i].sum_x = simd::PopcountTotal(
-            out_codes[i].code.data(),
-            static_cast<uint32_t>(out_codes[i].code.size()));
+
+        // Read norm + sum_x from cached codes_buffer (v5 format)
+        const auto& cluster_data = loaded_clusters_.at(cluster_id);
+        const uint32_t nwords = num_code_words();
+        const uint32_t entry_sz = code_entry_size();
+        const size_t norm_offset =
+            static_cast<size_t>(indices[i]) * entry_sz + nwords * sizeof(uint64_t);
+        std::memcpy(&out_codes[i].norm,
+                    cluster_data.codes_buffer.data() + norm_offset, sizeof(float));
+        std::memcpy(&out_codes[i].sum_x,
+                    cluster_data.codes_buffer.data() + norm_offset + sizeof(float),
+                    sizeof(uint32_t));
     }
 
     return Status::OK();

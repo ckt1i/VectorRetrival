@@ -252,6 +252,74 @@ void IvfBuilder::CalibrateDk(const float* vectors, uint32_t N, Dim dim) {
 }
 
 // ============================================================================
+// ComputeClusterEpsilon — per-cluster RaBitQ reconstruction error (P95)
+// ============================================================================
+
+static float ComputeClusterEpsilon(
+    const float* member_vecs,
+    const std::vector<rabitq::RaBitQCode>& codes,
+    const float* centroid,
+    const rabitq::RotationMatrix& rotation,
+    Dim dim,
+    uint32_t n_members,
+    uint32_t max_samples,
+    uint64_t seed) {
+
+    if (n_members == 0) return 0.0f;
+
+    // Sampling strategy: if cluster is small, reduce sample count
+    uint32_t n_samples = max_samples;
+    if (n_members < 2 * max_samples) {
+        n_samples = std::max(n_members / 2, 1u);
+    }
+    n_samples = std::min(n_samples, n_members);
+
+    // Select sample indices
+    std::vector<uint32_t> indices(n_members);
+    std::iota(indices.begin(), indices.end(), 0u);
+    if (n_samples < n_members) {
+        std::mt19937 rng(seed);
+        std::shuffle(indices.begin(), indices.end(), rng);
+        indices.resize(n_samples);
+    }
+
+    const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
+    std::vector<float> sign_vec(dim);
+    std::vector<float> recon_normalized(dim);
+    std::vector<float> errors(n_samples);
+
+    for (uint32_t s = 0; s < n_samples; ++s) {
+        const uint32_t idx = indices[s];
+        const float* original = member_vecs + static_cast<size_t>(idx) * dim;
+        const auto& code = codes[idx];
+
+        // Step 1: bits → ±1/√dim (quantized unit vector in rotated space)
+        for (size_t i = 0; i < dim; ++i) {
+            int bit = (code.code[i / 64] >> (i % 64)) & 1;
+            sign_vec[i] = (2.0f * bit - 1.0f) * inv_sqrt_dim;
+        }
+
+        // Step 2: inverse rotate back to original space
+        rotation.ApplyInverse(sign_vec.data(), recon_normalized.data());
+
+        // Step 3: v̂ = centroid + norm * recon_normalized; error = L2(v, v̂)
+        float err_sq = 0.0f;
+        for (size_t i = 0; i < dim; ++i) {
+            float diff = original[i] -
+                         (centroid[i] + code.norm * recon_normalized[i]);
+            err_sq += diff * diff;
+        }
+        errors[s] = std::sqrt(err_sq);
+    }
+
+    // Sort and return P95
+    std::sort(errors.begin(), errors.end());
+    size_t p95_idx = static_cast<size_t>(
+        static_cast<float>(n_samples - 1) * 0.95f);
+    return errors[p95_idx];
+}
+
+// ============================================================================
 // Phase C+D: Write per-cluster files + global metadata
 // ============================================================================
 
@@ -289,10 +357,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         cluster_members[assignments_[i]].push_back(i);
     }
 
-    // --- Compute epsilon for ConANN ---
-    float epsilon = config_.rabitq.c_factor *
-                    std::pow(2.0f, -static_cast<float>(config_.rabitq.bits) / 2.0f) /
-                    std::sqrt(static_cast<float>(dim));
+    // epsilon is now per-cluster (computed from reconstruction error below)
 
     // --- Build encoder ---
     rabitq::RaBitQEncoder encoder(dim, rotation);
@@ -350,12 +415,17 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
 
         auto codes = encoder.EncodeBatch(member_vecs.data(), n_members, centroid);
 
+        // Compute per-cluster epsilon from RaBitQ reconstruction error
+        float cluster_epsilon = ComputeClusterEpsilon(
+            member_vecs.data(), codes, centroid, rotation, dim,
+            n_members, config_.epsilon_samples, config_.seed + k);
+
         // AddressColumn encode
         auto addr_blocks = storage::AddressColumn::Encode(
             addr_entries_per_cluster[k], 64 /*fixed packed size*/, config_.page_size);
 
         // Write cluster block
-        s = clu_writer.BeginCluster(k, n_members, centroid);
+        s = clu_writer.BeginCluster(k, n_members, centroid, cluster_epsilon);
         if (!s.ok()) return s;
 
         s = clu_writer.WriteVectors(codes);
@@ -403,7 +473,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     auto conann_params = vdb::schema::CreateConANNParams(
         fbb,
         0.0f, 0.0f,                     // deprecated tau_in/tau_out factors
-        epsilon,                         // epsilon
+        0.0f,                            // epsilon (now per-cluster in .clu lookup table)
         calibrated_dk_,                  // d_k
         config_.calibration_samples,     // calibration_samples
         config_.calibration_topk,        // calibration_topk

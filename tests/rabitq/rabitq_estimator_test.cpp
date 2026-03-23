@@ -361,3 +361,26 @@ TEST(RaBitQEstimatorTest, LargeDim_256) {
     // Just verify it runs without crashing and produces a finite value
     EXPECT_TRUE(std::isfinite(dist));
 }
+
+TEST(RaBitQEstimatorTest, RawMatchesStructPath) {
+    const Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, P);
+    RaBitQEstimator estimator(dim);
+
+    auto centroid = RandomVec(dim, 10);
+    auto vecs = {RandomVec(dim, 20), RandomVec(dim, 30), RandomVec(dim, 40)};
+
+    auto query = RandomVec(dim, 50);
+    auto pq = estimator.PrepareQuery(query.data(), centroid.data(), P);
+
+    for (const auto& v : vecs) {
+        auto code = encoder.Encode(v.data(), centroid.data());
+        float struct_dist = estimator.EstimateDistance(pq, code);
+        float raw_dist = estimator.EstimateDistanceRaw(
+            pq, code.code.data(),
+            static_cast<uint32_t>(code.code.size()), code.norm);
+        EXPECT_FLOAT_EQ(struct_dist, raw_dist);
+    }
+}
