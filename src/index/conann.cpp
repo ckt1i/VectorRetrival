@@ -114,20 +114,14 @@ float ConANN::CalibrateDistanceThreshold(
         sample_dk[s] = dists[nth];
     }
 
-    // Percentile interpolation
+    // Percentile: take the k-th smallest, where k = floor((1 - percentile) * N).
+    // For P99 with 100 samples: k = floor(0.01 * 100) = 1 → 2nd smallest value.
+    // This gives a tight (low) threshold suitable for early-stop decisions.
     std::sort(sample_dk.begin(), sample_dk.end());
-    float findex = percentile * static_cast<float>(num_samples - 1);
-    uint32_t lo = static_cast<uint32_t>(std::floor(findex));
-    uint32_t hi = static_cast<uint32_t>(std::ceil(findex));
-    lo = std::min(lo, num_samples - 1);
-    hi = std::min(hi, num_samples - 1);
-
-    if (lo == hi) {
-        return sample_dk[lo];
-    }
-
-    float frac = findex - static_cast<float>(lo);
-    return sample_dk[lo] * (1.0f - frac) + sample_dk[hi] * frac;
+    uint32_t k = static_cast<uint32_t>(
+        std::floor((1.0f - percentile) * static_cast<float>(num_samples)));
+    k = std::min(k, num_samples - 1);
+    return sample_dk[k];
 }
 
 }  // namespace index

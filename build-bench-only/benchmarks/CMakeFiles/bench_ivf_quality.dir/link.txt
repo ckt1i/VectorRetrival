@@ -1,0 +1,1 @@
+/usr/bin/c++  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG CMakeFiles/bench_ivf_quality.dir/bench_ivf_quality.cpp.o -o bench_ivf_quality  ../libvdb_index.a ../libvdb_storage.a ../libvdb_columns.a ../libvdb_codec.a ../libvdb_rabitq.a ../libvdb_simd.a ../_deps/flatbuffers-build/libflatbuffers.a 

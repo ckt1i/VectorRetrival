@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvdb_index.a CMakeFiles/vdb_index.dir/src/index/conann.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o
+/usr/bin/ranlib libvdb_index.a

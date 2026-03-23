@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvdb_io.a CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o
+/usr/bin/ranlib libvdb_io.a

@@ -374,18 +374,6 @@ if(VDB_BUILD_TESTS)
     target_link_libraries(test_payload_pipeline PRIVATE vdb_query GTest::gtest GTest::gtest_main)
     add_test(NAME test_payload_pipeline COMMAND test_payload_pipeline)
 
-    # ----- Benchmark (Phase 6) -----
-    add_executable(bench_ivf_quality tests/index/bench_ivf_quality.cpp)
-    target_link_libraries(bench_ivf_quality PRIVATE vdb_index)
-
-    # ----- E2E Benchmark -----
-    add_executable(bench_e2e tests/index/bench_e2e.cpp)
-    target_link_libraries(bench_e2e PRIVATE vdb_query vdb_io)
-
-    # ----- RaBitQ Accuracy Benchmark -----
-    add_executable(bench_rabitq_accuracy tests/index/bench_rabitq_accuracy.cpp)
-    target_link_libraries(bench_rabitq_accuracy PRIVATE vdb_index vdb_io)
-
     # -------------------------------------------------------------------------
     # Query Pipeline tests (Phase 7)
     # -------------------------------------------------------------------------
@@ -432,6 +420,11 @@ if(VDB_BUILD_TESTS)
     target_link_libraries(test_jsonl_reader PRIVATE vdb_io GTest::gtest GTest::gtest_main)
     add_test(NAME test_jsonl_reader COMMAND test_jsonl_reader)
 endif()
+
+# =============================================================================
+# Benchmarks (separate from tests, controlled by VDB_BUILD_BENCHMARKS)
+# =============================================================================
+add_subdirectory(benchmarks)
 
 # =============================================================================
 # Summary

@@ -61,6 +61,13 @@ static int GetIntArg(int argc, char* argv[], const char* name, int default_val) 
     return default_val;
 }
 
+static float GetFloatArg(int argc, char* argv[], const char* name, float default_val) {
+    for (int i = 1; i < argc - 1; ++i) {
+        if (std::strcmp(argv[i], name) == 0) return std::strtof(argv[i + 1], nullptr);
+    }
+    return default_val;
+}
+
 // ============================================================================
 // Timestamp + dataset name
 // ============================================================================
@@ -200,6 +207,20 @@ static void Log(const char* fmt, ...) {
 int main(int argc, char* argv[]) {
     std::string data_dir = GetStringArg(argc, argv, "--dataset",
                                          "/home/zcq/VDB/data/coco_1k");
+    std::string output_base = GetStringArg(argc, argv, "--output",
+                                            "/home/zcq/VDB/test/");
+    int arg_nlist      = GetIntArg(argc, argv, "--nlist", 32);
+    int arg_nprobe     = GetIntArg(argc, argv, "--nprobe", 32);
+    int arg_topk       = GetIntArg(argc, argv, "--topk", 10);
+    int arg_early_stop = GetIntArg(argc, argv, "--early-stop", 1);
+    int arg_bits       = GetIntArg(argc, argv, "--bits", 1);
+    int arg_block_size = GetIntArg(argc, argv, "--block-size", 64);
+    float arg_c_factor = GetFloatArg(argc, argv, "--c-factor", 5.75f);
+    int arg_max_iter   = GetIntArg(argc, argv, "--max-iter", 20);
+    int arg_seed       = GetIntArg(argc, argv, "--seed", 42);
+    int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
+    int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
+
     std::string ds_name = DatasetName(data_dir);
     std::string ts = Timestamp();
 
@@ -271,7 +292,7 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase B: Brute-Force Ground Truth
     // ================================================================
-    const uint32_t GT_K = 10;
+    const uint32_t GT_K = static_cast<uint32_t>(arg_topk);
     Log("\n[Phase B] Computing brute-force ground truth (top-%u)...\n", GT_K);
 
     auto t_bf_start = std::chrono::steady_clock::now();
@@ -310,20 +331,22 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase C: Build Index
     // ================================================================
-    std::string output_dir = "/home/zcq/VDB/test/" + ds_name + "_" + ts;
+    std::string output_dir = output_base + "/" + ds_name + "_" + ts;
     std::string index_dir = output_dir + "/index";
     fs::create_directories(index_dir);
 
     Log("\n[Phase C] Building index → %s\n", index_dir.c_str());
 
     IvfBuilderConfig cfg;
-    cfg.nlist = 32;
-    cfg.max_iterations = 20;
-    cfg.seed = 42;
-    cfg.rabitq = {1, 64, 5.75f};
+    cfg.nlist = static_cast<uint32_t>(arg_nlist);
+    cfg.max_iterations = static_cast<uint32_t>(arg_max_iter);
+    cfg.seed = static_cast<uint64_t>(arg_seed);
+    cfg.rabitq = {static_cast<uint8_t>(arg_bits),
+                  static_cast<uint32_t>(arg_block_size), arg_c_factor};
     cfg.calibration_samples = std::min(100u, N);
-    cfg.calibration_topk = 10;
-    cfg.page_size = 4096;
+    cfg.calibration_topk = GT_K;
+    cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
+    cfg.page_size = static_cast<uint32_t>(arg_page_size);
     cfg.calibration_queries = qry_emb.data.data();
     cfg.num_calibration_queries = Q;
     cfg.payload_schemas = {
@@ -378,8 +401,8 @@ int main(int argc, char* argv[]) {
 
     SearchConfig search_cfg;
     search_cfg.top_k = GT_K;
-    search_cfg.nprobe = 32;
-    search_cfg.early_stop = true;
+    search_cfg.nprobe = static_cast<uint32_t>(arg_nprobe);
+    search_cfg.early_stop = (arg_early_stop != 0);
     search_cfg.prefetch_depth = 16;
     search_cfg.io_queue_depth = 64;
 

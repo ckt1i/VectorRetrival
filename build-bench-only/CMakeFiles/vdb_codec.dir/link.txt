@@ -1,0 +1,2 @@
+/usr/bin/ar qc libvdb_codec.a CMakeFiles/vdb_codec.dir/src/codec/bitpack_codec.cpp.o CMakeFiles/vdb_codec.dir/src/codec/dict_codec.cpp.o
+/usr/bin/ranlib libvdb_codec.a

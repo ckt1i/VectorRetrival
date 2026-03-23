@@ -1,0 +1,1 @@
+/usr/bin/c++  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG CMakeFiles/bench_e2e.dir/bench_e2e.cpp.o -o bench_e2e  ../libvdb_query.a ../libvdb_io.a ../libvdb_index.a ../_deps/flatbuffers-build/libflatbuffers.a ../libvdb_storage.a ../libvdb_columns.a ../libvdb_codec.a ../libvdb_rabitq.a ../libvdb_simd.a /usr/lib/x86_64-linux-gnu/liburing.so 

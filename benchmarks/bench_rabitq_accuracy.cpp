@@ -144,7 +144,7 @@ int main(int argc, char* argv[]) {
     uint32_t p_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 90));
     uint32_t p_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps-ip", 95));
     uint32_t samples_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-dk", 100));
-    uint32_t samples_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-eps-ip", 20));
+    uint32_t samples_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-eps-ip", 100));
 
 
     Log("=== RaBitQ Accuracy Benchmark ===\n");
