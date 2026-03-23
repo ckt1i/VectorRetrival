@@ -293,8 +293,10 @@ int main(int argc, char* argv[]) {
     Log("[Phase 3] Calibrating d_k...\n");
     float p_dk = static_cast<float>(p_for_dk) / 100.0f;
     float d_k = ConANN::CalibrateDistanceThreshold(
-        img.data.data(), N, dim, samples_for_dk, top_k, p_dk, 42);
-    Log("  d_k=%.4f (L2²)\n\n", d_k);
+        qry.data.data(), Q,         // query source
+        img.data.data(), N,         // database source
+        dim, samples_for_dk, top_k, p_dk, 42);
+    Log("  d_k=%.4f (L2², from qry→img)\n\n", d_k);
 
     // ================================================================
     // Phase 4: Per-query distance comparison

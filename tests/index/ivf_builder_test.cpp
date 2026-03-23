@@ -319,3 +319,60 @@ TEST_F(IvfBuilderTest, InvalidInputs) {
     auto vecs = GenerateVectors(100, 64);
     EXPECT_FALSE(builder2.Build(vecs.data(), 100, 64, test_dir_).ok());
 }
+
+// ============================================================================
+// Calibration queries (cross-modal d_k)
+// ============================================================================
+
+TEST_F(IvfBuilderTest, CalibrationQueries_ChangeDk) {
+    constexpr uint32_t N = 128;
+    constexpr Dim dim = 64;
+    constexpr uint32_t nlist = 4;
+
+    auto db_vecs = GenerateVectors(N, dim);
+
+    // Generate query vectors with a different distribution (shifted mean)
+    std::mt19937 rng(99);
+    std::normal_distribution<float> dist(5.0f, 1.0f);  // shifted mean
+    std::vector<float> qry_vecs(32 * dim);
+    for (auto& v : qry_vecs) v = dist(rng);
+
+    // Build without calibration queries
+    IvfBuilderConfig cfg1;
+    cfg1.nlist = nlist;
+    cfg1.max_iterations = 5;
+    cfg1.seed = 42;
+    cfg1.rabitq = {1, 64, 5.75f};
+    cfg1.calibration_samples = 10;
+    cfg1.calibration_topk = 5;
+    cfg1.calibration_percentile = 0.95f;
+    cfg1.page_size = 1;
+
+    std::string dir1 = test_dir_ + "/no_qry";
+    fs::create_directories(dir1);
+    IvfBuilder builder1(cfg1);
+    ASSERT_TRUE(builder1.Build(db_vecs.data(), N, dim, dir1).ok());
+
+    IvfIndex idx1;
+    ASSERT_TRUE(idx1.Open(dir1).ok());
+    float dk1 = idx1.conann().d_k();
+
+    // Build with calibration queries (different distribution)
+    IvfBuilderConfig cfg2 = cfg1;
+    cfg2.calibration_queries = qry_vecs.data();
+    cfg2.num_calibration_queries = 32;
+
+    std::string dir2 = test_dir_ + "/with_qry";
+    fs::create_directories(dir2);
+    IvfBuilder builder2(cfg2);
+    ASSERT_TRUE(builder2.Build(db_vecs.data(), N, dim, dir2).ok());
+
+    IvfIndex idx2;
+    ASSERT_TRUE(idx2.Open(dir2).ok());
+    float dk2 = idx2.conann().d_k();
+
+    // d_k should differ because query distribution is different
+    EXPECT_NE(dk1, dk2);
+    // Shifted queries are farther from database → d_k should be larger
+    EXPECT_GT(dk2, dk1);
+}

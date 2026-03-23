@@ -100,6 +100,31 @@ class ConANN {
         float percentile = 0.99f,
         uint64_t seed = 42);
 
+    /// Calibrate d_k with separate query and database arrays.
+    ///
+    /// Samples from `queries` array, searches against `database` array.
+    /// No self-distance handling needed (queries are not in database).
+    /// Use this for cross-modal retrieval (e.g., text→image).
+    ///
+    /// @param queries     Row-major array of Q query vectors
+    /// @param Q           Number of query vectors
+    /// @param database    Row-major array of N database vectors
+    /// @param N           Number of database vectors
+    /// @param dim         Vector dimensionality
+    /// @param num_samples Number of queries to sample (clamped to Q)
+    /// @param top_k       The k for top-k distance
+    /// @param percentile  Which percentile of sample d_k values to use (0–1)
+    /// @param seed        Random seed for reproducibility (0 = random)
+    /// @return            Calibrated d_k value
+    static float CalibrateDistanceThreshold(
+        const float* queries, uint32_t Q,
+        const float* database, uint32_t N,
+        Dim dim,
+        uint32_t num_samples = 100,
+        uint32_t top_k = 10,
+        float percentile = 0.99f,
+        uint64_t seed = 42);
+
     /// Get the inner-product estimation error bound ε_ip.
     float epsilon() const { return epsilon_; }
 

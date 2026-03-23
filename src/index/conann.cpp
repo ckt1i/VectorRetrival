@@ -63,59 +63,59 @@ float ConANN::CalibrateDistanceThreshold(
     uint32_t top_k,
     float percentile,
     uint64_t seed) {
+    // Delegate to query/database separated overload.
+    // top_k+1 compensates for self-distance: when query IS in the database,
+    // dists includes a 0 entry (self-hit), so we need one extra to skip it.
+    return CalibrateDistanceThreshold(
+        vectors, N, vectors, N, dim,
+        num_samples, top_k + 1, percentile, seed);
+}
 
-    if (N == 0 || num_samples == 0) {
+float ConANN::CalibrateDistanceThreshold(
+    const float* queries, uint32_t Q,
+    const float* database, uint32_t N,
+    Dim dim,
+    uint32_t num_samples,
+    uint32_t top_k,
+    float percentile,
+    uint64_t seed) {
+
+    if (Q == 0 || N == 0 || num_samples == 0) {
         return 0.0f;
     }
 
-    // Clamp top_k to N (can't find k-th nearest if k > N)
-    if (top_k > N) {
-        top_k = N;
-    }
-    if (top_k == 0) {
-        top_k = 1;
-    }
+    if (top_k > N) top_k = N;
+    if (top_k == 0) top_k = 1;
+    if (num_samples > Q) num_samples = Q;
 
-    // Clamp num_samples to N
-    if (num_samples > N) {
-        num_samples = N;
-    }
-
-    // Random engine for sampling query indices
     std::mt19937_64 rng(seed == 0 ? std::random_device{}() : seed);
 
-    // Build a shuffled list of sample indices
-    std::vector<uint32_t> indices(N);
-    for (uint32_t i = 0; i < N; ++i) indices[i] = i;
+    // Sample query indices
+    std::vector<uint32_t> indices(Q);
+    for (uint32_t i = 0; i < Q; ++i) indices[i] = i;
     std::shuffle(indices.begin(), indices.end(), rng);
     indices.resize(num_samples);
 
-    // For each sampled query, compute its top_k-th distance
     std::vector<float> sample_dk(num_samples);
     std::vector<float> dists(N);
 
     for (uint32_t s = 0; s < num_samples; ++s) {
-        const float* query = vectors + static_cast<size_t>(indices[s]) * dim;
+        const float* query = queries + static_cast<size_t>(indices[s]) * dim;
 
-        // Compute L2 distance to all vectors
         for (uint32_t i = 0; i < N; ++i) {
-            dists[i] = simd::L2Sqr(query, vectors + static_cast<size_t>(i) * dim, dim);
+            dists[i] = simd::L2Sqr(query,
+                                    database + static_cast<size_t>(i) * dim,
+                                    dim);
         }
 
-        // Partially sort to find the top_k-th smallest distance.
-        // Use top_k (not top_k-1) for nth_element because dists[indices[s]]
-        // will be 0 (self-distance), and we want the k-th non-self neighbor.
-        // However, since the query IS in the dataset, dists include a 0 entry.
-        // We want the (top_k)-th element (0-indexed) after the self-hit.
-        uint32_t nth = std::min(top_k, N - 1);  // 0-indexed position
+        // top_k-1 because 0-indexed and no self-distance to skip
+        uint32_t nth = std::min(top_k - 1, N - 1);
         std::nth_element(dists.begin(), dists.begin() + nth, dists.end());
         sample_dk[s] = dists[nth];
     }
 
-    // Sort sample_dk and take percentile
+    // Percentile interpolation
     std::sort(sample_dk.begin(), sample_dk.end());
-
-    // Compute percentile index (0-indexed)
     float findex = percentile * static_cast<float>(num_samples - 1);
     uint32_t lo = static_cast<uint32_t>(std::floor(findex));
     uint32_t hi = static_cast<uint32_t>(std::ceil(findex));
@@ -126,7 +126,6 @@ float ConANN::CalibrateDistanceThreshold(
         return sample_dk[lo];
     }
 
-    // Linear interpolation between lo and hi
     float frac = findex - static_cast<float>(lo);
     return sample_dk[lo] * (1.0f - frac) + sample_dk[hi] * frac;
 }

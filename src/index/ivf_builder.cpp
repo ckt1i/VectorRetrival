@@ -245,12 +245,25 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
 // ============================================================================
 
 void IvfBuilder::CalibrateDk(const float* vectors, uint32_t N, Dim dim) {
-    calibrated_dk_ = ConANN::CalibrateDistanceThreshold(
-        vectors, N, dim,
-        config_.calibration_samples,
-        config_.calibration_topk,
-        config_.calibration_percentile,
-        config_.seed);
+    if (config_.calibration_queries != nullptr &&
+        config_.num_calibration_queries > 0) {
+        // Cross-modal: calibrate d_k from query→database distances
+        calibrated_dk_ = ConANN::CalibrateDistanceThreshold(
+            config_.calibration_queries, config_.num_calibration_queries,
+            vectors, N, dim,
+            config_.calibration_samples,
+            config_.calibration_topk,
+            config_.calibration_percentile,
+            config_.seed);
+    } else {
+        // Same-modal fallback: database self-sampling
+        calibrated_dk_ = ConANN::CalibrateDistanceThreshold(
+            vectors, N, dim,
+            config_.calibration_samples,
+            config_.calibration_topk,
+            config_.calibration_percentile,
+            config_.seed);
+    }
 }
 
 // ============================================================================

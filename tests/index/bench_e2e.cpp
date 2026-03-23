@@ -324,6 +324,8 @@ int main(int argc, char* argv[]) {
     cfg.calibration_samples = std::min(100u, N);
     cfg.calibration_topk = 10;
     cfg.page_size = 4096;
+    cfg.calibration_queries = qry_emb.data.data();
+    cfg.num_calibration_queries = Q;
     cfg.payload_schemas = {
         {0, "id",      DType::INT64,  false},
         {1, "caption", DType::STRING, false},

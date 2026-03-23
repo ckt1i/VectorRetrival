@@ -73,6 +73,13 @@ struct IvfBuilderConfig {
 
     /// Percentile for ε_ip calibration (0–1, e.g. 0.95).
     float epsilon_percentile = 0.95f;
+
+    /// Optional query vectors for d_k calibration (cross-modal support).
+    /// If provided, d_k is calibrated from query→database distances.
+    /// If nullptr, fallback to database self-sampling (existing behavior).
+    /// Pointer must remain valid for the duration of Build().
+    const float* calibration_queries = nullptr;
+    uint32_t num_calibration_queries = 0;
 };
 
 // ============================================================================
