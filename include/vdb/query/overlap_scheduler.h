@@ -74,6 +74,12 @@ class OverlapScheduler {
 
     uint32_t vec_bytes_;
     uint32_t num_words_;
+
+    // CRC early stop state (reset per Search() call)
+    index::CrcStopper crc_stopper_;
+    std::vector<std::pair<float, uint32_t>> est_heap_;
+    uint32_t est_top_k_ = 0;
+    bool use_crc_ = false;
 };
 
 }  // namespace query

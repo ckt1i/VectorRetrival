@@ -71,6 +71,19 @@ class ConANN {
     /// @return             SafeIn / SafeOut / Uncertain
     ResultClass Classify(float approx_dist, float margin) const;
 
+    /// Classify with dynamic SafeOut threshold.
+    ///
+    /// SafeOut uses dynamic_d_k (from RaBitQ estimate heap) instead of static d_k,
+    /// enabling progressively tighter pruning as the estimate heap stabilizes.
+    /// SafeIn remains static (uses construction-time d_k_) for safety.
+    ///
+    /// @param approx_dist  Approximate squared L2 distance from RaBitQ
+    /// @param margin       Dynamic distance error bound for this (cluster, query)
+    /// @param dynamic_d_k  Current k-th distance from RaBitQ estimate heap
+    /// @return             SafeIn / SafeOut / Uncertain
+    ResultClass ClassifyAdaptive(float approx_dist, float margin,
+                                  float dynamic_d_k) const;
+
     /// Calibrate the global distance threshold d_k by sampling from the dataset.
     ///
     /// Algorithm:

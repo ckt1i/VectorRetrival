@@ -53,6 +53,19 @@ ResultClass ConANN::Classify(float approx_dist, float margin) const {
     return ResultClass::Uncertain;
 }
 
+ResultClass ConANN::ClassifyAdaptive(float approx_dist, float margin,
+                                      float dynamic_d_k) const {
+    // SafeOut: dynamic threshold (tightens as estimate heap stabilizes)
+    if (approx_dist > dynamic_d_k + 2 * margin) {
+        return ResultClass::SafeOut;
+    }
+    // SafeIn: static threshold (conservative, uses construction-time d_k_)
+    if (approx_dist < d_k_ - 2 * margin) {
+        return ResultClass::SafeIn;
+    }
+    return ResultClass::Uncertain;
+}
+
 // ============================================================================
 // Calibration
 // ============================================================================

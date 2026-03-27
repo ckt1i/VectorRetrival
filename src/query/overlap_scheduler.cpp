@@ -1,8 +1,10 @@
 #include "vdb/query/overlap_scheduler.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 
 #include "vdb/common/distance.h"
 #include "vdb/query/rerank_consumer.h"
@@ -18,7 +20,14 @@ OverlapScheduler::OverlapScheduler(index::IvfIndex& index,
       reader_(reader),
       config_(config),
       vec_bytes_(index.dim() * sizeof(float)),
-      num_words_((index.dim() + 63) / 64) {}
+      num_words_((index.dim() + 63) / 64),
+      est_top_k_(config.top_k),
+      use_crc_(config.crc_params != nullptr) {
+    if (use_crc_) {
+        crc_stopper_ = index::CrcStopper(*config.crc_params, index.nlist());
+        est_heap_.reserve(est_top_k_);
+    }
+}
 
 OverlapScheduler::~OverlapScheduler() = default;
 
@@ -28,6 +37,7 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     pending_.clear();
     next_to_submit_ = 0;
     inflight_clusters_ = 0;
+    est_heap_.clear();
 
     auto t_search_start = std::chrono::steady_clock::now();
 
@@ -77,7 +87,7 @@ void OverlapScheduler::PrefetchClusters(
     SearchContext& ctx,
     const std::vector<ClusterID>& sorted_clusters) {
     uint32_t initial = std::min(
-        config_.prefetch_depth,
+        use_crc_ ? config_.initial_prefetch : config_.prefetch_depth,
         static_cast<uint32_t>(sorted_clusters.size()));
     for (uint32_t i = 0; i < initial; ++i) {
         SubmitClusterRead(sorted_clusters[i]);
@@ -152,6 +162,12 @@ void OverlapScheduler::ProbeCluster(
     float eps_ip = index_.conann().epsilon();
     float margin = 2.0f * r_max * pq.norm_qc * eps_ip;
 
+    // CRC: compute dynamic_d_k from est_heap_ at cluster start (not updated
+    // within this cluster — only between clusters for stability).
+    float dynamic_d_k = (use_crc_ && est_heap_.size() >= est_top_k_)
+        ? est_heap_.front().first
+        : index_.conann().d_k();
+
     const uint32_t batch_size = config_.probe_batch_size;
     std::vector<float> dists(batch_size);
     const uint32_t norm_byte_offset = num_words_ * sizeof(uint64_t);
@@ -170,8 +186,26 @@ void OverlapScheduler::ProbeCluster(
                 pq, words, num_words_, norm_oc);
         }
 
+        // Update est_heap_ with ALL RaBitQ estimates (before classify, so
+        // even SafeOut vectors contribute to a tighter dynamic_d_k for the
+        // next cluster).
+        if (use_crc_) {
+            for (uint32_t i = 0; i < actual; ++i) {
+                if (est_heap_.size() < est_top_k_) {
+                    est_heap_.push_back({dists[i], offset + i});
+                    std::push_heap(est_heap_.begin(), est_heap_.end());
+                } else if (dists[i] < est_heap_.front().first) {
+                    std::pop_heap(est_heap_.begin(), est_heap_.end());
+                    est_heap_.back() = {dists[i], offset + i};
+                    std::push_heap(est_heap_.begin(), est_heap_.end());
+                }
+            }
+        }
+
         for (uint32_t i = 0; i < actual; ++i) {
-            ResultClass rc = index_.conann().Classify(dists[i], margin);
+            ResultClass rc = use_crc_
+                ? index_.conann().ClassifyAdaptive(dists[i], margin, dynamic_d_k)
+                : index_.conann().Classify(dists[i], margin);
             AddressEntry addr = pc.decoded_addresses[offset + i];
 
             if (rc == ResultClass::SafeOut) {
@@ -252,16 +286,32 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
         uint32_t submitted = reader_.Submit();
         ctx.stats().total_io_submitted += submitted;
 
-        // Early stop: check if TopK quality already exceeds calibration
-        // baseline d_k. TopK reflects completions consumed during
-        // WaitAndPoll above (naturally interleaved with cluster waits).
-        if (config_.early_stop &&
-            ctx.collector().Full() &&
-            ctx.collector().TopDistance() < index_.conann().d_k()) {
-            ctx.stats().early_stopped = true;
-            ctx.stats().clusters_skipped =
-                static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
-            break;
+        // Early stop
+        if (config_.early_stop) {
+            if (use_crc_) {
+                // CRC early stop: use RaBitQ estimate heap distance
+                float est_kth = (est_heap_.size() >= est_top_k_)
+                    ? est_heap_.front().first
+                    : std::numeric_limits<float>::infinity();
+                if (crc_stopper_.ShouldStop(
+                        static_cast<uint32_t>(i + 1), est_kth)) {
+                    ctx.stats().early_stopped = true;
+                    ctx.stats().clusters_skipped =
+                        static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                    ctx.stats().crc_clusters_probed =
+                        static_cast<uint32_t>(i + 1);
+                    break;
+                }
+            } else {
+                // Legacy early stop: exact L2 collector vs static d_k
+                if (ctx.collector().Full() &&
+                    ctx.collector().TopDistance() < index_.conann().d_k()) {
+                    ctx.stats().early_stopped = true;
+                    ctx.stats().clusters_skipped =
+                        static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                    break;
+                }
+            }
         }
 
         // 5. Sliding window refill

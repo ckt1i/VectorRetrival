@@ -1,44 +1,49 @@
-# Spec: Per-Cluster Epsilon
-
-## Requirements
+## MODIFIED Requirements
 
 ### R1: Reconstruction Error Computation
 - 对每个 cluster，计算（采样）向量的 RaBitQ 重建误差 `L2(v, v̂)`
 - 重建公式: `v̂ = centroid + norm · P × (signs/√dim)`
 - 采样策略: 若 `cluster_size < 2 × n_samples`，则 `n_samples = max(cluster_size / 2, 1)`；各 cluster 独立计算 n_samples 后取全局最大值
+- **新增**: `CalibrateDistanceThreshold` 支持 query/database 分离校准
 
-### R2: Per-Cluster Epsilon Storage
-- `ClusterLookupEntry` 新增 `float epsilon` 字段
-- 文件格式版本 v5 → v6
-- Reader 只接受 v6 格式
-- epsilon 写入/读取在 Lookup Table 序列化/反序列化中完成
+#### Scenario: d_k 从独立 query 样本校准
+- **WHEN** `IvfBuilderConfig.calibration_queries != nullptr` 且 `num_calibration_queries > 0`
+- **THEN** `CalibrateDk` 使用 query 样本搜索 database，计算 top-K 第 K 近距离的指定 percentile 作为 d_k
 
-### R3: Per-Cluster ConANN Classification
-- `ParsedCluster` 新增 `float epsilon`
-- `ProbeCluster` 使用 per-cluster epsilon 和全局 d_k 构造局部 ConANN
-- 不再依赖 `index_.conann()` 的全局 epsilon
+#### Scenario: d_k 从 database 自身校准（fallback）
+- **WHEN** `IvfBuilderConfig.calibration_queries == nullptr`
+- **THEN** `CalibrateDk` 从 database 向量自身采样 pseudo-query（现有行为不变）
 
-### R4: Benchmark Output
-- `bench_rabitq_accuracy` 输出每个 cluster 的向量数和 epsilon 值
-- 格式: 表格，包含 cluster_id, num_vectors, epsilon 三列
+## ADDED Requirements
 
-## Constraints
+### Requirement: CalibrateDistanceThreshold query/database 分离重载
 
-### C1: Build-Time Only
-- epsilon 标定只在 build 阶段进行（IvfBuilder），不影响查询延迟
-- Build 时有 RotationMatrix，可做 ApplyInverse
+`ConANN::CalibrateDistanceThreshold` SHALL 提供新重载，接受独立的 query 和 database 数组。新重载不存在 self-distance 问题（query 不在 database 中）。旧签名 SHALL 保留为 wrapper 调用新重载（queries = database = vectors）。
 
-### C2: Backward Incompatible
-- v6 格式不兼容 v5 及更早版本
-- Reader 拒绝非 v6 文件
+#### Scenario: 跨模态校准
+- **WHEN** 调用新重载传入 text embeddings 作为 queries、image embeddings 作为 database
+- **THEN** d_k 反映真实 text→image 距离分布，而非 image→image
 
-### C3: P95 Percentile
-- 使用 P95（而非 P99 或 max）作为 epsilon 百分位
-- 平衡 SafeOut 安全性和 Uncertain 比例
+#### Scenario: 旧签名兼容
+- **WHEN** 调用旧 `CalibrateDistanceThreshold(vectors, N, dim, ...)`
+- **THEN** 行为与之前完全一致（从 vectors 自身采样 pseudo-query）
 
-## Acceptance Criteria
+### Requirement: IvfBuilderConfig 可选 query 样本
 
-- [ ] cluster_store_test: epsilon 写入后读回值一致（roundtrip）
-- [ ] overlap_scheduler_test: 使用 per-cluster epsilon，全量探测时结果与 brute-force L2 匹配
-- [ ] bench_rabitq_accuracy: 运行输出包含 per-cluster statistics 表格
-- [ ] 编译无 warning，所有现有 test 通过
+`IvfBuilderConfig` SHALL 新增 `const float* calibration_queries` 和 `uint32_t num_calibration_queries` 字段，默认为 nullptr/0。`Build()` 签名 SHALL 不变。
+
+#### Scenario: 同模态构建无需改动
+- **WHEN** 未设置 `calibration_queries`（默认 nullptr）
+- **THEN** 现有 12+ 处 Build() 调用行为不变，d_k 从 database 自采样
+
+#### Scenario: 跨模态构建传入 query
+- **WHEN** 设置 `calibration_queries` 指向有效 query 数组
+- **THEN** d_k 从 query→database 距离校准
+
+### Requirement: Benchmark d_k 校准修正
+
+`bench_rabitq_accuracy` Phase 3 SHALL 使用 qry 向量（而非 img 向量）校准 d_k。
+
+#### Scenario: COCO text→image benchmark
+- **WHEN** 运行 `bench_rabitq_accuracy --dataset coco_1k`
+- **THEN** d_k 从 text→image 距离校准，SafeIn/SafeOut 分类结果非退化（不全为 SafeOut）

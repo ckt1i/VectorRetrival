@@ -35,6 +35,7 @@ endif()
 # =============================================================================
 include(FetchContent)
 find_package(Threads REQUIRED)
+find_package(GSL REQUIRED)
 
 # FlatBuffers - build from source to get flatc compiler
 FetchContent_Declare(
@@ -201,6 +202,20 @@ target_include_directories(vdb_index PUBLIC
 target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema)
 
 # =============================================================================
+# VDB CRC Library (ConANN CRC calibration — offline only, depends on GSL)
+# Separated from vdb_index so online query path does not link GSL.
+# =============================================================================
+add_library(vdb_crc STATIC
+    src/index/crc_calibrator.cpp
+)
+target_include_directories(vdb_crc PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+target_link_libraries(vdb_crc PUBLIC vdb_simd vdb_common vdb_rabitq)
+target_link_libraries(vdb_crc PRIVATE GSL::gsl GSL::gslcblas)
+
+# =============================================================================
 # VDB Query Library (Phase 7)
 # Single-threaded two-phase query pipeline: Probe+Submit → Drain+Rerank.
 # =============================================================================
@@ -361,6 +376,14 @@ if(VDB_BUILD_TESTS)
     add_executable(test_conann tests/index/conann_test.cpp)
     target_link_libraries(test_conann PRIVATE vdb_index GTest::gtest GTest::gtest_main)
     add_test(NAME test_conann COMMAND test_conann)
+
+    add_executable(test_crc_stopper tests/index/crc_stopper_test.cpp)
+    target_link_libraries(test_crc_stopper PRIVATE vdb_common GTest::gtest GTest::gtest_main)
+    add_test(NAME test_crc_stopper COMMAND test_crc_stopper)
+
+    add_executable(test_crc_calibrator tests/index/crc_calibrator_test.cpp)
+    target_link_libraries(test_crc_calibrator PRIVATE vdb_crc GTest::gtest GTest::gtest_main)
+    add_test(NAME test_crc_calibrator COMMAND test_crc_calibrator)
 
     add_executable(test_ivf_index tests/index/ivf_index_test.cpp)
     target_link_libraries(test_ivf_index PRIVATE vdb_index GTest::gtest GTest::gtest_main)
