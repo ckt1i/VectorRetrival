@@ -4,6 +4,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <limits>
 #include <numeric>
 #include <random>
@@ -20,16 +21,6 @@
 namespace vdb {
 namespace index {
 namespace {
-
-// ============================================================================
-// Internal data structures
-// ============================================================================
-
-// Per-query scores and predictions at each nprobe step.
-struct QueryScores {
-    std::vector<float> raw_scores;                  // [nlist] d_p at each step
-    std::vector<std::vector<uint32_t>> predictions; // [nlist][<=k] IDs at each step
-};
 
 // ============================================================================
 // compute_scores: incremental search over all clusters
@@ -500,20 +491,25 @@ static float ComputeRecall(const std::vector<uint32_t>& predicted,
 }  // namespace
 
 // ============================================================================
-// CrcCalibrator::Calibrate
+// CrcCalibrator::Calibrate — core (scores-only, distance-space agnostic)
 // ============================================================================
 
 std::pair<CalibrationResults, CrcCalibrator::EvalResults>
 CrcCalibrator::Calibrate(
     const Config& config,
-    const float* queries, uint32_t num_queries, Dim dim,
-    const float* centroids, uint32_t nlist,
-    const std::vector<ClusterData>& clusters,
-    const std::vector<std::vector<uint32_t>>& ground_truth) {
+    const std::vector<QueryScores>& all_scores,
+    uint32_t nlist) {
 
+    uint32_t num_queries = static_cast<uint32_t>(all_scores.size());
     assert(num_queries > 0);
     assert(nlist > 0);
-    assert(ground_truth.size() == num_queries);
+
+    // Derive ground truth from full-probe predictions[nlist-1].
+    std::vector<std::vector<uint32_t>> ground_truth(num_queries);
+    for (uint32_t i = 0; i < num_queries; ++i) {
+        assert(all_scores[i].predictions.size() == nlist);
+        ground_truth[i] = all_scores[i].predictions[nlist - 1];
+    }
 
     // Step 0: Split queries into calib / tune / test.
     std::vector<uint32_t> indices(num_queries);
@@ -527,7 +523,6 @@ CrcCalibrator::Calibrate(
     if (n_tune < 1) n_tune = 1;
     uint32_t n_test = num_queries - n_calib - n_tune;
     if (n_test < 1) {
-        // If not enough queries, reduce tune.
         n_tune = std::max(1u, num_queries - n_calib - 1);
         n_test = num_queries - n_calib - n_tune;
     }
@@ -538,11 +533,17 @@ CrcCalibrator::Calibrate(
     std::vector<uint32_t> test_idx(indices.begin() + n_calib + n_tune,
                                    indices.end());
 
-    // Step 1: Compute scores for calib and tune sets.
-    auto calib_scores = ComputeAllScores(queries, calib_idx, dim, centroids,
-                                         nlist, clusters, config.top_k);
-    auto tune_scores = ComputeAllScores(queries, tune_idx, dim, centroids,
-                                        nlist, clusters, config.top_k);
+    // Extract subset scores by reference (indices map into all_scores).
+    auto extract_scores = [&](const std::vector<uint32_t>& idx) {
+        std::vector<QueryScores> sub(idx.size());
+        for (size_t i = 0; i < idx.size(); ++i) {
+            sub[i] = all_scores[idx[i]];
+        }
+        return sub;
+    };
+
+    auto calib_scores = extract_scores(calib_idx);
+    auto tune_scores = extract_scores(tune_idx);
 
     // Step 2: Normalize using calib set statistics.
     auto norm = ComputeNormParams(calib_scores);
@@ -550,7 +551,7 @@ CrcCalibrator::Calibrate(
     auto tune_nonconf = NormalizeScores(tune_scores, norm);
 
     // Step 3-4: Pick (kreg, reg_lambda) on tune set.
-    uint32_t kreg = 1;  // hardcoded as in original ConANN
+    uint32_t kreg = 1;
     float reg_lambda = PickLambdaReg(config.alpha, kreg, nlist,
                                      calib_nonconf, calib_scores, calib_idx,
                                      tune_nonconf, tune_scores, tune_idx,
@@ -573,8 +574,7 @@ CrcCalibrator::Calibrate(
     eval.test_size = static_cast<uint32_t>(test_idx.size());
 
     if (eval.test_size > 0) {
-        auto test_scores = ComputeAllScores(queries, test_idx, dim, centroids,
-                                            nlist, clusters, config.top_k);
+        auto test_scores = extract_scores(test_idx);
         auto test_nonconf = NormalizeScores(test_scores, norm);
         auto test_reg = RegularizeScores(test_nonconf, nlist, reg_lambda, kreg);
         auto test_pred = ComputePredictions(lamhat, test_reg, test_scores);
@@ -589,7 +589,6 @@ CrcCalibrator::Calibrate(
         }
         eval.avg_probed = valid > 0 ? sum_probed / valid : 0.0f;
 
-        // Recall computation.
         float sum_r1 = 0, sum_r5 = 0, sum_r10 = 0;
         for (size_t i = 0; i < test_idx.size(); ++i) {
             uint32_t qi = test_idx[i];
@@ -607,107 +606,172 @@ CrcCalibrator::Calibrate(
     return {cal, eval};
 }
 
+// ============================================================================
+// CrcCalibrator::Calibrate — convenience wrapper (exact L2)
+// ============================================================================
+
+std::pair<CalibrationResults, CrcCalibrator::EvalResults>
+CrcCalibrator::Calibrate(
+    const Config& config,
+    const float* queries, uint32_t num_queries, Dim dim,
+    const float* centroids, uint32_t nlist,
+    const std::vector<ClusterData>& clusters) {
+
+    assert(num_queries > 0);
+    assert(nlist > 0);
+
+    // Compute scores for all queries, then delegate to core.
+    std::vector<uint32_t> all_indices(num_queries);
+    std::iota(all_indices.begin(), all_indices.end(), 0u);
+    auto all_scores = ComputeAllScores(queries, all_indices, dim, centroids,
+                                       nlist, clusters, config.top_k);
+    return Calibrate(config, all_scores, nlist);
+}
+
+// ============================================================================
+// CrcCalibrator::CalibrateWithRaBitQ — convenience wrapper (RaBitQ estimates)
+// ============================================================================
+
 std::pair<CalibrationResults, CrcCalibrator::EvalResults>
 CrcCalibrator::CalibrateWithRaBitQ(
     const Config& config,
     const float* queries, uint32_t num_queries, Dim dim,
     const float* centroids, uint32_t nlist,
     const std::vector<ClusterData>& clusters,
-    const std::vector<std::vector<uint32_t>>& ground_truth,
     const rabitq::RotationMatrix& rotation) {
 
     assert(num_queries > 0);
     assert(nlist > 0);
-    assert(ground_truth.size() == num_queries);
 
-    // Step 0: Split queries into calib / tune / test.
-    std::vector<uint32_t> indices(num_queries);
-    std::iota(indices.begin(), indices.end(), 0u);
-    std::mt19937_64 rng(config.seed);
-    std::shuffle(indices.begin(), indices.end(), rng);
+    // Compute scores for all queries using RaBitQ, then delegate to core.
+    std::vector<uint32_t> all_indices(num_queries);
+    std::iota(all_indices.begin(), all_indices.end(), 0u);
+    auto all_scores = ComputeAllScoresRaBitQ(queries, all_indices, dim, centroids,
+                                              nlist, clusters, config.top_k, rotation);
+    return Calibrate(config, all_scores, nlist);
+}
 
-    uint32_t n_calib = static_cast<uint32_t>(num_queries * config.calib_ratio);
-    uint32_t n_tune = static_cast<uint32_t>(num_queries * config.tune_ratio);
-    if (n_calib < 1) n_calib = 1;
-    if (n_tune < 1) n_tune = 1;
-    uint32_t n_test = num_queries - n_calib - n_tune;
-    if (n_test < 1) {
-        n_tune = std::max(1u, num_queries - n_calib - 1);
-        n_test = num_queries - n_calib - n_tune;
+// ============================================================================
+// CrcCalibrator::ComputeScoresRaBitQ — exposed for offline precomputation
+// ============================================================================
+
+std::vector<QueryScores> CrcCalibrator::ComputeScoresRaBitQ(
+    const float* queries, uint32_t num_queries, Dim dim,
+    const float* centroids, uint32_t nlist,
+    const std::vector<ClusterData>& clusters,
+    uint32_t top_k,
+    const rabitq::RotationMatrix& rotation) {
+
+    std::vector<uint32_t> all_indices(num_queries);
+    std::iota(all_indices.begin(), all_indices.end(), 0u);
+    return ComputeAllScoresRaBitQ(queries, all_indices, dim, centroids,
+                                   nlist, clusters, top_k, rotation);
+}
+
+// ============================================================================
+// CrcCalibrator::WriteScores / ReadScores — binary serialization
+// ============================================================================
+
+static constexpr uint32_t kCrcScoresMagic = 0x43524353;  // "CRCS"
+static constexpr uint32_t kCrcScoresVersion = 1;
+
+Status CrcCalibrator::WriteScores(const std::string& path,
+                                  const std::vector<QueryScores>& scores,
+                                  uint32_t nlist, uint32_t top_k) {
+    std::ofstream ofs(path, std::ios::binary);
+    if (!ofs.is_open()) {
+        return Status::IOError("Failed to create CRC scores file: " + path);
     }
 
-    std::vector<uint32_t> calib_idx(indices.begin(), indices.begin() + n_calib);
-    std::vector<uint32_t> tune_idx(indices.begin() + n_calib,
-                                   indices.begin() + n_calib + n_tune);
-    std::vector<uint32_t> test_idx(indices.begin() + n_calib + n_tune,
-                                   indices.end());
+    // Header
+    uint32_t num_queries = static_cast<uint32_t>(scores.size());
+    uint32_t magic = kCrcScoresMagic;
+    uint32_t version = kCrcScoresVersion;
+    ofs.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+    ofs.write(reinterpret_cast<const char*>(&version), sizeof(version));
+    ofs.write(reinterpret_cast<const char*>(&num_queries), sizeof(num_queries));
+    ofs.write(reinterpret_cast<const char*>(&nlist), sizeof(nlist));
+    ofs.write(reinterpret_cast<const char*>(&top_k), sizeof(top_k));
 
-    // Step 1: Compute scores using RaBitQ estimates.
-    auto calib_scores = ComputeAllScoresRaBitQ(queries, calib_idx, dim, centroids,
-                                                nlist, clusters, config.top_k, rotation);
-    auto tune_scores = ComputeAllScoresRaBitQ(queries, tune_idx, dim, centroids,
-                                               nlist, clusters, config.top_k, rotation);
+    // Per-query data
+    std::vector<uint32_t> pred_buf(static_cast<size_t>(nlist) * top_k,
+                                   std::numeric_limits<uint32_t>::max());
+    for (const auto& qs : scores) {
+        // raw_scores[nlist]
+        ofs.write(reinterpret_cast<const char*>(qs.raw_scores.data()),
+                  static_cast<std::streamsize>(nlist * sizeof(float)));
 
-    // Step 2: Normalize using calib set statistics.
-    auto norm = ComputeNormParams(calib_scores);
-    auto calib_nonconf = NormalizeScores(calib_scores, norm);
-    auto tune_nonconf = NormalizeScores(tune_scores, norm);
-
-    // Step 3-4: Pick (kreg, reg_lambda) on tune set.
-    uint32_t kreg = 1;
-    float reg_lambda = PickLambdaReg(config.alpha, kreg, nlist,
-                                     calib_nonconf, calib_scores, calib_idx,
-                                     tune_nonconf, tune_scores, tune_idx,
-                                     ground_truth);
-
-    // Step 5: Final Brent solve on calib set.
-    auto calib_reg = RegularizeScores(calib_nonconf, nlist, reg_lambda, kreg);
-    float target_fnr = (static_cast<float>(n_calib) + 1.0f) / n_calib *
-                           config.alpha -
-                       1.0f / (n_calib + 1.0f);
-    if (target_fnr < 0.0f) target_fnr = 0.0f;
-
-    float lamhat = BrentSolve(target_fnr, calib_reg, calib_scores,
-                              ground_truth, calib_idx);
-
-    CalibrationResults cal{lamhat, kreg, reg_lambda, norm.d_min, norm.d_max};
-
-    // Step 6: Evaluate on test set.
-    EvalResults eval;
-    eval.test_size = static_cast<uint32_t>(test_idx.size());
-
-    if (eval.test_size > 0) {
-        auto test_scores = ComputeAllScoresRaBitQ(queries, test_idx, dim, centroids,
-                                                   nlist, clusters, config.top_k, rotation);
-        auto test_nonconf = NormalizeScores(test_scores, norm);
-        auto test_reg = RegularizeScores(test_nonconf, nlist, reg_lambda, kreg);
-        auto test_pred = ComputePredictions(lamhat, test_reg, test_scores);
-
-        eval.actual_fnr = static_cast<float>(
-            FalseNegativeRate(test_pred.predictions, ground_truth, test_idx));
-
-        float sum_probed = 0.0f;
-        int valid = 0;
-        for (int c : test_pred.clusters_searched) {
-            if (c > 0) { sum_probed += c; ++valid; }
+        // predictions[nlist × top_k] — pad with UINT32_MAX sentinel
+        std::fill(pred_buf.begin(), pred_buf.end(),
+                  std::numeric_limits<uint32_t>::max());
+        for (uint32_t p = 0; p < nlist; ++p) {
+            uint32_t n = std::min(top_k,
+                                  static_cast<uint32_t>(qs.predictions[p].size()));
+            for (uint32_t j = 0; j < n; ++j) {
+                pred_buf[static_cast<size_t>(p) * top_k + j] =
+                    qs.predictions[p][j];
+            }
         }
-        eval.avg_probed = valid > 0 ? sum_probed / valid : 0.0f;
-
-        float sum_r1 = 0, sum_r5 = 0, sum_r10 = 0;
-        for (size_t i = 0; i < test_idx.size(); ++i) {
-            uint32_t qi = test_idx[i];
-            sum_r1 += ComputeRecall(test_pred.predictions[i], ground_truth[qi], 1);
-            sum_r5 += ComputeRecall(test_pred.predictions[i], ground_truth[qi], 5);
-            sum_r10 += ComputeRecall(test_pred.predictions[i], ground_truth[qi],
-                                     std::min(10u, config.top_k));
-        }
-        float n = static_cast<float>(test_idx.size());
-        eval.recall_at_1 = sum_r1 / n;
-        eval.recall_at_5 = sum_r5 / n;
-        eval.recall_at_10 = sum_r10 / n;
+        ofs.write(reinterpret_cast<const char*>(pred_buf.data()),
+                  static_cast<std::streamsize>(pred_buf.size() * sizeof(uint32_t)));
     }
 
-    return {cal, eval};
+    if (!ofs.good()) {
+        return Status::IOError("Failed to write CRC scores file: " + path);
+    }
+    return Status::OK();
+}
+
+Status CrcCalibrator::ReadScores(const std::string& path,
+                                 std::vector<QueryScores>& scores,
+                                 uint32_t& nlist, uint32_t& top_k) {
+    std::ifstream ifs(path, std::ios::binary);
+    if (!ifs.is_open()) {
+        return Status::IOError("Failed to open CRC scores file: " + path);
+    }
+
+    // Header
+    uint32_t magic, version, num_queries;
+    ifs.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    ifs.read(reinterpret_cast<char*>(&version), sizeof(version));
+    ifs.read(reinterpret_cast<char*>(&num_queries), sizeof(num_queries));
+    ifs.read(reinterpret_cast<char*>(&nlist), sizeof(nlist));
+    ifs.read(reinterpret_cast<char*>(&top_k), sizeof(top_k));
+
+    if (magic != kCrcScoresMagic) {
+        return Status::Corruption("Invalid CRC scores magic number");
+    }
+    if (version != kCrcScoresVersion) {
+        return Status::Corruption("Unsupported CRC scores version");
+    }
+
+    // Per-query data
+    scores.resize(num_queries);
+    std::vector<uint32_t> pred_buf(static_cast<size_t>(nlist) * top_k);
+
+    for (uint32_t qi = 0; qi < num_queries; ++qi) {
+        scores[qi].raw_scores.resize(nlist);
+        ifs.read(reinterpret_cast<char*>(scores[qi].raw_scores.data()),
+                 static_cast<std::streamsize>(nlist * sizeof(float)));
+
+        ifs.read(reinterpret_cast<char*>(pred_buf.data()),
+                 static_cast<std::streamsize>(pred_buf.size() * sizeof(uint32_t)));
+
+        scores[qi].predictions.resize(nlist);
+        for (uint32_t p = 0; p < nlist; ++p) {
+            scores[qi].predictions[p].clear();
+            for (uint32_t j = 0; j < top_k; ++j) {
+                uint32_t id = pred_buf[static_cast<size_t>(p) * top_k + j];
+                if (id == std::numeric_limits<uint32_t>::max()) break;
+                scores[qi].predictions[p].push_back(id);
+            }
+        }
+    }
+
+    if (!ifs.good()) {
+        return Status::IOError("Failed to read CRC scores file: " + path);
+    }
+    return Status::OK();
 }
 
 }  // namespace index

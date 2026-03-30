@@ -540,6 +540,9 @@ int main(int argc, char* argv[]) {
     cfg.page_size = static_cast<uint32_t>(arg_page_size);
     cfg.calibration_queries = qry_emb.data.data();
     cfg.num_calibration_queries = Q;
+    if (arg_crc) {
+        cfg.crc_top_k = GT_K;  // precompute CRC scores at build time
+    }
     cfg.payload_schemas = {
         {0, "id",      DType::INT64,  false},
         {1, "caption", DType::STRING, false},
@@ -584,133 +587,123 @@ int main(int argc, char* argv[]) {
     CalibrationResults calib_results;
 
     if (arg_crc) {
-        Log("\n[Phase C.5] CRC calibration from disk...\n");
+        Log("\n[Phase C.5] CRC calibration from precomputed scores...\n");
         auto t_crc_start = std::chrono::steady_clock::now();
 
-        auto& seg = index.segment();
         uint32_t nlist = index.nlist();
 
-        // Load all cluster data from disk
-        // vectors: for GT computation
-        // codes: for CRC calibration (via codes_block pointer)
-        std::vector<float> all_vectors;
-        std::vector<uint32_t> all_ids;
-        all_vectors.reserve(static_cast<size_t>(N) * dim);
-        all_ids.reserve(N);
+        // Load precomputed CRC scores from build output
+        std::string scores_path = index_dir + "/crc_scores.bin";
+        std::vector<QueryScores> crc_scores;
+        uint32_t scores_nlist, scores_top_k;
+        s = CrcCalibrator::ReadScores(scores_path, crc_scores,
+                                      scores_nlist, scores_top_k);
+        if (!s.ok()) {
+            Log("  Failed to load %s: %s\n", scores_path.c_str(),
+                s.ToString().c_str());
+            Log("  Falling back to inline RaBitQ calibration...\n");
 
-        // Per-cluster codes_block pointers (valid after EnsureClusterLoaded)
-        struct PerClusterInfo {
-            const uint8_t* codes_block = nullptr;
-            uint32_t count = 0;
-            uint32_t global_start = 0;  // start index in all_vectors
-        };
-        std::vector<PerClusterInfo> cluster_infos(nlist);
+            // Fallback: compute scores inline (load clusters, no GT needed)
+            auto& seg = index.segment();
 
-        // code_entry_size = num_words * 8 + sizeof(float) + sizeof(uint32_t)
-        uint32_t num_words = (static_cast<uint32_t>(dim) + 63) / 64;
-        uint32_t code_entry_size = num_words * sizeof(uint64_t)
-                                   + sizeof(float) + sizeof(uint32_t);
-        uint32_t global_offset = 0;
+            struct PerClusterInfo {
+                const uint8_t* codes_block = nullptr;
+                uint32_t count = 0;
+                uint32_t global_start = 0;
+            };
+            std::vector<PerClusterInfo> cluster_infos(nlist);
 
-        for (uint32_t cid = 0; cid < nlist; ++cid) {
-            s = seg.EnsureClusterLoaded(cid);
-            if (!s.ok()) {
-                Log("  Warning: failed to load cluster %u: %s\n",
-                    cid, s.ToString().c_str());
-                continue;
-            }
+            uint32_t num_words = (static_cast<uint32_t>(dim) + 63) / 64;
+            uint32_t code_entry_size = num_words * sizeof(uint64_t)
+                                       + sizeof(float) + sizeof(uint32_t);
+            uint32_t global_offset = 0;
 
-            uint32_t count = seg.GetNumRecords(cid);
-            cluster_infos[cid].codes_block = seg.GetCodePtr(cid, 0);
-            cluster_infos[cid].count = count;
-            cluster_infos[cid].global_start = global_offset;
+            std::vector<uint32_t> all_ids;
+            all_ids.reserve(N);
 
-            // Read raw vectors from .dat
-            all_vectors.resize(static_cast<size_t>(global_offset + count) * dim);
-            for (uint32_t i = 0; i < count; ++i) {
-                AddressEntry addr = seg.GetAddress(cid, i);
-                s = seg.ReadVector(addr,
-                    all_vectors.data() + static_cast<size_t>(global_offset + i) * dim);
-                if (!s.ok()) {
-                    Log("  Warning: failed to read vector cid=%u i=%u: %s\n",
-                        cid, i, s.ToString().c_str());
+            for (uint32_t cid = 0; cid < nlist; ++cid) {
+                s = seg.EnsureClusterLoaded(cid);
+                if (!s.ok()) continue;
+
+                uint32_t count = seg.GetNumRecords(cid);
+                cluster_infos[cid].codes_block = seg.GetCodePtr(cid, 0);
+                cluster_infos[cid].count = count;
+                cluster_infos[cid].global_start = global_offset;
+
+                for (uint32_t i = 0; i < count; ++i) {
+                    all_ids.push_back(global_offset + i);
                 }
-                all_ids.push_back(global_offset + i);
+                global_offset += count;
             }
 
-            global_offset += count;
-        }
-
-        uint32_t total_vecs = global_offset;
-        Log("  Loaded %u vectors from %u clusters (code_entry_size=%u)\n",
-            total_vecs, nlist, code_entry_size);
-
-        // Compute brute-force GT for CRC calibrator (uint32_t IDs)
-        Log("  Computing CRC ground truth...\n");
-        std::vector<std::vector<uint32_t>> crc_gt(Q);
-        for (uint32_t qi = 0; qi < Q; ++qi) {
-            const float* qvec = qry_emb.data.data() + static_cast<size_t>(qi) * dim;
-
-            std::vector<std::pair<float, uint32_t>> dists(total_vecs);
-            for (uint32_t j = 0; j < total_vecs; ++j) {
-                dists[j] = {simd::L2Sqr(qvec,
-                    all_vectors.data() + static_cast<size_t>(j) * dim, dim), j};
+            std::vector<ClusterData> clusters(nlist);
+            for (uint32_t cid = 0; cid < nlist; ++cid) {
+                auto& ci = cluster_infos[cid];
+                clusters[cid].vectors = nullptr;
+                clusters[cid].ids = all_ids.data() + ci.global_start;
+                clusters[cid].count = ci.count;
+                clusters[cid].codes_block = ci.codes_block;
+                clusters[cid].code_entry_size = code_entry_size;
             }
 
-            uint32_t gt_k = std::min(GT_K, total_vecs);
-            std::partial_sort(dists.begin(), dists.begin() + gt_k, dists.end(),
-                [](const auto& a, const auto& b) { return a.first < b.first; });
-
-            crc_gt[qi].resize(gt_k);
-            for (uint32_t k = 0; k < gt_k; ++k) {
-                crc_gt[qi][k] = dists[k].second;
+            std::vector<float> centroids_flat(static_cast<size_t>(nlist) * dim);
+            for (uint32_t cid = 0; cid < nlist; ++cid) {
+                std::memcpy(centroids_flat.data() + static_cast<size_t>(cid) * dim,
+                            index.centroid(cid), dim * sizeof(float));
             }
+
+            CrcCalibrator::Config crc_cfg;
+            crc_cfg.alpha = arg_crc_alpha;
+            crc_cfg.top_k = GT_K;
+            crc_cfg.calib_ratio = arg_crc_calib;
+            crc_cfg.tune_ratio = arg_crc_tune;
+            crc_cfg.seed = static_cast<uint64_t>(arg_seed);
+
+            auto [cal, eval] = CrcCalibrator::CalibrateWithRaBitQ(
+                crc_cfg, qry_emb.data.data(), Q, dim,
+                centroids_flat.data(), nlist, clusters,
+                index.rotation());
+            calib_results = cal;
+
+            double crc_time_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_crc_start).count();
+
+            Log("  CRC calibration done (%.1f ms, inline fallback)\n", crc_time_ms);
+            Log("  d_min=%.6f  d_max=%.6f  lamhat=%.6f\n",
+                cal.d_min, cal.d_max, cal.lamhat);
+            Log("  kreg=%u  reg_lambda=%.6f\n", cal.kreg, cal.reg_lambda);
+            Log("  eval: FNR=%.4f  avg_probed=%.1f  test_size=%u\n",
+                eval.actual_fnr, eval.avg_probed, eval.test_size);
+            Log("  eval: recall@1=%.4f  @5=%.4f  @10=%.4f\n",
+                eval.recall_at_1, eval.recall_at_5, eval.recall_at_10);
+        } else {
+            Log("  Loaded %zu queries from %s (nlist=%u, top_k=%u)\n",
+                crc_scores.size(), scores_path.c_str(), scores_nlist, scores_top_k);
+
+            CrcCalibrator::Config crc_cfg;
+            crc_cfg.alpha = arg_crc_alpha;
+            crc_cfg.top_k = scores_top_k;
+            crc_cfg.calib_ratio = arg_crc_calib;
+            crc_cfg.tune_ratio = arg_crc_tune;
+            crc_cfg.seed = static_cast<uint64_t>(arg_seed);
+
+            auto [cal, eval] = CrcCalibrator::Calibrate(
+                crc_cfg, crc_scores, scores_nlist);
+            calib_results = cal;
+
+            double crc_time_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_crc_start).count();
+
+            Log("  CRC calibration done (%.1f ms, from precomputed scores)\n",
+                crc_time_ms);
+            Log("  d_min=%.6f  d_max=%.6f  lamhat=%.6f\n",
+                cal.d_min, cal.d_max, cal.lamhat);
+            Log("  kreg=%u  reg_lambda=%.6f\n", cal.kreg, cal.reg_lambda);
+            Log("  eval: FNR=%.4f  avg_probed=%.1f  test_size=%u\n",
+                eval.actual_fnr, eval.avg_probed, eval.test_size);
+            Log("  eval: recall@1=%.4f  @5=%.4f  @10=%.4f\n",
+                eval.recall_at_1, eval.recall_at_5, eval.recall_at_10);
         }
-
-        // Build ClusterData array for CrcCalibrator
-        std::vector<ClusterData> clusters(nlist);
-        for (uint32_t cid = 0; cid < nlist; ++cid) {
-            auto& ci = cluster_infos[cid];
-            clusters[cid].vectors = all_vectors.data() +
-                static_cast<size_t>(ci.global_start) * dim;
-            clusters[cid].ids = all_ids.data() + ci.global_start;
-            clusters[cid].count = ci.count;
-            clusters[cid].codes_block = ci.codes_block;
-            clusters[cid].code_entry_size = code_entry_size;
-        }
-
-        // Collect centroids into contiguous array
-        std::vector<float> centroids_flat(static_cast<size_t>(nlist) * dim);
-        for (uint32_t cid = 0; cid < nlist; ++cid) {
-            std::memcpy(centroids_flat.data() + static_cast<size_t>(cid) * dim,
-                        index.centroid(cid), dim * sizeof(float));
-        }
-
-        // Run CRC calibration with RaBitQ distances
-        CrcCalibrator::Config crc_cfg;
-        crc_cfg.alpha = arg_crc_alpha;
-        crc_cfg.top_k = GT_K;
-        crc_cfg.calib_ratio = arg_crc_calib;
-        crc_cfg.tune_ratio = arg_crc_tune;
-        crc_cfg.seed = static_cast<uint64_t>(arg_seed);
-
-        auto [cal, eval] = CrcCalibrator::CalibrateWithRaBitQ(
-            crc_cfg, qry_emb.data.data(), Q, dim,
-            centroids_flat.data(), nlist, clusters, crc_gt,
-            index.rotation());
-        calib_results = cal;
-
-        double crc_time_ms = std::chrono::duration<double, std::milli>(
-            std::chrono::steady_clock::now() - t_crc_start).count();
-
-        Log("  CRC calibration done (%.1f ms)\n", crc_time_ms);
-        Log("  d_min=%.6f  d_max=%.6f  lamhat=%.6f\n",
-            cal.d_min, cal.d_max, cal.lamhat);
-        Log("  kreg=%u  reg_lambda=%.6f\n", cal.kreg, cal.reg_lambda);
-        Log("  eval: FNR=%.4f  avg_probed=%.1f  test_size=%u\n",
-            eval.actual_fnr, eval.avg_probed, eval.test_size);
-        Log("  eval: recall@1=%.4f  @5=%.4f  @10=%.4f\n",
-            eval.recall_at_1, eval.recall_at_5, eval.recall_at_10);
     }
 
     // ================================================================

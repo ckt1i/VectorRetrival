@@ -1,8 +1,8 @@
 # VDB VectorRetrival — 项目开发总结
 
-> **最后更新**：2026-03-21
-> **当前状态**：Phase 0–9 已完成，Payload 数据管道已贯通，IO 加载器就绪，Early Stop 机制已上线
-> **下一步**：端到端联调（coco_1k 数据集）
+> **最后更新**：2026-03-27
+> **当前状态**：Phase 0–11 已完成，CRC 自适应 Early Stop + 构建时分数预计算已上线，Benchmark 体系已独立
+> **下一步**：COCO_5k 端到端验证（CRC λ̂ < 1.0 + early-stop 触发）
 
 ---
 
@@ -18,10 +18,13 @@
 8. [Phase 7：查询流水线](#8-phase-7查询流水线)
 9. [Phase 8：Payload 数据管道 + IO 加载器](#9-phase-8payload-数据管道--io-加载器)
 10. [Phase 9：Early Stop 聚类探测提前终止](#10-phase-9early-stop-聚类探测提前终止)
-11. [构建与测试](#11-构建与测试)
-12. [延迟优化项（UNDO.txt）](#12-延迟优化项)
-13. [关键设计决策记录](#13-关键设计决策记录)
-14. [接手开发指南](#14-接手开发指南)
+11. [Phase 10：CRC 自适应 Early Stop](#11-phase-10crc-自适应-early-stop)
+12. [Phase 11：CRC 标定与距离空间解耦](#12-phase-11crc-标定与距离空间解耦)
+13. [Benchmark 体系](#13-benchmark-体系)
+14. [构建与测试](#14-构建与测试)
+15. [延迟优化项（UNDO.txt）](#15-延迟优化项)
+16. [关键设计决策记录](#16-关键设计决策记录)
+17. [接手开发指南](#17-接手开发指南)
 
 ---
 
@@ -82,16 +85,23 @@ Query:  query_vec → FindNearestClusters(nprobe)
 | Phase 3 SIMD+Codec | 7 | 7 | 7 | ~120 |
 | Phase 4 RaBitQ | 3 | 3 | 4 | ~64 |
 | Phase 5 Storage | 5 | 5 | 4 | ~80 |
-| Phase 6 IVF Index | 3 | 3 | 4 | ~36 |
+| Phase 6 IVF Index | 3→5 | 3→4 | 4→6 | ~36→~50 |
 | Phase 7 Query Pipeline | 7 | 6 | 7 | ~50 |
 | Phase 8 Payload + IO | 2 | 2 | 3 | ~12 |
 | Phase 9 Early Stop | 0 | 0 | 1 | ~3 |
-| **合计** | **38** | **30** | **38** | **~483** |
+| Phase 10 CRC | 2 | 1 | 2 | ~18 |
+| Phase 11 Decouple CRC | 0 | 0 | 0 | — (重构) |
+| **合计** | **~42** | **~34** | **~40** | **~530+** |
 
 ### 库依赖关系
 
 ```
 vdb_io ── vdb_common (INTERFACE)
+
+vdb_crc
+  ├── vdb_simd
+  ├── vdb_rabitq
+  └── GSL (PRIVATE)
 
 vdb_query
   ├── vdb_index
@@ -99,6 +109,7 @@ vdb_query
   │     │     ├── vdb_columns
   │     │     ├── vdb_codec ── vdb_simd
   │     │     └── vdb_rabitq ── vdb_simd
+  │     ├── vdb_crc (PRIVATE)
   │     ├── vdb_rabitq
   │     ├── vdb_simd
   │     └── vdb_schema ── flatbuffers
@@ -212,8 +223,8 @@ table IvfParams {
 }
 
 table ConANNParams {
-    epsilon: float;
-    d_k: float;
+    epsilon: float;                  // ε_ip: 内积估计误差上界 P95
+    d_k: float;                      // 全局 top-k 参考距离 (L2²)
     calibration_samples: uint32;
     calibration_topk: uint32;
     calibration_percentile: float;
@@ -225,12 +236,19 @@ table RaBitQParams {
     c_factor: float;
 }
 
+table CrcParams {                        // Phase 11 新增
+    scores_file: string;               // 相对路径: "crc_scores.bin"
+    num_calibration_queries: uint32;
+    calibration_top_k: uint32;
+}
+
 table SegmentMeta {
     segment_id: uint32;
     dimension: uint32;
     metric_type: MetricType;
     ivf_params: IvfParams;
     conann_params: ConANNParams;
+    crc_params: CrcParams;               // Phase 11 新增
     rabitq_params: RaBitQParams;
     clusters: [ClusterMeta];
     payload_schemas: [PayloadColumnSchema];  // Phase 8 新增
@@ -719,6 +737,11 @@ struct IvfBuilderConfig {
     uint32_t page_size = 1;
     uint64_t segment_id = 0;
     uint32_t nprobe = 1;
+    uint32_t epsilon_samples = 20;       // ε_ip 标定采样数
+    float epsilon_percentile = 0.95f;    // ε_ip 标定分位数
+    const float* calibration_queries = nullptr;  // 跨模态查询向量
+    uint32_t num_calibration_queries = 0;
+    uint32_t crc_top_k = 0;             // CRC 分数预计算 (0=跳过)
 };
 
 using PayloadFn = std::function<std::vector<Datum>(uint32_t vec_index)>;
@@ -736,7 +759,7 @@ public:
 };
 ```
 
-**Build 流程**（4 个 Phase）：
+**Build 流程**（5 个 Phase）：
 
 **Phase A — 容量受限 K-means++**：
 - K-means++ 初始化（距离概率加权选择初始质心）
@@ -745,8 +768,9 @@ public:
   - `balance_factor>0`：超容量集群的最远向量迁移到最近的未满集群
 - 收敛判定：max centroid shift < tolerance
 
-**Phase B — ConANN d_k 校准**：
+**Phase B — ConANN d_k / ε_ip 校准**：
 - 调用 `CalibrateDistanceThreshold`，返回全局 d_k
+- 校准 ε_ip（内积估计误差上界），支持跨模态查询向量
 
 **Phase C — 逐 cluster 写入**：
 - 统一 DataFileWriter 写入 `data.dat`：每条记录 = vec + `payload_fn(idx)` 的返回值
@@ -754,7 +778,12 @@ public:
 
 **Phase D — 写 segment.meta**：
 - FlatBuffers `SegmentMetaBuilder` 序列化所有元数据
-- 包含 payload_schemas（Phase 8 新增）
+- 包含 payload_schemas、CrcParams
+
+**Phase E — CRC 分数预计算**（可选，`crc_top_k > 0`）：
+- 构建 ClusterData（含 RaBitQ codes）
+- 全探测标定查询 → ComputeScoresRaBitQ → WriteScores("crc_scores.bin")
+- CrcParams 写入 segment.meta
 
 ### 7.4 Benchmark
 
@@ -1093,7 +1122,286 @@ Early Stop 触发后：
 
 ---
 
-## 11. 构建与测试
+## 11. Phase 10：CRC 自适应 Early Stop
+
+### 11.1 设计动机
+
+Phase 9 的 Early Stop 使用固定阈值 `d_k`（ConANN 全局参考距离）判断是否提前终止。问题：`d_k` 是粗粒度的全局统计量，对不同查询的最优 nprobe 缺乏自适应能力。
+
+CRC（Conformal Risk Control）引入统计保证的自适应 early-stop：离线标定 λ̂ 阈值，在线按查询动态判断停止时机。核心保证：FNR ≤ α（用户指定的目标假阴率上限）。
+
+### 11.2 算法流程
+
+**离线标定（CrcCalibrator）**：
+
+```
+输入: 标定查询集 + IVF 聚类数据
+  ↓
+① 计算每个查询在每个 nprobe 步骤的 top-K 距离 (raw_scores) 和 top-K ID 预测 (predictions)
+  ↓
+② 划分: calib_set (50%) / tune_set (10%) / test_set (40%)
+  ↓
+③ 归一化: nonconf_score = (d_kth - d_min) / (d_max - d_min)
+  ↓
+④ 正则化 (RAPS): E = (1 - nonconf) + λ_reg · max(0, probed - k_reg)
+  ↓
+⑤ BrentSolve: 在 [0, 1] 上找 λ̂ 使 calib_set 上 FNR ≈ α
+  ↓
+⑥ 评估: 在 test_set 上验证 actual_fnr, avg_probed, recall@K
+  ↓
+输出: CalibrationResults {lamhat, kreg, reg_lambda, d_min, d_max}
+```
+
+**在线查询（CrcStopper）**：
+
+```cpp
+// O(1) per call, no allocations
+bool ShouldStop(uint32_t probed_count, float current_kth_dist) const {
+    float nonconf = clamp((current_kth_dist - d_min) * d_range_inv, 0, 1);
+    float E = (1 - nonconf) + reg_lambda * max(0, probed - kreg);
+    return (E / max_reg_val) > lamhat;
+}
+```
+
+### 11.3 核心文件
+
+**`include/vdb/index/crc_stopper.h`** — 在线决策器
+
+```cpp
+struct CalibrationResults {
+    float lamhat;        // λ̂: Brent 根查找的停止阈值
+    uint32_t kreg;       // k_reg: RAPS 免费探测配额
+    float reg_lambda;    // λ_reg: RAPS 排名惩罚系数
+    float d_min, d_max;  // 归一化边界
+};
+
+class CrcStopper {
+public:
+    CrcStopper(const CalibrationResults& params, uint32_t nlist);
+    bool ShouldStop(uint32_t probed_count, float current_kth_dist) const;
+};
+```
+
+**`include/vdb/index/crc_calibrator.h`** + **`src/index/crc_calibrator.cpp`** — 离线标定器
+
+```cpp
+class CrcCalibrator {
+public:
+    struct Config {
+        float alpha = 0.1f;       // 目标 FNR 上限
+        uint32_t top_k = 10;
+        float calib_ratio = 0.5f;
+        float tune_ratio = 0.1f;
+        uint64_t seed = 42;
+    };
+
+    struct EvalResults {
+        float actual_fnr;     // 测试集实际 FNR
+        float avg_probed;     // 平均探测聚类数
+        float recall_at_1/5/10;
+        uint32_t test_size;
+    };
+
+    // 精确 L2 距离标定
+    static pair<CalibrationResults, EvalResults> Calibrate(
+        const Config& config, const float* queries, ...);
+
+    // RaBitQ 估计距离标定
+    static pair<CalibrationResults, EvalResults> CalibrateWithRaBitQ(
+        const Config& config, const float* queries, ...,
+        const RotationMatrix& rotation);
+};
+```
+
+### 11.4 测试覆盖
+
+| 测试 | 文件 | 验证内容 |
+|------|------|----------|
+| BasicCalibration | `crc_calibrator_test.cpp` | λ̂ ∈ (0, 1], kreg=1, d_min < d_max |
+| FnrBound | 同上 | actual_fnr ≤ alpha + tolerance |
+| Determinism | 同上 | 同参数同数据 → 完全相同结果 |
+| LargerAlphaFewerProbes | 同上 | α 越大 → avg_probed 越少 |
+| CrcStopperBasic | `crc_stopper_test.cpp` | 堆未满时不停止，探测足够后停止 |
+| Monotonicity | 同上 | 距离越小越倾向停止 |
+| ProbedCountEffect | 同上 | 探测越多越倾向停止 |
+
+---
+
+## 12. Phase 11：CRC 标定与距离空间解耦
+
+### 12.1 问题诊断
+
+Phase 10 的 `CalibrateWithRaBitQ` 计算分数使用 RaBitQ 估计距离，但 GT（ground truth）来自精确 L2 距离。RaBitQ top-K 与精确 L2 top-K 的重合率仅 30–50%，导致：
+
+```
+FNR ≥ 50% (永远) → BrentSolve 返回 λ̂ = 1.0 → CRC early-stop 永不触发
+```
+
+### 12.2 解决方案
+
+**核心思路**：使 CRC 标定成为纯分数域操作。GT 从 `predictions[nlist-1]`（全探测结果）派生，消除跨距离空间的 GT 不匹配。
+
+```
+改前:  RaBitQ 分数 vs 精确 L2 GT  →  跨空间比较 → FNR ≥ 50%
+改后:  RaBitQ 分数 vs RaBitQ 全探测 GT → 同空间自一致 → FNR 正常
+```
+
+### 12.3 API 变更
+
+**新增核心 API** — 距离空间无关的纯分数标定：
+
+```cpp
+/// Per-query scores — distance-space agnostic data unit
+struct QueryScores {
+    std::vector<float> raw_scores;                  // [nlist] kth-dist at each step
+    std::vector<std::vector<uint32_t>> predictions; // [nlist][≤K] top-K IDs at each step
+};
+
+/// Core calibration: GT derived from predictions[nlist-1]
+static pair<CalibrationResults, EvalResults> Calibrate(
+    const Config& config,
+    const vector<QueryScores>& all_scores,
+    uint32_t nlist);
+```
+
+**重构现有 API** — 作为 wrapper 调用核心：
+
+```cpp
+// Exact L2 wrapper: 计算分数 → 调用核心 Calibrate
+static pair<CalibrationResults, EvalResults> Calibrate(
+    const Config& config,
+    const float* queries, uint32_t num_queries, Dim dim,
+    const float* centroids, uint32_t nlist,
+    const vector<ClusterData>& clusters);
+
+// RaBitQ wrapper: 计算分数 → 调用核心 Calibrate (移除 ground_truth 参数)
+static pair<CalibrationResults, EvalResults> CalibrateWithRaBitQ(
+    const Config& config,
+    const float* queries, uint32_t num_queries, Dim dim,
+    const float* centroids, uint32_t nlist,
+    const vector<ClusterData>& clusters,
+    const RotationMatrix& rotation);
+```
+
+### 12.4 构建时分数预计算
+
+**IvfBuilder 新增 Phase E**：在 `WriteIndex()` 之后，如果 `crc_top_k > 0` 且提供了 `calibration_queries`：
+
+```
+Phase E: CRC Score Precomputation
+  ① 构建 ClusterData（包含 RaBitQ codes）
+  ② CrcCalibrator::ComputeScoresRaBitQ(calibration_queries, ...) → 全探测
+  ③ CrcCalibrator::WriteScores("crc_scores.bin", scores, nlist, top_k)
+  ④ CrcParams 写入 segment.meta（FlatBuffers）
+```
+
+**IvfBuilderConfig 新增字段**：
+
+```cpp
+uint32_t crc_top_k = 0;  // 0 = 跳过 CRC 分数预计算
+```
+
+### 12.5 QueryScores 序列化
+
+二进制格式（`crc_scores.bin`）：
+
+```
+Header (20 bytes):
+  magic:       uint32 = 0x43524353 ("CRCS")
+  version:     uint32 = 1
+  num_queries: uint32
+  nlist:       uint32
+  top_k:       uint32
+
+Per query (× num_queries):
+  raw_scores:   float[nlist]
+  predictions:  uint32[nlist × top_k]  (不足 top_k 用 UINT32_MAX 填充)
+```
+
+### 12.6 FlatBuffers schema 变更
+
+```flatbuffers
+table CrcParams {
+    scores_file: string;               // 相对路径: "crc_scores.bin"
+    num_calibration_queries: uint32;
+    calibration_top_k: uint32;
+}
+```
+
+在 `SegmentMeta` 中新增 `crc_params: CrcParams;` 字段（`conann_params` 之后，`clusters` 之前）。
+
+### 12.7 Benchmark 适配
+
+**`bench_e2e.cpp`** CRC 路径重构：
+
+- **主路径**：从索引目录加载 `crc_scores.bin` → `Calibrate(scores, nlist)`
+- **回退路径**：若 `crc_scores.bin` 不存在，内联 RaBitQ 标定（无需原始向量或外部 GT）
+- **移除**：暴力 GT 计算、CRC 相关的 `all_vectors` 加载
+
+**其他 benchmark**：`bench_crc_overlap.cpp`、`bench_conann_crc.cpp` 移除 `ground_truth` 参数。
+
+### 12.8 修改文件汇总
+
+| 文件 | 变更 |
+|------|------|
+| `include/vdb/index/crc_calibrator.h` | QueryScores 公开、新增核心 Calibrate API、ComputeScoresRaBitQ、WriteScores/ReadScores |
+| `src/index/crc_calibrator.cpp` | 核心实现、wrapper 重构、序列化、GT 从 predictions[nlist-1] 派生 |
+| `schema/segment_meta.fbs` | 新增 CrcParams 表 |
+| `include/vdb/index/ivf_builder.h` | 新增 crc_top_k 配置 |
+| `src/index/ivf_builder.cpp` | Phase E: CRC 分数预计算 + CrcParams 写入 meta |
+| `CMakeLists.txt` | vdb_index PRIVATE 链接 vdb_crc |
+| `benchmarks/bench_e2e.cpp` | 加载 crc_scores.bin + 回退路径 |
+| `benchmarks/bench_crc_overlap.cpp` | 移除 gt_topk 参数 |
+| `benchmarks/bench_conann_crc.cpp` | 移除 gt 参数 |
+| `tests/index/crc_calibrator_test.cpp` | 移除 gt 参数、新增 ScoresBasedCalibrate 和 WriteReadScoresRoundTrip 测试 |
+| `tests/schema/schema_test.cpp` | 适配 CrcParams 新字段 |
+
+---
+
+## 13. Benchmark 体系
+
+### 13.1 目录结构
+
+Benchmark 从 `tests/index/` 独立至 `benchmarks/` 目录，受 `VDB_BUILD_BENCHMARKS` CMake 选项控制。
+
+### 13.2 可用 Benchmark
+
+| 可执行文件 | 源文件 | 功能 | 依赖 |
+|-----------|--------|------|------|
+| `bench_e2e` | `bench_e2e.cpp` | 端到端搜索：Build → Query → Recall → CRC early-stop | vdb_query, vdb_io, vdb_crc |
+| `bench_ivf_quality` | `bench_ivf_quality.cpp` | IVF+RaBitQ 精度评估（Spearman 相关性、ConANN 三分类分布） | vdb_index |
+| `bench_rabitq_accuracy` | `bench_rabitq_accuracy.cpp` | RaBitQ 距离估算精度 + d_k/ε_ip 标定验证 | vdb_index, vdb_io |
+| `bench_rabitq_diagnostic` | `bench_rabitq_diagnostic.cpp` | RaBitQ 诊断工具（详细误差分析） | vdb_index, vdb_io |
+| `bench_conann_recall` | `bench_conann_recall.cpp` | ConANN 三分类 recall 评估 | vdb_index, vdb_io |
+| `bench_conann_crc` | `bench_conann_crc.cpp` | ConANN + CRC 联合标定效果 | vdb_crc, vdb_index, vdb_io |
+| `bench_crc_overlap` | `bench_crc_overlap.cpp` | CRC early-stop 与全探测的 top-K 重叠率分析 | vdb_crc, vdb_index, vdb_io |
+
+### 13.3 构建 Benchmark
+
+```bash
+cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo -DVDB_BUILD_BENCHMARKS=ON
+cmake --build build -j$(nproc)
+```
+
+### 13.4 数据集
+
+| 数据集 | 路径 | 向量数 | 维度 | 用途 |
+|--------|------|--------|------|------|
+| coco_1k | `/home/zcq/VDB/data/coco_1k` | 1000 | 512 | 快速验证 |
+| coco_5k | `/home/zcq/VDB/data/coco_5k` | 5000 | 512 | 完整评估 |
+
+数据集结构：
+```
+data/coco_Nk/
+  ├── image_embeddings.npy    # [N, 512] float32 图像向量
+  ├── text_embeddings.npy     # [N, 512] float32 文本向量（跨模态查询）
+  ├── image_ids.npy           # [N] int64 图像 ID
+  └── metadata.jsonl          # N 行 JSON 元数据
+```
+
+---
+
+## 14. 构建与测试
 
 ### 构建命令
 
@@ -1109,7 +1417,7 @@ cmake --build build -j$(nproc)
 ctest --test-dir build --output-on-failure
 ```
 
-### 当前测试状态（35 个可执行文件，全部通过）
+### 当前测试状态（37 个可执行文件）
 
 ```
 Phase 0 Common:
@@ -1150,11 +1458,14 @@ Phase 5 Storage:
 
 Phase 6 Index:
   test_conann             ✅
+  test_crc_stopper        ✅  (Phase 10 新增)
+  test_crc_calibrator     ✅  (Phase 10 新增, Phase 11 更新)
   test_ivf_index          ✅
   test_ivf_builder        ✅
   test_payload_pipeline   ✅  (Phase 8 新增)
 
 Phase 7 Query:
+  test_distance           ✅
   test_pread_fallback_reader  ✅
   test_io_uring_reader        ✅
   test_result_collector       ✅
@@ -1168,8 +1479,6 @@ Phase 8 IO:
 
 Phase 9 Early Stop:
   test_early_stop         ✅  (StatsConsistency, NoEarlyStopWithSingleProbe, DisabledGivesExactResults)
-
-100% tests passed, 0 tests failed out of 35
 ```
 
 ### CMake Library Targets
@@ -1183,14 +1492,14 @@ Phase 9 Early Stop:
 | `vdb_codec` | codec/*.cpp (bitpack, dict) | vdb_simd |
 | `vdb_rabitq` | rabitq/*.cpp (rotation, encoder, estimator) | vdb_simd |
 | `vdb_storage` | storage/*.cpp (address_column, data_file_*, cluster_store, segment) | vdb_columns, vdb_codec, vdb_rabitq |
-| `vdb_index` | index/*.cpp (conann, ivf_index, ivf_builder) | vdb_storage, vdb_rabitq, vdb_simd, vdb_schema |
+| `vdb_crc` | index/crc_calibrator.cpp | vdb_simd, vdb_rabitq, GSL (PRIVATE) |
+| `vdb_index` | index/*.cpp (conann, ivf_index, ivf_builder) | vdb_storage, vdb_rabitq, vdb_simd, vdb_schema, vdb_crc (PRIVATE) |
 | `vdb_query` | query/*.cpp (overlap_scheduler, rerank_consumer, ...) + common/distance.cpp | vdb_index, vdb_storage, vdb_simd, vdb_rabitq, liburing |
 | `vdb_io` | io/*.cpp (npy_reader, jsonl_reader) | vdb_common |
-| `test_early_stop` | tests/query/early_stop_test.cpp | vdb_query, GTest |
 
 ---
 
-## 12. 延迟优化项
+## 15. 延迟优化项
 
 ### Phase 3 延迟项
 
@@ -1230,7 +1539,7 @@ Phase 9 Early Stop:
 
 ---
 
-## 13. 关键设计决策记录
+## 16. 关键设计决策记录
 
 | 决策 | 选择 | 理由 |
 |------|------|------|
@@ -1253,14 +1562,20 @@ Phase 9 Early Stop:
 | Early Stop 阈值 | d_k（ConANN 全局参考距离） | 复用已有校准参数，无需引入新阈值 |
 | Early Stop 检查时机 | ProbeCluster 之后 | 机会性检查，不主动 drain，依赖 WaitAndPoll 自然消费 |
 | Early Stop 与 PreadFallback | 不触发是预期行为 | PreadFallback 同步 I/O 导致 WaitAndPoll 被跳过，该特性面向 io_uring |
+| CRC 自适应 early-stop | RAPS + Brent root-finding | 统计保证 FNR ≤ α，比固定阈值 d_k 更灵活 |
+| CRC GT 派生 | predictions[nlist-1]（全探测结果） | 消除跨距离空间 GT 不匹配，RaBitQ 空间自一致 |
+| CRC 分数预计算 | 构建时全探测 + 序列化 | 离线标定无需原始向量，支持迭代调参 |
+| CRC 序列化格式 | 固定 K padding + UINT32_MAX 哨兵 | 避免变长记录，简化随机访问 |
+| vdb_crc 独立库 | GSL PRIVATE 链接 | 隔离 GSL 依赖，不传播到 vdb_index 消费者 |
+| Benchmark 独立目录 | benchmarks/ + VDB_BUILD_BENCHMARKS | 与单元测试分离，可选编译 |
 
 ---
 
-## 14. 接手开发指南
+## 17. 接手开发指南
 
-### 14.1 当前完成状态
+### 17.1 当前完成状态
 
-**Phase 0–9 全部完成**：
+**Phase 0–11 全部完成**：
 - ✅ 基础设施（Status、Types、SIMD、Codec、ColumnStore）
 - ✅ RaBitQ 1-bit 量化（Rotation、Encoder、Estimator）
 - ✅ Storage 层（AddressColumn、DataFile、ClusterStore、Segment）
@@ -1268,17 +1583,18 @@ Phase 9 Early Stop:
 - ✅ 查询流水线（AsyncReader、OverlapScheduler、RerankConsumer）
 - ✅ Payload 数据管道（PayloadFn、FlatBuffers 持久化、端到端测试）
 - ✅ IO 加载器（NpyReader、JsonlReader）
-- ✅ Early Stop 聚类探测提前终止（TopK 距离 < d_k 时跳过剩余聚类）
-- ✅ 35 个测试可执行文件全部通过
+- ✅ Early Stop 聚类探测提前终止（固定阈值 d_k + CRC 自适应）
+- ✅ CRC 自适应 Early Stop（CrcCalibrator + CrcStopper，统计保证 FNR ≤ α）
+- ✅ CRC 标定与距离空间解耦（构建时分数预计算 + 纯分数域标定）
+- ✅ Benchmark 体系独立（7 个 benchmark 可执行文件）
+- ✅ 37 个测试可执行文件
 
-### 14.2 立即可做的任务
+### 17.2 立即可做的任务
 
-1. **端到端联调**（紧急）
-   - 使用 coco_1k 数据集（`/home/zcq/VDB/data/coco_1k`）
-   - NpyReader 加载 image_embeddings.npy (1000×512) + image_ids.npy
-   - Build 时 PayloadFn 读取图片原始二进制
-   - Query → 验证 recall + payload 正确性
-   - nlist=32，dim=512
+1. **COCO_5k CRC 验证**（紧急）
+   - 运行 `bench_e2e --dataset /home/zcq/VDB/data/coco_5k --crc`
+   - 验证 λ̂ < 1.0、early-stop 触发、avg_probed < nlist
+   - 验证构建后 `crc_scores.bin` 存在于索引目录
 
 2. **多 bit RaBitQ**（中期优化）
    - Phase 4 UNDO 项，能显著提升精度（Spearman 从 0.75 → 0.9+）
@@ -1287,7 +1603,7 @@ Phase 9 Early Stop:
    - MPMC 无锁队列 + 线程池
    - 当前单线程瓶颈：CPU-bound 的 RaBitQ EstimateBatch
 
-### 14.3 代码风格与约定
+### 17.3 代码风格与约定
 
 - **命名**：类 `PascalCase`，函数 `PascalCase`，变量 `snake_case`，成员 `trailing_underscore_`
 - **文件**：头文件 `.h`，实现 `.cpp`，测试 `_test.cpp`，benchmark `bench_*.cpp`
@@ -1296,7 +1612,7 @@ Phase 9 Early Stop:
 - **测试**：GoogleTest，每个模块独立 test executable，`ctest` 一键运行
 - **C++ 标准**：C++17（`std::filesystem`、`std::string_view`、structured bindings）
 
-### 14.4 已知限制
+### 17.4 已知限制
 
 1. **1-bit RaBitQ 精度**：Spearman 约 0.6-0.8（128 维），多 bit 扩展（PHASE4-001）是关键改进。
 2. **单线程查询**：当前仅支持单线程协作式调度。

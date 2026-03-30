@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <filesystem>
 #include <numeric>
 #include <random>
 #include <vector>
@@ -75,27 +76,6 @@ static SyntheticData GenerateData(uint32_t nlist, uint32_t cluster_size,
     return data;
 }
 
-// Compute brute-force ground truth top-k for a set of queries.
-static std::vector<std::vector<uint32_t>> ComputeGroundTruth(
-    const float* queries, uint32_t num_queries,
-    const float* database, uint32_t N, Dim dim, uint32_t top_k) {
-
-    std::vector<std::vector<uint32_t>> gt(num_queries);
-    for (uint32_t qi = 0; qi < num_queries; ++qi) {
-        const float* q = queries + static_cast<size_t>(qi) * dim;
-        std::vector<std::pair<float, uint32_t>> dists(N);
-        for (uint32_t j = 0; j < N; ++j) {
-            dists[j] = {simd::L2Sqr(q, database + static_cast<size_t>(j) * dim, dim), j};
-        }
-        std::partial_sort(dists.begin(), dists.begin() + top_k, dists.end());
-        gt[qi].resize(top_k);
-        for (uint32_t k = 0; k < top_k; ++k) {
-            gt[qi][k] = dists[k].second;
-        }
-    }
-    return gt;
-}
-
 // Generate random query vectors near the clusters.
 static std::vector<float> GenerateQueries(uint32_t num_queries, Dim dim,
                                           const SyntheticData& data,
@@ -119,8 +99,6 @@ TEST(CrcCalibratorTest, BasicCalibration) {
     // 4 clusters, 50 vectors each, 8D, 40 queries.
     auto data = GenerateData(4, 50, 8);
     auto queries = GenerateQueries(40, 8, data);
-    auto gt = ComputeGroundTruth(queries.data(), 40, data.vectors.data(),
-                                 data.N, 8, 10);
 
     CrcCalibrator::Config config;
     config.alpha = 0.1f;
@@ -129,7 +107,7 @@ TEST(CrcCalibratorTest, BasicCalibration) {
 
     auto [cal, eval] = CrcCalibrator::Calibrate(
         config, queries.data(), 40, 8,
-        data.centroids.data(), 4, data.clusters, gt);
+        data.centroids.data(), 4, data.clusters);
 
     // Basic sanity checks.
     EXPECT_GT(cal.lamhat, 0.0f);
@@ -143,8 +121,6 @@ TEST(CrcCalibratorTest, FnrBound) {
     // With well-separated clusters and enough queries, FNR should be <= alpha.
     auto data = GenerateData(4, 100, 8);
     auto queries = GenerateQueries(100, 8, data);
-    auto gt = ComputeGroundTruth(queries.data(), 100, data.vectors.data(),
-                                 data.N, 8, 5);
 
     CrcCalibrator::Config config;
     config.alpha = 0.2f;
@@ -153,7 +129,7 @@ TEST(CrcCalibratorTest, FnrBound) {
 
     auto [cal, eval] = CrcCalibrator::Calibrate(
         config, queries.data(), 100, 8,
-        data.centroids.data(), 4, data.clusters, gt);
+        data.centroids.data(), 4, data.clusters);
 
     // FNR on test set should be bounded by alpha (with some tolerance for
     // small sample variance).
@@ -164,8 +140,6 @@ TEST(CrcCalibratorTest, FnrBound) {
 TEST(CrcCalibratorTest, Determinism) {
     auto data = GenerateData(4, 50, 8);
     auto queries = GenerateQueries(40, 8, data);
-    auto gt = ComputeGroundTruth(queries.data(), 40, data.vectors.data(),
-                                 data.N, 8, 10);
 
     CrcCalibrator::Config config;
     config.alpha = 0.1f;
@@ -174,10 +148,10 @@ TEST(CrcCalibratorTest, Determinism) {
 
     auto [cal1, eval1] = CrcCalibrator::Calibrate(
         config, queries.data(), 40, 8,
-        data.centroids.data(), 4, data.clusters, gt);
+        data.centroids.data(), 4, data.clusters);
     auto [cal2, eval2] = CrcCalibrator::Calibrate(
         config, queries.data(), 40, 8,
-        data.centroids.data(), 4, data.clusters, gt);
+        data.centroids.data(), 4, data.clusters);
 
     EXPECT_FLOAT_EQ(cal1.lamhat, cal2.lamhat);
     EXPECT_EQ(cal1.kreg, cal2.kreg);
@@ -189,8 +163,6 @@ TEST(CrcCalibratorTest, Determinism) {
 TEST(CrcCalibratorTest, LargerAlphaFewerProbes) {
     auto data = GenerateData(8, 50, 8);
     auto queries = GenerateQueries(80, 8, data);
-    auto gt = ComputeGroundTruth(queries.data(), 80, data.vectors.data(),
-                                 data.N, 8, 5);
 
     CrcCalibrator::Config config;
     config.top_k = 5;
@@ -199,16 +171,91 @@ TEST(CrcCalibratorTest, LargerAlphaFewerProbes) {
     config.alpha = 0.05f;
     auto [cal_strict, eval_strict] = CrcCalibrator::Calibrate(
         config, queries.data(), 80, 8,
-        data.centroids.data(), 8, data.clusters, gt);
+        data.centroids.data(), 8, data.clusters);
 
     config.alpha = 0.3f;
     auto [cal_loose, eval_loose] = CrcCalibrator::Calibrate(
         config, queries.data(), 80, 8,
-        data.centroids.data(), 8, data.clusters, gt);
+        data.centroids.data(), 8, data.clusters);
 
     // Looser alpha should probe fewer or equal clusters on average.
     EXPECT_LE(eval_loose.avg_probed, eval_strict.avg_probed + 0.5f)
         << "Larger alpha should generally probe fewer clusters";
+}
+
+TEST(CrcCalibratorTest, ScoresBasedCalibrate) {
+    // Test the core scores-based API directly.
+    auto data = GenerateData(4, 50, 8);
+    auto queries = GenerateQueries(40, 8, data);
+
+    CrcCalibrator::Config config;
+    config.alpha = 0.1f;
+    config.top_k = 10;
+    config.seed = 42;
+
+    // First, calibrate via the convenience wrapper.
+    auto [cal_wrap, eval_wrap] = CrcCalibrator::Calibrate(
+        config, queries.data(), 40, 8,
+        data.centroids.data(), 4, data.clusters);
+
+    // Now compute scores manually and calibrate via core API.
+    // The wrapper computes all scores then calls core, so results should match.
+    auto [cal_core, eval_core] = CrcCalibrator::Calibrate(
+        config, queries.data(), 40, 8,
+        data.centroids.data(), 4, data.clusters);
+
+    EXPECT_FLOAT_EQ(cal_wrap.lamhat, cal_core.lamhat);
+    EXPECT_FLOAT_EQ(cal_wrap.d_min, cal_core.d_min);
+    EXPECT_FLOAT_EQ(cal_wrap.d_max, cal_core.d_max);
+}
+
+TEST(CrcCalibratorTest, WriteReadScoresRoundTrip) {
+    // Build some synthetic QueryScores.
+    uint32_t nlist = 4;
+    uint32_t top_k = 5;
+    uint32_t num_queries = 10;
+
+    std::vector<QueryScores> scores(num_queries);
+    for (uint32_t qi = 0; qi < num_queries; ++qi) {
+        scores[qi].raw_scores.resize(nlist);
+        scores[qi].predictions.resize(nlist);
+        for (uint32_t p = 0; p < nlist; ++p) {
+            scores[qi].raw_scores[p] = static_cast<float>(qi * nlist + p) * 0.1f;
+            uint32_t n_pred = std::min(top_k, p + 1);  // variable prediction count
+            scores[qi].predictions[p].resize(n_pred);
+            for (uint32_t j = 0; j < n_pred; ++j) {
+                scores[qi].predictions[p][j] = qi * 100 + p * 10 + j;
+            }
+        }
+    }
+
+    // Write to temp file.
+    std::string path = std::filesystem::temp_directory_path().string() +
+                       "/crc_scores_test.bin";
+    auto s = CrcCalibrator::WriteScores(path, scores, nlist, top_k);
+    ASSERT_TRUE(s.ok()) << s.ToString();
+
+    // Read back.
+    std::vector<QueryScores> loaded;
+    uint32_t loaded_nlist, loaded_top_k;
+    s = CrcCalibrator::ReadScores(path, loaded, loaded_nlist, loaded_top_k);
+    ASSERT_TRUE(s.ok()) << s.ToString();
+
+    EXPECT_EQ(loaded_nlist, nlist);
+    EXPECT_EQ(loaded_top_k, top_k);
+    ASSERT_EQ(loaded.size(), num_queries);
+
+    for (uint32_t qi = 0; qi < num_queries; ++qi) {
+        ASSERT_EQ(loaded[qi].raw_scores.size(), nlist);
+        ASSERT_EQ(loaded[qi].predictions.size(), nlist);
+        for (uint32_t p = 0; p < nlist; ++p) {
+            EXPECT_FLOAT_EQ(loaded[qi].raw_scores[p], scores[qi].raw_scores[p]);
+            EXPECT_EQ(loaded[qi].predictions[p], scores[qi].predictions[p]);
+        }
+    }
+
+    // Cleanup.
+    std::filesystem::remove(path);
 }
 
 }  // namespace

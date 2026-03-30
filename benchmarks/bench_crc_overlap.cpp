@@ -324,7 +324,7 @@ static CrcSearchResult RunCrcRaBitQ(
 
     auto [cal, eval] = CrcCalibrator::CalibrateWithRaBitQ(
         config, qry_data, Q, dim,
-        centroids.data(), nlist, clusters, gt_topk, rotation);
+        centroids.data(), nlist, clusters, rotation);
 
     Log("  Calibration: lamhat=%.4f  d_min=%.4f  d_max=%.4f\n",
         cal.lamhat, cal.d_min, cal.d_max);

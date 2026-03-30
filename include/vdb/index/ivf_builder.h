@@ -80,6 +80,12 @@ struct IvfBuilderConfig {
     /// Pointer must remain valid for the duration of Build().
     const float* calibration_queries = nullptr;
     uint32_t num_calibration_queries = 0;
+
+    /// Top-k for CRC score precomputation. 0 = skip CRC scores.
+    /// When > 0 and calibration_queries is set, IvfBuilder will compute
+    /// QueryScores for each calibration query using RaBitQ full-probe search
+    /// and serialize them to crc_scores.bin in the output directory.
+    uint32_t crc_top_k = 0;
 };
 
 // ============================================================================

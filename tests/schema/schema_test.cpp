@@ -351,6 +351,7 @@ TEST_F(SegmentMetaSchemaTest, CreateSegmentMeta) {
         0,                              // hnsw_params (none)
         0,                              // rabitq_params (none for legacy test)
         0,                              // conann_params (none for legacy test)
+        0,                              // crc_params (none for legacy test)
         0,                              // clusters (none for legacy test)
         ivl_list,                       // inverted_lists
         files,                          // files
@@ -526,7 +527,7 @@ TEST(SchemaIntegrationTest, SegmentWithColumnsReference) {
         1, 1, schema::SegmentState::ACTIVE,
         128, schema::MetricType::L2, schema::VectorDType::FLOAT32,
         ivf, pq, 0, 0,
-        0, 0, 0,                    // rabitq, conann, clusters (legacy test)
+        0, 0, 0, 0,                 // rabitq, conann, crc, clusters (legacy test)
         ivl_list, files, del_bitmap, stats, lsn,
         1699999000, 1699999000, 0, 0, parents, 0
     );
@@ -737,6 +738,7 @@ TEST_F(Phase25SchemaTest, CreateSegmentMetaWithClusters) {
         0,                              // hnsw_params
         rabitq,                         // rabitq_params (new)
         conann,                         // conann_params (new)
+        0,                              // crc_params (new, not set)
         clusters,                       // clusters (new)
         ivl_list,                       // inverted_lists (legacy, empty)
         files,

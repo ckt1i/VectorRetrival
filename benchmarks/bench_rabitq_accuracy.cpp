@@ -25,6 +25,7 @@
 #include "vdb/common/types.h"
 #include "vdb/index/conann.h"
 #include "vdb/io/npy_reader.h"
+#include "vdb/io/vecs_reader.h"
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
@@ -138,6 +139,8 @@ static float Percentile(std::vector<float>& v, float p) {
 int main(int argc, char* argv[]) {
     std::string data_dir = GetArg(argc, argv, "--dataset",
                                   "/home/zcq/VDB/data/coco_1k");
+    std::string base_path = GetArg(argc, argv, "--base", "");
+    std::string query_path = GetArg(argc, argv, "--query", "");
     uint32_t nlist = static_cast<uint32_t>(GetIntArg(argc, argv, "--nlist", 32));
     int q_limit = GetIntArg(argc, argv, "--queries", 100);
     uint32_t top_k = static_cast<uint32_t>(GetIntArg(argc, argv, "--topk", 10));
@@ -146,27 +149,31 @@ int main(int argc, char* argv[]) {
     uint32_t samples_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-dk", 100));
     uint32_t samples_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-eps-ip", 100));
 
+    // Fallback: --base/--query not specified → derive from --dataset
+    if (base_path.empty())  base_path  = data_dir + "/image_embeddings.npy";
+    if (query_path.empty()) query_path = data_dir + "/query_embeddings.npy";
 
     Log("=== RaBitQ Accuracy Benchmark ===\n");
-    Log("Dataset: %s\n", data_dir.c_str());
+    Log("Base:  %s\n", base_path.c_str());
+    Log("Query: %s\n", query_path.c_str());
 
     // ================================================================
     // Phase 1: Load data
     // ================================================================
     Log("[Phase 1] Loading data...\n");
 
-    auto img_or = io::LoadNpyFloat32(data_dir + "/image_embeddings.npy");
+    auto img_or = io::LoadVectors(base_path);
     if (!img_or.ok()) {
-        std::fprintf(stderr, "Failed: %s\n", img_or.status().ToString().c_str());
+        std::fprintf(stderr, "Failed to load base: %s\n", img_or.status().ToString().c_str());
         return 1;
     }
     auto& img = img_or.value();
     uint32_t N = img.rows;
     Dim dim = static_cast<Dim>(img.cols);
 
-    auto qry_or = io::LoadNpyFloat32(data_dir + "/query_embeddings.npy");
+    auto qry_or = io::LoadVectors(query_path);
     if (!qry_or.ok()) {
-        std::fprintf(stderr, "Failed: %s\n", qry_or.status().ToString().c_str());
+        std::fprintf(stderr, "Failed to load query: %s\n", qry_or.status().ToString().c_str());
         return 1;
     }
     auto& qry = qry_or.value();

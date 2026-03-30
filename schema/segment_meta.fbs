@@ -147,6 +147,17 @@ table ConANNParams {
 }
 
 // ============================================================
+// CRC 标定参数 (CRC Calibration Score Precomputation)
+// ============================================================
+
+/// CRC 预计算分数文件引用
+table CrcParams {
+    scores_file: string;               // 相对路径: "crc_scores.bin"
+    num_calibration_queries: uint32;   // 标定查询数量
+    calibration_top_k: uint32;         // 标定 top-k
+}
+
+// ============================================================
 // Address Column 元数据 (Phase 2.5 新增)
 // ============================================================
 
@@ -364,7 +375,10 @@ table SegmentMeta {
     
     // ConANN 三分类参数
     conann_params: ConANNParams;
-    
+
+    // CRC 标定分数
+    crc_params: CrcParams;
+
     // Cluster 列表 (替代 inverted_lists)
     clusters: [ClusterMeta];
     

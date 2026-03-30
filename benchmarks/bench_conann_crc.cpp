@@ -189,7 +189,7 @@ static CrcBenchResult RunCrc(
 
     auto [cal, eval] = CrcCalibrator::Calibrate(
         config, qry_data, Q, dim,
-        centroids.data(), nlist, clusters, gt_topk);
+        centroids.data(), nlist, clusters);
 
     result.cal = cal;
     result.eval = eval;

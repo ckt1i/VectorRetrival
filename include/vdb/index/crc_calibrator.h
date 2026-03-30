@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "vdb/common/status.h"
 #include "vdb/common/types.h"
 #include "vdb/index/crc_stopper.h"
 
@@ -22,6 +24,13 @@ struct ClusterData {
     uint32_t code_entry_size = 0;           // bytes per entry in codes_block
 };
 
+/// Per-query scores and predictions at each nprobe step.
+/// This is the abstract data unit CRC calibration needs — distance-space agnostic.
+struct QueryScores {
+    std::vector<float> raw_scores;                  // [nlist] kth-dist at each step
+    std::vector<std::vector<uint32_t>> predictions; // [nlist][≤K] top-K IDs at each step
+};
+
 /// Offline CRC calibrator.
 /// Computes CalibrationResults from a calibration query set + IVF clusters.
 class CrcCalibrator {
@@ -34,6 +43,10 @@ class CrcCalibrator {
         uint64_t seed = 42;          // random seed for query split
     };
 
+    /// Evaluation results from CRC calibration.
+    /// Metrics measure search-space self-consistency: whether early-stop
+    /// misses vectors that full-probe would have found. NOT a comparison
+    /// against exact L2 ground truth.
     struct EvalResults {
         float actual_fnr = 0.0f;     // measured FNR on test set
         float avg_probed = 0.0f;     // average clusters probed on test set
@@ -43,38 +56,58 @@ class CrcCalibrator {
         uint32_t test_size = 0;
     };
 
-    /// Main calibration entry point.
-    /// @param config       Calibration hyperparameters.
-    /// @param queries      Query vectors [num_queries × dim], row-major.
-    /// @param num_queries  Number of calibration queries.
-    /// @param dim          Vector dimensionality.
-    /// @param centroids    Cluster centroids [nlist × dim], row-major.
-    /// @param nlist        Number of clusters.
-    /// @param clusters     Per-cluster vector data (size = nlist).
-    /// @param ground_truth Per-query ground truth top-k IDs (size = num_queries).
+    /// Core calibration — distance-space agnostic.
+    /// Ground truth is derived from predictions[nlist-1] (full-probe result).
+    /// @param config      Calibration hyperparameters.
+    /// @param all_scores  Pre-computed scores for all calibration queries.
+    /// @param nlist       Number of clusters.
     /// @return Calibration parameters + test set evaluation results.
+    static std::pair<CalibrationResults, EvalResults> Calibrate(
+        const Config& config,
+        const std::vector<QueryScores>& all_scores,
+        uint32_t nlist);
+
+    /// Convenience: calibrate from raw vectors using exact L2 distances.
+    /// Computes QueryScores internally, then delegates to core Calibrate.
     static std::pair<CalibrationResults, EvalResults> Calibrate(
         const Config& config,
         const float* queries, uint32_t num_queries, Dim dim,
         const float* centroids, uint32_t nlist,
-        const std::vector<ClusterData>& clusters,
-        const std::vector<std::vector<uint32_t>>& ground_truth);
+        const std::vector<ClusterData>& clusters);
 
-    /// Calibrate using RaBitQ estimated distances for scoring.
-    ///
-    /// Same as Calibrate() but the scoring heap uses RaBitQ estimates
-    /// instead of exact L2. This ensures the calibrated d_min/d_max/lamhat
-    /// live in the same distance space as online CrcStopper inputs.
-    /// Ground truth is still based on exact L2 (externally provided).
-    ///
+    /// Convenience: calibrate using RaBitQ estimated distances.
+    /// Computes QueryScores internally, then delegates to core Calibrate.
     /// Requires: ClusterData::codes_block and code_entry_size must be set.
     static std::pair<CalibrationResults, EvalResults> CalibrateWithRaBitQ(
         const Config& config,
         const float* queries, uint32_t num_queries, Dim dim,
         const float* centroids, uint32_t nlist,
         const std::vector<ClusterData>& clusters,
-        const std::vector<std::vector<uint32_t>>& ground_truth,
         const rabitq::RotationMatrix& rotation);
+
+    // ----- Score computation (exposed for IvfBuilder) -----
+
+    /// Compute QueryScores for all queries using RaBitQ estimated distances.
+    /// This is the same probing logic used internally, exposed for offline
+    /// score precomputation at build time.
+    static std::vector<QueryScores> ComputeScoresRaBitQ(
+        const float* queries, uint32_t num_queries, Dim dim,
+        const float* centroids, uint32_t nlist,
+        const std::vector<ClusterData>& clusters,
+        uint32_t top_k,
+        const rabitq::RotationMatrix& rotation);
+
+    // ----- QueryScores serialization -----
+
+    /// Write pre-computed scores to a binary file.
+    static Status WriteScores(const std::string& path,
+                              const std::vector<QueryScores>& scores,
+                              uint32_t nlist, uint32_t top_k);
+
+    /// Read pre-computed scores from a binary file.
+    static Status ReadScores(const std::string& path,
+                             std::vector<QueryScores>& scores,
+                             uint32_t& nlist, uint32_t& top_k);
 };
 
 }  // namespace index

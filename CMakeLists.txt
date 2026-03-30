@@ -200,6 +200,9 @@ target_include_directories(vdb_index PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema)
+# IvfBuilder uses CrcCalibrator for offline CRC score precomputation.
+# GSL dependency stays PRIVATE within vdb_crc, not exposed to vdb_index consumers.
+target_link_libraries(vdb_index PRIVATE vdb_crc)
 
 # =============================================================================
 # VDB CRC Library (ConANN CRC calibration — offline only, depends on GSL)
@@ -247,6 +250,7 @@ target_link_libraries(vdb_query PRIVATE ${URING_LIB})
 add_library(vdb_io STATIC
     src/io/npy_reader.cpp
     src/io/jsonl_reader.cpp
+    src/io/vecs_reader.cpp
 )
 target_include_directories(vdb_io PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -442,6 +446,10 @@ if(VDB_BUILD_TESTS)
     add_executable(test_jsonl_reader tests/io/jsonl_reader_test.cpp)
     target_link_libraries(test_jsonl_reader PRIVATE vdb_io GTest::gtest GTest::gtest_main)
     add_test(NAME test_jsonl_reader COMMAND test_jsonl_reader)
+
+    add_executable(test_vecs_reader tests/io/vecs_reader_test.cpp)
+    target_link_libraries(test_vecs_reader PRIVATE vdb_io GTest::gtest GTest::gtest_main)
+    add_test(NAME test_vecs_reader COMMAND test_vecs_reader)
 endif()
 
 # =============================================================================
