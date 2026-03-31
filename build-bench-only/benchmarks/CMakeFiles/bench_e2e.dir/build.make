@@ -94,7 +94,11 @@ benchmarks/bench_e2e: benchmarks/CMakeFiles/bench_e2e.dir/bench_e2e.cpp.o
 benchmarks/bench_e2e: benchmarks/CMakeFiles/bench_e2e.dir/build.make
 benchmarks/bench_e2e: libvdb_query.a
 benchmarks/bench_e2e: libvdb_io.a
+benchmarks/bench_e2e: libvdb_crc.a
 benchmarks/bench_e2e: libvdb_index.a
+benchmarks/bench_e2e: libvdb_crc.a
+benchmarks/bench_e2e: /usr/lib/x86_64-linux-gnu/libgsl.so
+benchmarks/bench_e2e: /usr/lib/x86_64-linux-gnu/libgslcblas.so
 benchmarks/bench_e2e: _deps/flatbuffers-build/libflatbuffers.a
 benchmarks/bench_e2e: libvdb_storage.a
 benchmarks/bench_e2e: libvdb_columns.a

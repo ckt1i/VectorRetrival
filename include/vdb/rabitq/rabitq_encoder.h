@@ -14,28 +14,41 @@ namespace rabitq {
 // RaBitQ Encoded Vector — output of the encoder
 // ============================================================================
 
-/// A single vector encoded by RaBitQ 1-bit quantization.
+/// A single vector encoded by RaBitQ M-bit quantization.
 ///
 /// Contains:
-///   - `code`:  Binary code packed as uint64_t words. code[i] bit j represents
-///              dimension (i*64 + j). A set bit means the rotated normalized
-///              component was >= 0; cleared means < 0.
+///   - `code`:  Packed quantization codes in **bit-plane layout**.
+///              For M-bit quantization, `code` has M planes of ceil(dim/64)
+///              uint64_t words each:
+///                plane 0 = MSB (= sign bits, equivalent to 1-bit code)
+///                plane 1 = next bit
+///                ...
+///                plane M-1 = LSB
+///              Total size: M * ceil(dim/64) words.
+///              For M=1, this is identical to the original 1-bit layout.
 ///   - `norm`:  ‖o - c‖₂  (the L2 norm of the residual before normalization).
 ///              Needed in the distance formula to reconstruct the scale.
-///   - `sum_x`: Total number of set bits in `code` (= popcount of entire code).
-///              Precomputed for the distance formula.
+///   - `sum_x`: Popcount of the MSB plane (plane 0). For M=1 this is the
+///              popcount of the entire code. Used in Stage 1 fast path.
+///   - `bits`:  Number of quantization bits (M). 1, 2, or 4.
 ///
 struct RaBitQCode {
-    std::vector<uint64_t> code;   // Packed binary code, ceil(dim/64) words
+    std::vector<uint64_t> code;   // M * ceil(dim/64) words, bit-plane layout
     float norm;                    // ‖o - c‖₂
-    uint32_t sum_x;                // popcount(code)
+    uint32_t sum_x;                // popcount(MSB plane)
+    uint8_t bits = 1;              // M: quantization bits
+
+    // ExRaBitQ fields (populated when bits > 1)
+    std::vector<uint8_t> ex_code;  // per-dimension code_abs values [0, 2^M-1]
+    std::vector<uint8_t> ex_sign;  // per-dimension sign (1=positive, 0=negative)
+    float xipnorm = 0.0f;         // 1 / Σ(code_abs[i]+0.5)*|o'[i]|
 };
 
 // ============================================================================
-// RaBitQEncoder — encodes float vectors into 1-bit RaBitQ codes
+// RaBitQEncoder — encodes float vectors into M-bit RaBitQ codes
 // ============================================================================
 
-/// Encoder for RaBitQ 1-bit quantization.
+/// Encoder for RaBitQ M-bit quantization (M=1, 2, or 4).
 ///
 /// The encoding pipeline for each database vector o:
 ///
@@ -43,8 +56,11 @@ struct RaBitQCode {
 ///   2. **Norm:**       ‖r‖ = ‖o - c‖₂     (store this for distance formula)
 ///   3. **Normalize:**  ō = r / ‖r‖        (unit vector)
 ///   4. **Rotate:**     ō' = P^T × ō       (rotate into canonical basis)
-///   5. **Sign-quantize:** x[i] = (ō'[i] >= 0) ? 1 : 0
-///   6. **Pack:**       pack x[] into uint64_t[ceil(dim/64)]
+///   5. **Quantize:**   bin[i] = uniform_quantize(ō'[i], 2^M levels)
+///   6. **Pack:**       bit-plane layout into uint64_t[M * ceil(dim/64)]
+///
+/// For M=1, step 5 degenerates to sign quantization (bin = (ō'[i] >= 0) ? 1 : 0)
+/// and the output is identical to the original 1-bit encoder.
 ///
 /// The rotation matrix P is shared across all vectors in the index.
 /// The centroid c is per-cluster (pass nullptr for flat index / testing).
@@ -53,10 +69,11 @@ class RaBitQEncoder {
  public:
     /// Construct an encoder for vectors of dimension `dim` using rotation `P`.
     ///
-    /// @param dim  Vector dimensionality
+    /// @param dim       Vector dimensionality
     /// @param rotation  Shared rotation matrix (must outlive the encoder).
     ///                  The encoder does NOT take ownership.
-    RaBitQEncoder(Dim dim, const RotationMatrix& rotation);
+    /// @param bits      Quantization bits: 1, 2, or 4 (default 1)
+    RaBitQEncoder(Dim dim, const RotationMatrix& rotation, uint8_t bits = 1);
 
     ~RaBitQEncoder() = default;
     VDB_DISALLOW_COPY_AND_MOVE(RaBitQEncoder);
@@ -78,15 +95,23 @@ class RaBitQEncoder {
     std::vector<RaBitQCode> EncodeBatch(const float* vecs, uint32_t n,
                                          const float* centroid = nullptr) const;
 
-    /// Number of uint64_t words per code.
-    uint32_t num_code_words() const { return num_words_; }
+    /// Total uint64_t words per code (M * words_per_plane).
+    uint32_t num_code_words() const { return total_words_; }
+
+    /// Number of uint64_t words per bit-plane (= ceil(dim/64)).
+    uint32_t words_per_plane() const { return words_per_plane_; }
+
+    /// Quantization bits (M).
+    uint8_t bits() const { return bits_; }
 
     /// Vector dimensionality.
     Dim dim() const { return dim_; }
 
  private:
     Dim dim_;
-    uint32_t num_words_;              // ceil(dim / 64)
+    uint8_t bits_;                    // M: quantization bits (1, 2, or 4)
+    uint32_t words_per_plane_;        // ceil(dim / 64)
+    uint32_t total_words_;            // bits_ * words_per_plane_
     const RotationMatrix& rotation_;
 };
 

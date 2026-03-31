@@ -217,6 +217,86 @@ bench_conann_recall/fast:
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_recall.dir/build.make benchmarks/CMakeFiles/bench_conann_recall.dir/build
 .PHONY : bench_conann_recall/fast
 
+# Convenience name for target.
+benchmarks/CMakeFiles/bench_conann_crc.dir/rule:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_conann_crc.dir/rule
+.PHONY : benchmarks/CMakeFiles/bench_conann_crc.dir/rule
+
+# Convenience name for target.
+bench_conann_crc: benchmarks/CMakeFiles/bench_conann_crc.dir/rule
+.PHONY : bench_conann_crc
+
+# fast build rule for target.
+bench_conann_crc/fast:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/build
+.PHONY : bench_conann_crc/fast
+
+# Convenience name for target.
+benchmarks/CMakeFiles/bench_crc_overlap.dir/rule:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_crc_overlap.dir/rule
+.PHONY : benchmarks/CMakeFiles/bench_crc_overlap.dir/rule
+
+# Convenience name for target.
+bench_crc_overlap: benchmarks/CMakeFiles/bench_crc_overlap.dir/rule
+.PHONY : bench_crc_overlap
+
+# fast build rule for target.
+bench_crc_overlap/fast:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/build
+.PHONY : bench_crc_overlap/fast
+
+# Convenience name for target.
+benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule
+.PHONY : benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule
+
+# Convenience name for target.
+bench_rabitq_diagnostic: benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule
+.PHONY : bench_rabitq_diagnostic
+
+# fast build rule for target.
+bench_rabitq_diagnostic/fast:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build
+.PHONY : bench_rabitq_diagnostic/fast
+
+# Convenience name for target.
+benchmarks/CMakeFiles/bench_vector_search.dir/rule:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_vector_search.dir/rule
+.PHONY : benchmarks/CMakeFiles/bench_vector_search.dir/rule
+
+# Convenience name for target.
+bench_vector_search: benchmarks/CMakeFiles/bench_vector_search.dir/rule
+.PHONY : bench_vector_search
+
+# fast build rule for target.
+bench_vector_search/fast:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/build
+.PHONY : bench_vector_search/fast
+
+bench_conann_crc.o: bench_conann_crc.cpp.o
+.PHONY : bench_conann_crc.o
+
+# target to build an object file
+bench_conann_crc.cpp.o:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o
+.PHONY : bench_conann_crc.cpp.o
+
+bench_conann_crc.i: bench_conann_crc.cpp.i
+.PHONY : bench_conann_crc.i
+
+# target to preprocess a source file
+bench_conann_crc.cpp.i:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.i
+.PHONY : bench_conann_crc.cpp.i
+
+bench_conann_crc.s: bench_conann_crc.cpp.s
+.PHONY : bench_conann_crc.s
+
+# target to generate assembly for a file
+bench_conann_crc.cpp.s:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.s
+.PHONY : bench_conann_crc.cpp.s
+
 bench_conann_recall.o: bench_conann_recall.cpp.o
 .PHONY : bench_conann_recall.o
 
@@ -240,6 +320,30 @@ bench_conann_recall.s: bench_conann_recall.cpp.s
 bench_conann_recall.cpp.s:
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_recall.dir/build.make benchmarks/CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.s
 .PHONY : bench_conann_recall.cpp.s
+
+bench_crc_overlap.o: bench_crc_overlap.cpp.o
+.PHONY : bench_crc_overlap.o
+
+# target to build an object file
+bench_crc_overlap.cpp.o:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o
+.PHONY : bench_crc_overlap.cpp.o
+
+bench_crc_overlap.i: bench_crc_overlap.cpp.i
+.PHONY : bench_crc_overlap.i
+
+# target to preprocess a source file
+bench_crc_overlap.cpp.i:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.i
+.PHONY : bench_crc_overlap.cpp.i
+
+bench_crc_overlap.s: bench_crc_overlap.cpp.s
+.PHONY : bench_crc_overlap.s
+
+# target to generate assembly for a file
+bench_crc_overlap.cpp.s:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.s
+.PHONY : bench_crc_overlap.cpp.s
 
 bench_e2e.o: bench_e2e.cpp.o
 .PHONY : bench_e2e.o
@@ -313,6 +417,54 @@ bench_rabitq_accuracy.cpp.s:
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/build.make benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/bench_rabitq_accuracy.cpp.s
 .PHONY : bench_rabitq_accuracy.cpp.s
 
+bench_rabitq_diagnostic.o: bench_rabitq_diagnostic.cpp.o
+.PHONY : bench_rabitq_diagnostic.o
+
+# target to build an object file
+bench_rabitq_diagnostic.cpp.o:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o
+.PHONY : bench_rabitq_diagnostic.cpp.o
+
+bench_rabitq_diagnostic.i: bench_rabitq_diagnostic.cpp.i
+.PHONY : bench_rabitq_diagnostic.i
+
+# target to preprocess a source file
+bench_rabitq_diagnostic.cpp.i:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.i
+.PHONY : bench_rabitq_diagnostic.cpp.i
+
+bench_rabitq_diagnostic.s: bench_rabitq_diagnostic.cpp.s
+.PHONY : bench_rabitq_diagnostic.s
+
+# target to generate assembly for a file
+bench_rabitq_diagnostic.cpp.s:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.s
+.PHONY : bench_rabitq_diagnostic.cpp.s
+
+bench_vector_search.o: bench_vector_search.cpp.o
+.PHONY : bench_vector_search.o
+
+# target to build an object file
+bench_vector_search.cpp.o:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o
+.PHONY : bench_vector_search.cpp.o
+
+bench_vector_search.i: bench_vector_search.cpp.i
+.PHONY : bench_vector_search.i
+
+# target to preprocess a source file
+bench_vector_search.cpp.i:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.i
+.PHONY : bench_vector_search.cpp.i
+
+bench_vector_search.s: bench_vector_search.cpp.s
+.PHONY : bench_vector_search.s
+
+# target to generate assembly for a file
+bench_vector_search.cpp.s:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.s
+.PHONY : bench_vector_search.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -325,13 +477,23 @@ help:
 	@echo "... install/strip"
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
+	@echo "... bench_conann_crc"
 	@echo "... bench_conann_recall"
+	@echo "... bench_crc_overlap"
 	@echo "... bench_e2e"
 	@echo "... bench_ivf_quality"
 	@echo "... bench_rabitq_accuracy"
+	@echo "... bench_rabitq_diagnostic"
+	@echo "... bench_vector_search"
+	@echo "... bench_conann_crc.o"
+	@echo "... bench_conann_crc.i"
+	@echo "... bench_conann_crc.s"
 	@echo "... bench_conann_recall.o"
 	@echo "... bench_conann_recall.i"
 	@echo "... bench_conann_recall.s"
+	@echo "... bench_crc_overlap.o"
+	@echo "... bench_crc_overlap.i"
+	@echo "... bench_crc_overlap.s"
 	@echo "... bench_e2e.o"
 	@echo "... bench_e2e.i"
 	@echo "... bench_e2e.s"
@@ -341,6 +503,12 @@ help:
 	@echo "... bench_rabitq_accuracy.o"
 	@echo "... bench_rabitq_accuracy.i"
 	@echo "... bench_rabitq_accuracy.s"
+	@echo "... bench_rabitq_diagnostic.o"
+	@echo "... bench_rabitq_diagnostic.i"
+	@echo "... bench_rabitq_diagnostic.s"
+	@echo "... bench_vector_search.o"
+	@echo "... bench_vector_search.i"
+	@echo "... bench_vector_search.s"
 .PHONY : help
 
 

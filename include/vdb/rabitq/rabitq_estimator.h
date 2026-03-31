@@ -24,6 +24,7 @@ namespace rabitq {
 ///   4. Rotate: q' = P^T × q̄
 ///   5. Sign-quantize q' → query sign code (for XOR+popcount fast path)
 ///   6. Precompute sum_q = Σ q'[i]  (needed in distance formula)
+///   7. (M>1) Precompute LUT[2^M] for Stage 2 distance estimation
 ///
 struct PreparedQuery {
     std::vector<float>    rotated;     // q' = P^T × q̄  (length = dim)
@@ -32,53 +33,41 @@ struct PreparedQuery {
     float                 norm_qc_sq;  // ‖q - c‖₂²
     float                 sum_q;       // Σ q'[i] (sum of all rotated components)
     Dim                   dim;         // Vector dimensionality
-    uint32_t              num_words;   // ceil(dim / 64)
+    uint32_t              num_words;   // ceil(dim / 64) = words per plane
+
+    // Multi-bit fields
+    uint8_t               bits = 1;    // M: quantization bits
 };
 
 // ============================================================================
 // RaBitQEstimator — approximate distance computation
 // ============================================================================
 
-/// Approximate distance estimator for RaBitQ 1-bit quantized vectors.
+/// Approximate distance estimator for RaBitQ M-bit quantized vectors.
 ///
-/// The core formula for L2 squared distance estimation:
+/// Supports two estimation paths:
 ///
-///   ‖o - q‖² ≈ ‖o-c‖² + ‖q-c‖² - 2·‖o-c‖·‖q-c‖·⟨q̄, ô⟩
+/// **Stage 1 (fast, O(L/64)):** XOR+popcount on MSB plane (= 1-bit sign code).
+///   Same as original 1-bit RaBitQ. Used for initial SafeIn/SafeOut classification.
 ///
-/// where the inner product ⟨q̄, ô⟩ is estimated using the 1-bit codes:
-///
-///   ⟨q̄, ô⟩ ≈ (2/√L)·dot(q', x) - (1/√L)·Σq'ᵢ
-///
-/// The dot product dot(q', x) can be computed two ways:
-///
-///   **Sign-code path (fast):**
-///     dot(q', x) = Σ_x[i]=1 q'[i]
-///                = Σ|q'[i]| - 2·Σ_{q_sign≠x} |q'[i]|
-///     Approximation using popcount:
-///       = (L - 2·popcount(q_sign XOR x)) × (1/√L)  ... simplified
-///     But more precisely for 1-bit RaBitQ:
-///       dot(q', x) ≈ (sum_x - 2·hamming(q_sign, x)) × factor
-///     This path trades accuracy for speed.
-///
-///   **Float path (accurate):**
-///     Direct Σ q'[i] × (2·x[i] - 1) using the rotated query.
-///     Equivalent to scanning each bit of x and accumulating ±q'[i].
-///
-/// This estimator implements both paths. The fast path uses XOR+popcount
-/// and is O(L/64) per vector; the accurate path is O(L) per vector.
+/// **Stage 2 (accurate, O(L), M-bit LUT scan):** For M>1, uses a precomputed
+///   lookup table to compute a more accurate inner product estimate from the
+///   full M-bit quantized code. Only applied to Uncertain vectors from Stage 1.
 ///
 class RaBitQEstimator {
  public:
     /// Construct an estimator for the given dimensionality.
-    explicit RaBitQEstimator(Dim dim);
+    ///
+    /// @param dim   Vector dimensionality
+    /// @param bits  Quantization bits: 1, 2, or 4 (default 1)
+    explicit RaBitQEstimator(Dim dim, uint8_t bits = 1);
 
     ~RaBitQEstimator() = default;
     VDB_DISALLOW_COPY_AND_MOVE(RaBitQEstimator);
 
     /// Prepare a query vector for distance estimation.
     ///
-    /// This precomputes all per-query data so that subsequent calls to
-    /// EstimateDistance are efficient (only per-vector work remains).
+    /// When bits > 1, also precomputes the M-bit LUT for Stage 2.
     ///
     /// @param query     Raw query vector (length = dim)
     /// @param centroid  Cluster centroid (length = dim, or nullptr for zero)
@@ -88,66 +77,74 @@ class RaBitQEstimator {
                                const float* centroid,
                                const RotationMatrix& rotation) const;
 
-    /// Estimate the squared L2 distance between a prepared query and a
-    /// database code using the fast XOR+popcount path.
+    /// Stage 1: Estimate distance using fast XOR+popcount on MSB plane.
     ///
-    /// Formula:
-    ///   ip_est = (2/√L) × (sum_x - 2 × hamming) - (1/√L) × sum_q
-    ///   dist² ≈ norm_oc² + norm_qc² - 2 × norm_oc × norm_qc × ip_est
-    ///
-    /// where hamming = popcount(q_sign XOR db_code).
-    ///
-    /// @param pq    Prepared query (from PrepareQuery)
-    /// @param code  Database vector's RaBitQ code
-    /// @return      Estimated ‖o - q‖² (may be negative due to approximation;
-    ///              caller should clamp to 0 if needed)
+    /// Uses only the first words_per_plane words of the code (MSB plane).
+    /// Result is identical regardless of M — always uses 1-bit approximation.
     float EstimateDistance(const PreparedQuery& pq,
                            const RaBitQCode& code) const;
 
-    /// Estimate distance using the more accurate float-dot path.
-    ///
-    /// Scans each bit of the database code and accumulates q'[i] × (2·x[i]-1)
-    /// to compute the inner product exactly (no popcount approximation).
-    /// This is O(L) per vector instead of O(L/64).
-    ///
-    /// @param pq    Prepared query
-    /// @param code  Database vector's RaBitQ code
-    /// @return      Estimated ‖o - q‖²
+    /// Estimate distance using the more accurate float-dot path (1-bit).
     float EstimateDistanceAccurate(const PreparedQuery& pq,
                                     const RaBitQCode& code) const;
 
-    /// Batch estimate: compute estimated distances for multiple database codes.
-    ///
-    /// @param pq       Prepared query
-    /// @param codes    Array of database codes (size = n)
-    /// @param n        Number of codes
-    /// @param out_dist Output distances (at least n elements)
+    /// Batch estimate using Stage 1 (fast popcount path).
     void EstimateDistanceBatch(const PreparedQuery& pq,
                                 const RaBitQCode* codes,
                                 uint32_t n,
                                 float* out_dist) const;
 
-    /// Zero-copy distance estimate from raw memory layout.
-    ///
-    /// Avoids constructing a RaBitQCode; reads code words directly from
-    /// a contiguous buffer (e.g. mmap'd .clu block).
+    /// Stage 1: Zero-copy distance estimate from raw memory (MSB plane only).
     ///
     /// @param pq          Prepared query
-    /// @param code_words  Pointer to packed binary code (num_words uint64_t)
-    /// @param num_words   Number of uint64_t words in the code
-    /// @param norm_oc     ‖o - c‖₂ (stored in the .clu entry)
+    /// @param code_words  Pointer to MSB plane (words_per_plane uint64_t)
+    /// @param num_words   Words per plane (= ceil(dim/64))
+    /// @param norm_oc     ‖o - c‖₂
     /// @return            Estimated ‖o - q‖² (clamped to ≥ 0)
     float EstimateDistanceRaw(const PreparedQuery& pq,
                                const uint64_t* code_words,
                                uint32_t num_words,
                                float norm_oc) const;
 
+    /// Stage 2: Estimate distance using full M-bit LUT scan.
+    ///
+    /// Extracts the M-bit quantized value for each dimension from the
+    /// bit-plane layout, looks up the reconstruction value from the LUT,
+    /// and computes a more accurate inner product estimate.
+    ///
+    /// @param pq    Prepared query (must have lut populated, i.e. bits > 1)
+    /// @param code  Database vector's RaBitQ code (M-bit encoded)
+    /// @return      Estimated ‖o - q‖² (clamped to ≥ 0)
+    float EstimateDistanceMultiBit(const PreparedQuery& pq,
+                                    const RaBitQCode& code) const;
+
+    /// Stage 2: Zero-copy M-bit distance estimate from raw memory.
+    ///
+    /// Uses xipnorm correction factor for accurate inner product estimation.
+    ///
+    /// @param pq              Prepared query
+    /// @param code_words      Pointer to full M-plane code (M * wpp uint64_t)
+    /// @param words_per_plane Words per plane (= ceil(dim/64))
+    /// @param bits            M: quantization bits
+    /// @param norm_oc         ‖o - c‖₂
+    /// @param xipnorm         Correction factor: 1 / ⟨ō_q, ō'⟩
+    /// @return                Estimated ‖o - q‖² (clamped to ≥ 0)
+    float EstimateDistanceMultiBitRaw(const PreparedQuery& pq,
+                                       const uint64_t* code_words,
+                                       uint32_t words_per_plane,
+                                       uint8_t bits,
+                                       float norm_oc,
+                                       float xipnorm) const;
+
     Dim dim() const { return dim_; }
+    uint8_t bits() const { return bits_; }
+    uint32_t words_per_plane() const { return words_per_plane_; }
 
  private:
     Dim dim_;
-    uint32_t num_words_;  // ceil(dim / 64)
-    float inv_sqrt_dim_;  // 1 / √dim  (precomputed)
+    uint8_t bits_;                // M: quantization bits
+    uint32_t words_per_plane_;    // ceil(dim / 64)
+    float inv_sqrt_dim_;          // 1 / √dim  (precomputed)
 };
 
 }  // namespace rabitq

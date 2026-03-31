@@ -5,6 +5,7 @@
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_rabitq.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_storage.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_index.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_crc.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_query.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/vdb_io.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles/edit_cache.dir
@@ -47,6 +48,10 @@
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_e2e.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_rabitq_accuracy.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_conann_recall.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_conann_crc.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_crc_overlap.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_vector_search.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/edit_cache.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/rebuild_cache.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/list_install_components.dir

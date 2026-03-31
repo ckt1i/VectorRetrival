@@ -132,6 +132,7 @@ add_library(vdb_simd STATIC
     src/simd/prefix_sum.cpp
     src/simd/popcount.cpp
     src/simd/transpose.cpp
+    src/simd/ip_exrabitq.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>

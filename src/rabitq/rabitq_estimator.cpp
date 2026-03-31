@@ -1,6 +1,8 @@
 #include "vdb/rabitq/rabitq_estimator.h"
+#include "vdb/simd/ip_exrabitq.h"
 #include "vdb/simd/popcount.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -11,9 +13,10 @@ namespace rabitq {
 // Construction
 // ============================================================================
 
-RaBitQEstimator::RaBitQEstimator(Dim dim)
+RaBitQEstimator::RaBitQEstimator(Dim dim, uint8_t bits)
     : dim_(dim),
-      num_words_((dim + 63) / 64),
+      bits_(bits),
+      words_per_plane_((dim + 63) / 64),
       inv_sqrt_dim_(1.0f / std::sqrt(static_cast<float>(dim))) {}
 
 // ============================================================================
@@ -28,7 +31,8 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
 
     PreparedQuery pq;
     pq.dim       = dim_;
-    pq.num_words = num_words_;
+    pq.num_words = words_per_plane_;
+    pq.bits      = bits_;
 
     // Step 1: Center — r = q - c
     std::vector<float> residual(L);
@@ -61,7 +65,7 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
     rotation.Apply(residual.data(), pq.rotated.data());
 
     // Step 5: Sign-quantize q' → packed sign code
-    pq.sign_code.resize(num_words_, 0ULL);
+    pq.sign_code.resize(words_per_plane_, 0ULL);
     for (size_t i = 0; i < L; ++i) {
         if (pq.rotated[i] >= 0.0f) {
             size_t word_idx = i / 64;
@@ -80,17 +84,19 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
 }
 
 // ============================================================================
-// EstimateDistance — fast XOR+popcount path
+// EstimateDistance — Stage 1: fast XOR+popcount path (MSB plane only)
 // ============================================================================
 
 float RaBitQEstimator::EstimateDistance(
     const PreparedQuery& pq,
     const RaBitQCode& code) const {
-    return EstimateDistanceRaw(pq, code.code.data(), num_words_, code.norm);
+    // Use only MSB plane (first words_per_plane_ words)
+    return EstimateDistanceRaw(pq, code.code.data(), words_per_plane_,
+                               code.norm);
 }
 
 // ============================================================================
-// EstimateDistanceRaw — zero-copy fast XOR+popcount path
+// EstimateDistanceRaw — Stage 1: zero-copy fast XOR+popcount path
 // ============================================================================
 
 float RaBitQEstimator::EstimateDistanceRaw(
@@ -104,10 +110,6 @@ float RaBitQEstimator::EstimateDistanceRaw(
 
     // Popcount-based inner product estimate:
     //   ⟨q̄, ô⟩ ≈ 1 - 2·hamming/L
-    //
-    // Derivation: approximate q'[i] ≈ sign(q'[i]) / √L, then
-    //   ⟨q̄, ô⟩ ≈ (1/L) × Σ sign(q'[i]) × (2·x[i] - 1)
-    //           = (1/L) × (L - 2·hamming) = 1 - 2·hamming/L
     float ip_est = 1.0f - 2.0f * static_cast<float>(hamming) /
                                   static_cast<float>(dim_);
 
@@ -119,7 +121,7 @@ float RaBitQEstimator::EstimateDistanceRaw(
 }
 
 // ============================================================================
-// EstimateDistanceAccurate — float dot product path
+// EstimateDistanceAccurate — float dot product path (1-bit)
 // ============================================================================
 
 float RaBitQEstimator::EstimateDistanceAccurate(
@@ -146,6 +148,93 @@ float RaBitQEstimator::EstimateDistanceAccurate(
                     - 2.0f * norm_oc * pq.norm_qc * ip_est;
 
     return dist_sq;
+}
+
+// ============================================================================
+// EstimateDistanceMultiBit — Stage 2: M-bit LUT scan
+// ============================================================================
+
+float RaBitQEstimator::EstimateDistanceMultiBit(
+    const PreparedQuery& pq,
+    const RaBitQCode& code) const {
+    // Use ex_code/ex_sign (fast_quantize) when available — SIMD accelerated
+    if (!code.ex_code.empty()) {
+        float ip_raw = simd::IPExRaBitQ(
+            pq.rotated.data(), code.ex_code.data(),
+            code.ex_sign.data(), dim_);
+        float ip_est = ip_raw * code.xipnorm;
+        float dist_sq = code.norm * code.norm + pq.norm_qc_sq
+                      - 2.0f * code.norm * pq.norm_qc * ip_est;
+        return std::max(dist_sq, 0.0f);
+    }
+    // Fallback to bit-plane extraction
+    return EstimateDistanceMultiBitRaw(pq, code.code.data(),
+                                       words_per_plane_, code.bits,
+                                       code.norm, code.xipnorm);
+}
+
+// ============================================================================
+// EstimateDistanceMultiBitRaw — Stage 2: xipnorm-corrected M-bit estimate
+// ============================================================================
+
+float RaBitQEstimator::EstimateDistanceMultiBitRaw(
+    const PreparedQuery& pq,
+    const uint64_t* code_words,
+    uint32_t wpp,
+    uint8_t bits,
+    float norm_oc,
+    float xipnorm) const {
+    const uint8_t M = bits;
+    const int max_code = (1 << M) - 1;
+
+    // Compute: Σ q'[i] * sign[i] * (code_abs[i] + 0.5)
+    // where sign is from MSB plane, code_abs is recovered from sign + code_stored
+    //
+    // From the bit-plane layout:
+    //   MSB plane (plane 0) = sign bit: 1=positive, 0=negative
+    //   code_stored = full M-bit value extracted from all planes
+    //   code_abs = (sign==1) ? code_stored : (2^M-1) - code_stored
+    //
+    // Then: sign[i] * (code_abs[i] + 0.5) is the signed reconstruction value
+    // and   xipnorm = 1 / Σ (code_abs[i] + 0.5) * |o'[i]|
+
+    float ip_raw = 0.0f;
+    for (size_t i = 0; i < dim_; ++i) {
+        size_t word_idx = i / 64;
+        size_t bit_idx  = i % 64;
+
+        // Extract full M-bit code_stored from all M planes
+        int code_stored = 0;
+        for (uint8_t p = 0; p < M; ++p) {
+            uint32_t bit = (code_words[static_cast<size_t>(p) * wpp +
+                                       word_idx] >> bit_idx) & 1;
+            code_stored |= (static_cast<int>(bit) << (M - 1 - p));
+        }
+
+        // MSB of code_stored ≈ sign (due to sign-flip encoding)
+        // sign_bit = MSB → 1=positive, 0=negative
+        int sign_bit = (code_stored >> (M - 1)) & 1;
+        float sign = sign_bit ? 1.0f : -1.0f;
+
+        // Recover code_abs from code_stored:
+        //   positive: code_stored = code_abs → code_abs = code_stored
+        //   negative: code_stored = max_code - code_abs → code_abs = max_code - code_stored
+        int code_abs = sign_bit ? code_stored
+                                : (max_code - code_stored);
+
+        // Signed reconstruction: sign * (code_abs + 0.5)
+        float recon = sign * (static_cast<float>(code_abs) + 0.5f);
+        ip_raw += pq.rotated[i] * recon;
+    }
+
+    // Apply xipnorm correction: ip_est = ip_raw * xipnorm
+    float ip_est = ip_raw * xipnorm;
+
+    // Full distance formula
+    float dist_sq = norm_oc * norm_oc + pq.norm_qc_sq
+                    - 2.0f * norm_oc * pq.norm_qc * ip_est;
+
+    return std::max(dist_sq, 0.0f);
 }
 
 // ============================================================================

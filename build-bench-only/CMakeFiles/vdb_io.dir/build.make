@@ -97,19 +97,35 @@ CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp -o CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.s
 
+CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o: CMakeFiles/vdb_io.dir/flags.make
+CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o: /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp
+CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o: CMakeFiles/vdb_io.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o -MF CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o.d -o CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp
+
+CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp > CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.i
+
+CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp -o CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.s
+
 # Object files for target vdb_io
 vdb_io_OBJECTS = \
 "CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o" \
-"CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o"
+"CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o" \
+"CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o"
 
 # External object files for target vdb_io
 vdb_io_EXTERNAL_OBJECTS =
 
 libvdb_io.a: CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o
 libvdb_io.a: CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o
+libvdb_io.a: CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o
 libvdb_io.a: CMakeFiles/vdb_io.dir/build.make
 libvdb_io.a: CMakeFiles/vdb_io.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Linking CXX static library libvdb_io.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX static library libvdb_io.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/vdb_io.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/vdb_io.dir/link.txt --verbose=$(VERBOSE)
 

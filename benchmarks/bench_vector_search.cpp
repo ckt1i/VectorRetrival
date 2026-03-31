@@ -1,13 +1,14 @@
-/// bench_vector_search.cpp — Pure vector search benchmark.
+/// bench_vector_search.cpp — Pure vector search benchmark with M-bit RaBitQ.
 ///
 /// Supports standard ANN-Benchmark datasets (.fvecs/.npy) without payload.
 /// Pipeline: Load → KMeans → RaBitQ Encode → Calibrate → Probe+Rerank → Recall.
+/// Supports two-stage ConANN classification (Stage 1: popcount, Stage 2: M-bit LUT).
 /// Optionally integrates CRC early-stop in the cluster probing loop.
 ///
 /// Usage:
 ///   bench_vector_search --base /path/to/base.fvecs --query /path/to/query.fvecs
 ///       [--gt /path/to/gt.ivecs] [--nlist 256] [--nprobe 32] [--topk 10]
-///       [--crc 1] [--crc-alpha 0.1] [--early-stop 1] [--outdir ./results]
+///       [--bits 1] [--crc 1] [--crc-alpha 0.1] [--early-stop 1] [--outdir ./results]
 
 #include <algorithm>
 #include <chrono>
@@ -146,8 +147,11 @@ int main(int argc, char* argv[]) {
     uint64_t seed    = static_cast<uint64_t>(GetIntArg(argc, argv, "--seed", 42));
     std::string outdir = GetArg(argc, argv, "--outdir", "");
     int q_limit      = GetIntArg(argc, argv, "--queries", 0);
-    uint32_t p_for_dk  = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 90));
-    uint32_t p_for_eps = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps", 95));
+    uint32_t p_for_dk  = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 99));
+    uint32_t p_for_eps = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps", 99));
+    uint8_t bits = static_cast<uint8_t>(GetIntArg(argc, argv, "--bits", 1));
+    std::string centroids_path = GetArg(argc, argv, "--centroids", "");
+    std::string assignments_path = GetArg(argc, argv, "--assignments", "");
 
     if (base_path.empty() || query_path.empty()) {
         std::fprintf(stderr,
@@ -157,12 +161,12 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    Log("=== Vector Search Benchmark ===\n");
+    Log("=== Vector Search Benchmark (bits=%u) ===\n", bits);
     Log("Base:   %s\n", base_path.c_str());
     Log("Query:  %s\n", query_path.c_str());
     Log("GT:     %s\n", gt_path.empty() ? "(brute-force)" : gt_path.c_str());
-    Log("nlist=%u  nprobe=%u  top_k=%u  crc=%d  early_stop=%d\n",
-        nlist, nprobe, top_k, use_crc, early_stop);
+    Log("nlist=%u  nprobe=%u  top_k=%u  bits=%u  crc=%d  early_stop=%d\n",
+        nlist, nprobe, top_k, bits, use_crc, early_stop);
 
     // ================================================================
     // Phase A: Load data
@@ -242,17 +246,52 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase B: Build — KMeans + RaBitQ Encode + calibrate ε_ip/d_k
     // ================================================================
-    Log("\n[Phase B] KMeans (K=%u) + RaBitQ encoding...\n", nlist);
     auto t_build = std::chrono::steady_clock::now();
 
     std::vector<float> centroids;
     std::vector<uint32_t> assignments;
-    KMeans(base.data.data(), N, dim, nlist, 20, seed, centroids, assignments);
+
+    if (!centroids_path.empty() && !assignments_path.empty()) {
+        Log("\n[Phase B] Loading precomputed centroids + assignments...\n");
+        auto c_or = io::LoadVectors(centroids_path);
+        if (!c_or.ok()) {
+            std::fprintf(stderr, "Failed to load centroids: %s\n",
+                         c_or.status().ToString().c_str());
+            return 1;
+        }
+        auto& c = c_or.value();
+        if (c.cols != dim) {
+            std::fprintf(stderr, "Centroid dim mismatch: %u vs %u\n", c.cols, dim);
+            return 1;
+        }
+        nlist = c.rows;
+        centroids.assign(c.data.begin(), c.data.end());
+
+        auto a_or = io::LoadIvecs(assignments_path);
+        if (!a_or.ok()) {
+            std::fprintf(stderr, "Failed to load assignments: %s\n",
+                         a_or.status().ToString().c_str());
+            return 1;
+        }
+        auto& a = a_or.value();
+        if (a.rows != N) {
+            std::fprintf(stderr, "Assignment count mismatch: %u vs %u\n", a.rows, N);
+            return 1;
+        }
+        assignments.resize(N);
+        for (uint32_t i = 0; i < N; ++i) {
+            assignments[i] = static_cast<uint32_t>(a.data[i]);
+        }
+        Log("  Loaded K=%u centroids, %u assignments.\n", nlist, N);
+    } else {
+        Log("\n[Phase B] KMeans (K=%u) + RaBitQ encoding...\n", nlist);
+        KMeans(base.data.data(), N, dim, nlist, 20, seed, centroids, assignments);
+    }
 
     RotationMatrix rotation(dim);
     rotation.GenerateRandom(seed);
-    RaBitQEncoder encoder(dim, rotation);
-    RaBitQEstimator estimator(dim);
+    RaBitQEncoder encoder(dim, rotation, bits);
+    RaBitQEstimator estimator(dim, bits);
 
     std::vector<RaBitQCode> codes(N);
     for (uint32_t i = 0; i < N; ++i) {
@@ -421,14 +460,31 @@ int main(int argc, char* argv[]) {
     std::vector<std::vector<uint32_t>> results(Q);
     std::vector<double> latencies(Q);
 
-    // Stats
-    uint64_t total_safein = 0, total_safeout = 0, total_uncertain = 0;
+    // Stats — Stage 1
+    uint64_t s1_safein = 0, s1_safeout = 0, s1_uncertain = 0;
+    // Stats — Stage 2 (applied to S1 Uncertain when bits > 1)
+    uint64_t s2_safein = 0, s2_safeout = 0, s2_uncertain = 0;
+    // Final (after both stages)
+    uint64_t final_safein = 0, final_safeout = 0, final_uncertain = 0;
+    // False SafeIn/Out (against GT)
+    uint64_t final_false_safein = 0, final_false_safeout = 0;
     uint64_t total_probed_clusters = 0;
     uint32_t early_stop_count = 0;
+
+    const float margin_s2_divisor = static_cast<float>(1u << (bits - 1));
 
     for (uint32_t qi = 0; qi < Q; ++qi) {
         auto t_q = std::chrono::steady_clock::now();
         const float* q_vec = qry.data.data() + static_cast<size_t>(qi) * dim;
+
+        // GT set for this query
+        std::unordered_set<uint32_t> gt_set;
+        if (qi < gt_ids.size()) {
+            uint32_t gt_limit = std::min(top_k, static_cast<uint32_t>(gt_ids[qi].size()));
+            for (uint32_t i = 0; i < gt_limit; ++i) {
+                gt_set.insert(static_cast<uint32_t>(gt_ids[qi][i]));
+            }
+        }
 
         // Sort clusters by centroid distance
         std::vector<std::pair<float, uint32_t>> centroid_dists(nlist);
@@ -452,35 +508,63 @@ int main(int argc, char* argv[]) {
             const float* centroid = centroids.data() +
                 static_cast<size_t>(cid) * dim;
             auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
-            float margin = 2.0f * per_cluster_r_max[cid] * pq.norm_qc * eps_ip;
+            float margin_s1 = 2.0f * per_cluster_r_max[cid] * pq.norm_qc * eps_ip;
 
             for (uint32_t vid : cluster_members[cid]) {
-                float est_dist = estimator.EstimateDistance(pq, codes[vid]);
+                float est_dist_s1 = estimator.EstimateDistance(pq, codes[vid]);
 
-                // ConANN classification
+                // Stage 1 classification
                 float est_kth = (est_heap.size() >= top_k)
                     ? est_heap.front().first
                     : std::numeric_limits<float>::infinity();
-                ResultClass rc = conann.ClassifyAdaptive(est_dist, margin, est_kth);
+                ResultClass rc_s1 = conann.ClassifyAdaptive(est_dist_s1, margin_s1, est_kth);
 
-                if (rc == ResultClass::SafeOut) {
-                    total_safeout++;
-                    continue;
+                bool in_gt = gt_set.count(vid) > 0;
+
+                if (rc_s1 == ResultClass::SafeIn) s1_safein++;
+                else if (rc_s1 == ResultClass::SafeOut) s1_safeout++;
+                else s1_uncertain++;
+
+                ResultClass rc_final = rc_s1;
+
+                // Stage 2: only for S1-Uncertain when bits > 1
+                if (rc_s1 == ResultClass::Uncertain && bits > 1) {
+                    float est_dist_s2 = estimator.EstimateDistanceMultiBit(pq, codes[vid]);
+                    float margin_s2 = margin_s1 / margin_s2_divisor;
+                    ResultClass rc_s2 = conann.ClassifyAdaptive(est_dist_s2, margin_s2, est_kth);
+
+                    if (rc_s2 == ResultClass::SafeIn) s2_safein++;
+                    else if (rc_s2 == ResultClass::SafeOut) s2_safeout++;
+                    else s2_uncertain++;
+
+                    rc_final = rc_s2;
                 }
-                if (rc == ResultClass::SafeIn) total_safein++;
-                else total_uncertain++;
 
-                // Update est_heap
+                // Final classification stats + False SafeIn/Out
+                if (rc_final == ResultClass::SafeIn) {
+                    final_safein++;
+                    if (!in_gt) final_false_safein++;
+                } else if (rc_final == ResultClass::SafeOut) {
+                    final_safeout++;
+                    if (in_gt) final_false_safeout++;
+                } else {
+                    final_uncertain++;
+                }
+
+                // Skip SafeOut vectors entirely
+                if (rc_final == ResultClass::SafeOut) continue;
+
+                // SafeIn and Uncertain: update est_heap
                 if (est_heap.size() < top_k) {
-                    est_heap.push_back({est_dist, vid});
+                    est_heap.push_back({est_dist_s1, vid});
                     std::push_heap(est_heap.begin(), est_heap.end());
-                } else if (est_dist < est_heap.front().first) {
+                } else if (est_dist_s1 < est_heap.front().first) {
                     std::pop_heap(est_heap.begin(), est_heap.end());
-                    est_heap.back() = {est_dist, vid};
+                    est_heap.back() = {est_dist_s1, vid};
                     std::push_heap(est_heap.begin(), est_heap.end());
                 }
 
-                // Rerank: exact L2
+                // Rerank with exact L2 (both SafeIn and Uncertain read vectors)
                 float exact_dist = simd::L2Sqr(q_vec,
                     base.data.data() + static_cast<size_t>(vid) * dim, dim);
                 if (exact_heap.size() < top_k) {
@@ -517,7 +601,6 @@ int main(int argc, char* argv[]) {
 
         // Extract top-K from exact_heap, sorted by distance (ascending)
         std::sort_heap(exact_heap.begin(), exact_heap.end());
-        // After sort_heap on a max-heap, elements are in ascending order
         results[qi].resize(exact_heap.size());
         for (size_t i = 0; i < exact_heap.size(); ++i) {
             results[qi][i] = exact_heap[i].second;
@@ -575,13 +658,17 @@ int main(int argc, char* argv[]) {
     double avg_probed = static_cast<double>(total_probed_clusters) / Q;
     double early_stop_rate = static_cast<double>(early_stop_count) / Q;
 
-    uint64_t total_classified = total_safein + total_safeout + total_uncertain;
+    uint64_t s1_total = s1_safein + s1_safeout + s1_uncertain;
+    uint64_t final_total = final_safein + final_safeout + final_uncertain;
+    auto pct = [](uint64_t num, uint64_t den) -> double {
+        return den > 0 ? 100.0 * static_cast<double>(num) / static_cast<double>(den) : 0.0;
+    };
 
     // ================================================================
     // Phase F: Output
     // ================================================================
     Log("\n========================================\n");
-    Log("RESULTS\n");
+    Log("RESULTS (bits=%u)\n", bits);
     Log("========================================\n");
     Log("  recall@1  = %.4f\n", recall_1);
     Log("  recall@5  = %.4f\n", recall_5);
@@ -596,16 +683,35 @@ int main(int argc, char* argv[]) {
     Log("\n");
     Log("  avg_probed      = %.2f / %u clusters\n", avg_probed, nprobe);
     Log("  early_stop_rate = %.4f\n", early_stop_rate);
-    Log("\n");
-    if (total_classified > 0) {
-        Log("  ConANN stats:\n");
-        Log("    SafeIn    = %lu (%.2f%%)\n", total_safein,
-            100.0 * total_safein / total_classified);
-        Log("    SafeOut   = %lu (%.2f%%)\n", total_safeout,
-            100.0 * total_safeout / total_classified);
-        Log("    Uncertain = %lu (%.2f%%)\n", total_uncertain,
-            100.0 * total_uncertain / total_classified);
+
+    // Stage 1 classification
+    Log("\n  --- Stage 1 (popcount) ---\n");
+    Log("    SafeIn    = %lu (%.2f%%)\n", s1_safein, pct(s1_safein, s1_total));
+    Log("    SafeOut   = %lu (%.2f%%)\n", s1_safeout, pct(s1_safeout, s1_total));
+    Log("    Uncertain = %lu (%.2f%%)\n", s1_uncertain, pct(s1_uncertain, s1_total));
+
+    // Stage 2 classification (only when bits > 1)
+    if (bits > 1) {
+        uint64_t s2_total = s2_safein + s2_safeout + s2_uncertain;
+        Log("\n  --- Stage 2 (%u-bit LUT, margin / %g) ---\n",
+            bits, static_cast<double>(margin_s2_divisor));
+        Log("    Input (S1 Uncertain) = %lu\n", s1_uncertain);
+        Log("    SafeIn    = %lu (%.2f%%)\n", s2_safein, pct(s2_safein, s2_total));
+        Log("    SafeOut   = %lu (%.2f%%)\n", s2_safeout, pct(s2_safeout, s2_total));
+        Log("    Uncertain = %lu (%.2f%%)\n", s2_uncertain, pct(s2_uncertain, s2_total));
     }
+
+    // Final classification + False SafeIn/Out
+    Log("\n  --- Final (S1%s) ---\n", bits > 1 ? "+S2" : "");
+    Log("    SafeIn    = %lu (%.2f%%)\n", final_safein, pct(final_safein, final_total));
+    Log("    SafeOut   = %lu (%.2f%%)\n", final_safeout, pct(final_safeout, final_total));
+    Log("    Uncertain = %lu (%.2f%%)\n", final_uncertain, pct(final_uncertain, final_total));
+    Log("\n");
+    Log("    False SafeIn  = %lu / %lu (%.4f%%)  [not GT top-K but SafeIn]\n",
+        final_false_safein, final_safein, pct(final_false_safein, final_safein));
+    Log("    False SafeOut = %lu / %lu (%.4f%%)  [GT top-K but SafeOut !!!]\n",
+        final_false_safeout, final_safeout, pct(final_false_safeout, final_safeout));
+
     if (use_crc) {
         Log("\n  CRC stats:\n");
         Log("    lamhat     = %.6f\n", calib_results.lamhat);
@@ -627,6 +733,7 @@ int main(int argc, char* argv[]) {
         jf << "  \"nlist\": " << nlist << ",\n";
         jf << "  \"nprobe\": " << nprobe << ",\n";
         jf << "  \"top_k\": " << top_k << ",\n";
+        jf << "  \"bits\": " << static_cast<int>(bits) << ",\n";
         jf << "  \"crc\": " << (use_crc ? "true" : "false") << ",\n";
         jf << "  \"recall_at_1\": " << recall_1 << ",\n";
         jf << "  \"recall_at_5\": " << recall_5 << ",\n";
@@ -638,9 +745,14 @@ int main(int argc, char* argv[]) {
         jf << "  \"latency_p99_ms\": " << p99 << ",\n";
         jf << "  \"avg_probed\": " << avg_probed << ",\n";
         jf << "  \"early_stop_rate\": " << early_stop_rate << ",\n";
-        jf << "  \"safein_pct\": " << (total_classified > 0 ? 100.0 * total_safein / total_classified : 0) << ",\n";
-        jf << "  \"safeout_pct\": " << (total_classified > 0 ? 100.0 * total_safeout / total_classified : 0) << ",\n";
-        jf << "  \"uncertain_pct\": " << (total_classified > 0 ? 100.0 * total_uncertain / total_classified : 0) << "\n";
+        jf << "  \"s1_safein_pct\": " << pct(s1_safein, s1_total) << ",\n";
+        jf << "  \"s1_safeout_pct\": " << pct(s1_safeout, s1_total) << ",\n";
+        jf << "  \"s1_uncertain_pct\": " << pct(s1_uncertain, s1_total) << ",\n";
+        jf << "  \"final_safein_pct\": " << pct(final_safein, final_total) << ",\n";
+        jf << "  \"final_safeout_pct\": " << pct(final_safeout, final_total) << ",\n";
+        jf << "  \"final_uncertain_pct\": " << pct(final_uncertain, final_total) << ",\n";
+        jf << "  \"false_safein_rate\": " << pct(final_false_safein, final_safein) << ",\n";
+        jf << "  \"false_safeout_rate\": " << pct(final_false_safeout, final_safeout) << "\n";
         jf << "}\n";
         jf.close();
         Log("\nJSON results written to: %s\n", json_path.c_str());

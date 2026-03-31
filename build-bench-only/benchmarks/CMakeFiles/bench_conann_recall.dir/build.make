@@ -97,9 +97,12 @@ benchmarks/bench_conann_recall: libvdb_io.a
 benchmarks/bench_conann_recall: libvdb_storage.a
 benchmarks/bench_conann_recall: libvdb_columns.a
 benchmarks/bench_conann_recall: libvdb_codec.a
+benchmarks/bench_conann_recall: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_conann_recall: libvdb_crc.a
 benchmarks/bench_conann_recall: libvdb_rabitq.a
 benchmarks/bench_conann_recall: libvdb_simd.a
-benchmarks/bench_conann_recall: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libgsl.so
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libgslcblas.so
 benchmarks/bench_conann_recall: benchmarks/CMakeFiles/bench_conann_recall.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bench_conann_recall"
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/bench_conann_recall.dir/link.txt --verbose=$(VERBOSE)

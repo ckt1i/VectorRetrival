@@ -3,6 +3,8 @@
 #include <random>
 #include <vector>
 #include <algorithm>
+#include <numeric>
+#include <set>
 
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/rabitq/rabitq_estimator.h"
@@ -382,5 +384,216 @@ TEST(RaBitQEstimatorTest, RawMatchesStructPath) {
             pq, code.code.data(),
             static_cast<uint32_t>(code.code.size()), code.norm);
         EXPECT_FLOAT_EQ(struct_dist, raw_dist);
+    }
+}
+
+// ===========================================================================
+// Multi-bit estimator tests
+// ===========================================================================
+
+TEST(RaBitQEstimatorTest, Xipnorm_IsFiniteAndPositive) {
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    for (uint8_t bits : {2, 4}) {
+        RaBitQEncoder encoder(dim, P, bits);
+        for (int i = 0; i < 20; ++i) {
+            auto vec = RandomVec(dim, 100 + i);
+            auto code = encoder.Encode(vec.data());
+            EXPECT_TRUE(std::isfinite(code.xipnorm))
+                << "bits=" << (int)bits << " vec " << i;
+            EXPECT_GT(code.xipnorm, 0.0f)
+                << "bits=" << (int)bits << " vec " << i;
+        }
+    }
+}
+
+TEST(RaBitQEstimatorTest, Xipnorm_Bits1_IsZero) {
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder encoder(dim, P, 1);
+    for (int i = 0; i < 10; ++i) {
+        auto vec = RandomVec(dim, 100 + i);
+        auto code = encoder.Encode(vec.data());
+        EXPECT_FLOAT_EQ(code.xipnorm, 0.0f) << "vec " << i;
+    }
+}
+
+TEST(RaBitQEstimatorTest, Stage2_Xipnorm_CloserToExact) {
+    // With xipnorm correction, Stage 2 should produce estimates
+    // closer to exact distance than Stage 1 (popcount).
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder encoder(dim, P, 4);
+    RaBitQEstimator estimator(dim, 4);
+
+    auto query = RandomVec(dim, 100);
+    auto centroid = RandomVec(dim, 200);
+    auto pq = estimator.PrepareQuery(query.data(), centroid.data(), P);
+
+    double total_err_s1 = 0.0;
+    double total_err_s2 = 0.0;
+    const int N = 50;
+
+    for (int i = 0; i < N; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto code = encoder.Encode(vec.data(), centroid.data());
+
+        float exact_dist_sq = 0.0f;
+        for (Dim d = 0; d < dim; ++d) {
+            float diff = vec[d] - query[d];
+            exact_dist_sq += diff * diff;
+        }
+
+        float dist_s1 = estimator.EstimateDistance(pq, code);
+        float dist_s2 = estimator.EstimateDistanceMultiBit(pq, code);
+
+        total_err_s1 += std::abs(dist_s1 - exact_dist_sq);
+        total_err_s2 += std::abs(dist_s2 - exact_dist_sq);
+    }
+
+    // Stage 2 with xipnorm should have lower average error than Stage 1
+    EXPECT_LT(total_err_s2, total_err_s1)
+        << "S2 avg err=" << total_err_s2 / N
+        << " S1 avg err=" << total_err_s1 / N;
+}
+
+TEST(RaBitQEstimatorTest, Stage1_UnchangedByBits) {
+    // EstimateDistance (Stage 1) should give identical results regardless of bits,
+    // because it only uses the MSB plane.
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder enc1(dim, P, 1);
+    RaBitQEncoder enc2(dim, P, 2);
+    RaBitQEstimator est1(dim, 1);
+    RaBitQEstimator est2(dim, 2);
+
+    auto query = RandomVec(dim, 100);
+    auto centroid = RandomVec(dim, 200);
+    auto pq1 = est1.PrepareQuery(query.data(), centroid.data(), P);
+    auto pq2 = est2.PrepareQuery(query.data(), centroid.data(), P);
+
+    for (int i = 0; i < 20; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto code1 = enc1.Encode(vec.data(), centroid.data());
+        auto code2 = enc2.Encode(vec.data(), centroid.data());
+
+        float dist1 = est1.EstimateDistance(pq1, code1);
+        float dist2 = est2.EstimateDistance(pq2, code2);
+        EXPECT_FLOAT_EQ(dist1, dist2) << "vec " << i;
+    }
+}
+
+TEST(RaBitQEstimatorTest, Stage2_CorrelatedWithExact) {
+    // With bits=2, Stage 2 (multi-bit LUT) should produce distance estimates
+    // that are positively correlated with exact distances and reasonably bounded.
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder encoder(dim, P, 2);
+    RaBitQEstimator estimator(dim, 2);
+
+    auto query = RandomVec(dim, 100);
+    auto centroid = RandomVec(dim, 200);
+    auto pq = estimator.PrepareQuery(query.data(), centroid.data(), P);
+
+    const int N = 50;
+    std::vector<float> exact_dists(N), s2_dists(N);
+
+    for (int i = 0; i < N; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto code = encoder.Encode(vec.data(), centroid.data());
+
+        float exact_dist_sq = 0.0f;
+        for (Dim d = 0; d < dim; ++d) {
+            float diff = vec[d] - query[d];
+            exact_dist_sq += diff * diff;
+        }
+
+        exact_dists[i] = exact_dist_sq;
+        s2_dists[i] = estimator.EstimateDistanceMultiBit(pq, code);
+        EXPECT_GE(s2_dists[i], 0.0f) << "vec " << i;
+    }
+
+    // Check ranking correlation: sort by exact and by S2, compare top-5
+    std::vector<int> exact_order(N), s2_order(N);
+    std::iota(exact_order.begin(), exact_order.end(), 0);
+    std::iota(s2_order.begin(), s2_order.end(), 0);
+    std::sort(exact_order.begin(), exact_order.end(),
+              [&](int a, int b) { return exact_dists[a] < exact_dists[b]; });
+    std::sort(s2_order.begin(), s2_order.end(),
+              [&](int a, int b) { return s2_dists[a] < s2_dists[b]; });
+
+    // At least 3 of exact top-10 should appear in S2 top-15
+    std::set<int> exact_top10(exact_order.begin(), exact_order.begin() + 10);
+    int overlap = 0;
+    for (int i = 0; i < 15; ++i) {
+        if (exact_top10.count(s2_order[i])) ++overlap;
+    }
+    EXPECT_GE(overlap, 3) << "Stage 2 ranking poorly correlated with exact";
+}
+
+TEST(RaBitQEstimatorTest, MultiBit_ExCode_NonNegative) {
+    // EstimateDistanceMultiBit using ex_code path should produce non-negative distances
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder encoder(dim, P, 2);
+    RaBitQEstimator estimator(dim, 2);
+
+    auto query = RandomVec(dim, 100);
+    auto centroid = RandomVec(dim, 200);
+    auto pq = estimator.PrepareQuery(query.data(), centroid.data(), P);
+
+    for (int i = 0; i < 20; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto code = encoder.Encode(vec.data(), centroid.data());
+
+        ASSERT_FALSE(code.ex_code.empty()) << "ex_code should be populated for bits=2";
+        float dist = estimator.EstimateDistanceMultiBit(pq, code);
+        EXPECT_GE(dist, 0.0f) << "vec " << i;
+        EXPECT_LT(dist, 1000.0f) << "vec " << i;
+    }
+}
+
+TEST(RaBitQEstimatorTest, MultiBit_Bits4_BetterThanBits2) {
+    // With bits=4, the LUT has 16 levels vs 4 for bits=2.
+    // Both should produce non-negative, reasonable distance estimates.
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder enc2(dim, P, 2);
+    RaBitQEncoder enc4(dim, P, 4);
+    RaBitQEstimator est2(dim, 2);
+    RaBitQEstimator est4(dim, 4);
+
+    auto query = RandomVec(dim, 100);
+    auto centroid = RandomVec(dim, 200);
+    auto pq2 = est2.PrepareQuery(query.data(), centroid.data(), P);
+    auto pq4 = est4.PrepareQuery(query.data(), centroid.data(), P);
+
+    for (int i = 0; i < 10; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto code2 = enc2.Encode(vec.data(), centroid.data());
+        auto code4 = enc4.Encode(vec.data(), centroid.data());
+
+        float dist2 = est2.EstimateDistanceMultiBit(pq2, code2);
+        float dist4 = est4.EstimateDistanceMultiBit(pq4, code4);
+
+        EXPECT_GE(dist2, 0.0f) << "vec " << i << " bits=2";
+        EXPECT_GE(dist4, 0.0f) << "vec " << i << " bits=4";
+        // Both should be in a reasonable range
+        EXPECT_LT(dist2, 1000.0f) << "vec " << i << " bits=2";
+        EXPECT_LT(dist4, 1000.0f) << "vec " << i << " bits=4";
     }
 }

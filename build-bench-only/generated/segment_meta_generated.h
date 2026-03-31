@@ -34,6 +34,9 @@ struct RaBitQParamsBuilder;
 struct ConANNParams;
 struct ConANNParamsBuilder;
 
+struct CrcParams;
+struct CrcParamsBuilder;
+
 struct AddressBlockMeta;
 struct AddressBlockMetaBuilder;
 
@@ -815,6 +818,82 @@ inline ::flatbuffers::Offset<ConANNParams> CreateConANNParams(
   builder_.add_tau_out_factor(tau_out_factor);
   builder_.add_tau_in_factor(tau_in_factor);
   return builder_.Finish();
+}
+
+/// CRC 预计算分数文件引用
+struct CrcParams FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
+  typedef CrcParamsBuilder Builder;
+  enum FlatBuffersVTableOffset FLATBUFFERS_VTABLE_UNDERLYING_TYPE {
+    VT_SCORES_FILE = 4,
+    VT_NUM_CALIBRATION_QUERIES = 6,
+    VT_CALIBRATION_TOP_K = 8
+  };
+  const ::flatbuffers::String *scores_file() const {
+    return GetPointer<const ::flatbuffers::String *>(VT_SCORES_FILE);
+  }
+  uint32_t num_calibration_queries() const {
+    return GetField<uint32_t>(VT_NUM_CALIBRATION_QUERIES, 0);
+  }
+  uint32_t calibration_top_k() const {
+    return GetField<uint32_t>(VT_CALIBRATION_TOP_K, 0);
+  }
+  bool Verify(::flatbuffers::Verifier &verifier) const {
+    return VerifyTableStart(verifier) &&
+           VerifyOffset(verifier, VT_SCORES_FILE) &&
+           verifier.VerifyString(scores_file()) &&
+           VerifyField<uint32_t>(verifier, VT_NUM_CALIBRATION_QUERIES, 4) &&
+           VerifyField<uint32_t>(verifier, VT_CALIBRATION_TOP_K, 4) &&
+           verifier.EndTable();
+  }
+};
+
+struct CrcParamsBuilder {
+  typedef CrcParams Table;
+  ::flatbuffers::FlatBufferBuilder &fbb_;
+  ::flatbuffers::uoffset_t start_;
+  void add_scores_file(::flatbuffers::Offset<::flatbuffers::String> scores_file) {
+    fbb_.AddOffset(CrcParams::VT_SCORES_FILE, scores_file);
+  }
+  void add_num_calibration_queries(uint32_t num_calibration_queries) {
+    fbb_.AddElement<uint32_t>(CrcParams::VT_NUM_CALIBRATION_QUERIES, num_calibration_queries, 0);
+  }
+  void add_calibration_top_k(uint32_t calibration_top_k) {
+    fbb_.AddElement<uint32_t>(CrcParams::VT_CALIBRATION_TOP_K, calibration_top_k, 0);
+  }
+  explicit CrcParamsBuilder(::flatbuffers::FlatBufferBuilder &_fbb)
+        : fbb_(_fbb) {
+    start_ = fbb_.StartTable();
+  }
+  ::flatbuffers::Offset<CrcParams> Finish() {
+    const auto end = fbb_.EndTable(start_);
+    auto o = ::flatbuffers::Offset<CrcParams>(end);
+    return o;
+  }
+};
+
+inline ::flatbuffers::Offset<CrcParams> CreateCrcParams(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    ::flatbuffers::Offset<::flatbuffers::String> scores_file = 0,
+    uint32_t num_calibration_queries = 0,
+    uint32_t calibration_top_k = 0) {
+  CrcParamsBuilder builder_(_fbb);
+  builder_.add_calibration_top_k(calibration_top_k);
+  builder_.add_num_calibration_queries(num_calibration_queries);
+  builder_.add_scores_file(scores_file);
+  return builder_.Finish();
+}
+
+inline ::flatbuffers::Offset<CrcParams> CreateCrcParamsDirect(
+    ::flatbuffers::FlatBufferBuilder &_fbb,
+    const char *scores_file = nullptr,
+    uint32_t num_calibration_queries = 0,
+    uint32_t calibration_top_k = 0) {
+  auto scores_file__ = scores_file ? _fbb.CreateString(scores_file) : 0;
+  return vdb::schema::CreateCrcParams(
+      _fbb,
+      scores_file__,
+      num_calibration_queries,
+      calibration_top_k);
 }
 
 /// 单个 AddressBlock 的元数据
@@ -1749,19 +1828,20 @@ struct SegmentMeta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
     VT_HNSW_PARAMS = 22,
     VT_RABITQ_PARAMS = 24,
     VT_CONANN_PARAMS = 26,
-    VT_CLUSTERS = 28,
-    VT_INVERTED_LISTS = 30,
-    VT_FILES = 32,
-    VT_DELETE_BITMAP = 34,
-    VT_STATS = 36,
-    VT_LSN_INFO = 38,
-    VT_CREATE_TIME = 40,
-    VT_LAST_UPDATE_TIME = 42,
-    VT_LAST_COMPACT_TIME = 44,
-    VT_LEVEL = 46,
-    VT_PARENT_SEGMENTS = 48,
-    VT_PAYLOAD_SCHEMAS = 50,
-    VT_CHECKSUM = 52
+    VT_CRC_PARAMS = 28,
+    VT_CLUSTERS = 30,
+    VT_INVERTED_LISTS = 32,
+    VT_FILES = 34,
+    VT_DELETE_BITMAP = 36,
+    VT_STATS = 38,
+    VT_LSN_INFO = 40,
+    VT_CREATE_TIME = 42,
+    VT_LAST_UPDATE_TIME = 44,
+    VT_LAST_COMPACT_TIME = 46,
+    VT_LEVEL = 48,
+    VT_PARENT_SEGMENTS = 50,
+    VT_PAYLOAD_SCHEMAS = 52,
+    VT_CHECKSUM = 54
   };
   uint64_t segment_id() const {
     return GetField<uint64_t>(VT_SEGMENT_ID, 0);
@@ -1798,6 +1878,9 @@ struct SegmentMeta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
   }
   const vdb::schema::ConANNParams *conann_params() const {
     return GetPointer<const vdb::schema::ConANNParams *>(VT_CONANN_PARAMS);
+  }
+  const vdb::schema::CrcParams *crc_params() const {
+    return GetPointer<const vdb::schema::CrcParams *>(VT_CRC_PARAMS);
   }
   const ::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::ClusterMeta>> *clusters() const {
     return GetPointer<const ::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::ClusterMeta>> *>(VT_CLUSTERS);
@@ -1858,6 +1941,8 @@ struct SegmentMeta FLATBUFFERS_FINAL_CLASS : private ::flatbuffers::Table {
            verifier.VerifyTable(rabitq_params()) &&
            VerifyOffset(verifier, VT_CONANN_PARAMS) &&
            verifier.VerifyTable(conann_params()) &&
+           VerifyOffset(verifier, VT_CRC_PARAMS) &&
+           verifier.VerifyTable(crc_params()) &&
            VerifyOffset(verifier, VT_CLUSTERS) &&
            verifier.VerifyVector(clusters()) &&
            verifier.VerifyVectorOfTables(clusters()) &&
@@ -1927,6 +2012,9 @@ struct SegmentMetaBuilder {
   void add_conann_params(::flatbuffers::Offset<vdb::schema::ConANNParams> conann_params) {
     fbb_.AddOffset(SegmentMeta::VT_CONANN_PARAMS, conann_params);
   }
+  void add_crc_params(::flatbuffers::Offset<vdb::schema::CrcParams> crc_params) {
+    fbb_.AddOffset(SegmentMeta::VT_CRC_PARAMS, crc_params);
+  }
   void add_clusters(::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::ClusterMeta>>> clusters) {
     fbb_.AddOffset(SegmentMeta::VT_CLUSTERS, clusters);
   }
@@ -1991,6 +2079,7 @@ inline ::flatbuffers::Offset<SegmentMeta> CreateSegmentMeta(
     ::flatbuffers::Offset<vdb::schema::HnswParams> hnsw_params = 0,
     ::flatbuffers::Offset<vdb::schema::RaBitQParams> rabitq_params = 0,
     ::flatbuffers::Offset<vdb::schema::ConANNParams> conann_params = 0,
+    ::flatbuffers::Offset<vdb::schema::CrcParams> crc_params = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::ClusterMeta>>> clusters = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::InvertedListMeta>>> inverted_lists = 0,
     ::flatbuffers::Offset<::flatbuffers::Vector<::flatbuffers::Offset<vdb::schema::FileRef>>> files = 0,
@@ -2019,6 +2108,7 @@ inline ::flatbuffers::Offset<SegmentMeta> CreateSegmentMeta(
   builder_.add_files(files);
   builder_.add_inverted_lists(inverted_lists);
   builder_.add_clusters(clusters);
+  builder_.add_crc_params(crc_params);
   builder_.add_conann_params(conann_params);
   builder_.add_rabitq_params(rabitq_params);
   builder_.add_hnsw_params(hnsw_params);
@@ -2047,6 +2137,7 @@ inline ::flatbuffers::Offset<SegmentMeta> CreateSegmentMetaDirect(
     ::flatbuffers::Offset<vdb::schema::HnswParams> hnsw_params = 0,
     ::flatbuffers::Offset<vdb::schema::RaBitQParams> rabitq_params = 0,
     ::flatbuffers::Offset<vdb::schema::ConANNParams> conann_params = 0,
+    ::flatbuffers::Offset<vdb::schema::CrcParams> crc_params = 0,
     const std::vector<::flatbuffers::Offset<vdb::schema::ClusterMeta>> *clusters = nullptr,
     const std::vector<::flatbuffers::Offset<vdb::schema::InvertedListMeta>> *inverted_lists = nullptr,
     const std::vector<::flatbuffers::Offset<vdb::schema::FileRef>> *files = nullptr,
@@ -2079,6 +2170,7 @@ inline ::flatbuffers::Offset<SegmentMeta> CreateSegmentMetaDirect(
       hnsw_params,
       rabitq_params,
       conann_params,
+      crc_params,
       clusters__,
       inverted_lists__,
       files__,

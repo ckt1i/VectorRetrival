@@ -109,6 +109,12 @@
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/crc_calibrator.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/index/crc_calibrator.cpp",
+  "output": "CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
   "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_index.dir/src/index/conann.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
   "output": "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o"
@@ -178,6 +184,12 @@
   "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp",
   "output": "CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp",
+  "output": "CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
@@ -472,5 +484,29 @@
   "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_recall.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_recall.cpp",
   "output": "benchmarks/CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_crc.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_crc.cpp",
+  "output": "benchmarks/CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_crc_overlap.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_crc_overlap.cpp",
+  "output": "benchmarks/CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_diagnostic.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_diagnostic.cpp",
+  "output": "benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_vector_search.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_vector_search.cpp",
+  "output": "benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o"
 }
 ]

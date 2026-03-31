@@ -256,6 +256,8 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: \
  /usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h \
  /usr/include/c++/13/bits/random.tcc \
  /home/zcq/VDB/VectorRetrival/include/vdb/index/conann.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/index/crc_calibrator.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/index/crc_stopper.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h \

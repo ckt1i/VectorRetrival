@@ -253,6 +253,19 @@ vdb_index/fast:
 .PHONY : vdb_index/fast
 
 #=============================================================================
+# Target rules for targets named vdb_crc
+
+# Build rule for target.
+vdb_crc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 vdb_crc
+.PHONY : vdb_crc
+
+# fast build rule for target.
+vdb_crc/fast:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/build
+.PHONY : vdb_crc/fast
+
+#=============================================================================
 # Target rules for targets named vdb_query
 
 # Build rule for target.
@@ -407,6 +420,58 @@ bench_conann_recall: cmake_check_build_system
 bench_conann_recall/fast:
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_recall.dir/build.make benchmarks/CMakeFiles/bench_conann_recall.dir/build
 .PHONY : bench_conann_recall/fast
+
+#=============================================================================
+# Target rules for targets named bench_conann_crc
+
+# Build rule for target.
+bench_conann_crc: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bench_conann_crc
+.PHONY : bench_conann_crc
+
+# fast build rule for target.
+bench_conann_crc/fast:
+	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/build
+.PHONY : bench_conann_crc/fast
+
+#=============================================================================
+# Target rules for targets named bench_crc_overlap
+
+# Build rule for target.
+bench_crc_overlap: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bench_crc_overlap
+.PHONY : bench_crc_overlap
+
+# fast build rule for target.
+bench_crc_overlap/fast:
+	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/build
+.PHONY : bench_crc_overlap/fast
+
+#=============================================================================
+# Target rules for targets named bench_rabitq_diagnostic
+
+# Build rule for target.
+bench_rabitq_diagnostic: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bench_rabitq_diagnostic
+.PHONY : bench_rabitq_diagnostic
+
+# fast build rule for target.
+bench_rabitq_diagnostic/fast:
+	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build
+.PHONY : bench_rabitq_diagnostic/fast
+
+#=============================================================================
+# Target rules for targets named bench_vector_search
+
+# Build rule for target.
+bench_vector_search: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bench_vector_search
+.PHONY : bench_vector_search
+
+# fast build rule for target.
+bench_vector_search/fast:
+	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/build
+.PHONY : bench_vector_search/fast
 
 src/codec/bitpack_codec.o: src/codec/bitpack_codec.cpp.o
 .PHONY : src/codec/bitpack_codec.o
@@ -576,6 +641,30 @@ src/index/conann.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/src/index/conann.cpp.s
 .PHONY : src/index/conann.cpp.s
 
+src/index/crc_calibrator.o: src/index/crc_calibrator.cpp.o
+.PHONY : src/index/crc_calibrator.o
+
+# target to build an object file
+src/index/crc_calibrator.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o
+.PHONY : src/index/crc_calibrator.cpp.o
+
+src/index/crc_calibrator.i: src/index/crc_calibrator.cpp.i
+.PHONY : src/index/crc_calibrator.i
+
+# target to preprocess a source file
+src/index/crc_calibrator.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.i
+.PHONY : src/index/crc_calibrator.cpp.i
+
+src/index/crc_calibrator.s: src/index/crc_calibrator.cpp.s
+.PHONY : src/index/crc_calibrator.s
+
+# target to generate assembly for a file
+src/index/crc_calibrator.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.s
+.PHONY : src/index/crc_calibrator.cpp.s
+
 src/index/ivf_builder.o: src/index/ivf_builder.cpp.o
 .PHONY : src/index/ivf_builder.o
 
@@ -671,6 +760,30 @@ src/io/npy_reader.s: src/io/npy_reader.cpp.s
 src/io/npy_reader.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.s
 .PHONY : src/io/npy_reader.cpp.s
+
+src/io/vecs_reader.o: src/io/vecs_reader.cpp.o
+.PHONY : src/io/vecs_reader.o
+
+# target to build an object file
+src/io/vecs_reader.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o
+.PHONY : src/io/vecs_reader.cpp.o
+
+src/io/vecs_reader.i: src/io/vecs_reader.cpp.i
+.PHONY : src/io/vecs_reader.i
+
+# target to preprocess a source file
+src/io/vecs_reader.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.i
+.PHONY : src/io/vecs_reader.cpp.i
+
+src/io/vecs_reader.s: src/io/vecs_reader.cpp.s
+.PHONY : src/io/vecs_reader.s
+
+# target to generate assembly for a file
+src/io/vecs_reader.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.s
+.PHONY : src/io/vecs_reader.cpp.s
 
 src/query/buffer_pool.o: src/query/buffer_pool.cpp.o
 .PHONY : src/query/buffer_pool.o
@@ -1141,10 +1254,14 @@ help:
 	@echo "... list_install_components"
 	@echo "... rebuild_cache"
 	@echo "... flatbuffers_generated"
+	@echo "... bench_conann_crc"
 	@echo "... bench_conann_recall"
+	@echo "... bench_crc_overlap"
 	@echo "... bench_e2e"
 	@echo "... bench_ivf_quality"
 	@echo "... bench_rabitq_accuracy"
+	@echo "... bench_rabitq_diagnostic"
+	@echo "... bench_vector_search"
 	@echo "... flatbuffers"
 	@echo "... flatc"
 	@echo "... gmock"
@@ -1153,6 +1270,7 @@ help:
 	@echo "... gtest_main"
 	@echo "... vdb_codec"
 	@echo "... vdb_columns"
+	@echo "... vdb_crc"
 	@echo "... vdb_index"
 	@echo "... vdb_io"
 	@echo "... vdb_query"
@@ -1180,6 +1298,9 @@ help:
 	@echo "... src/index/conann.o"
 	@echo "... src/index/conann.i"
 	@echo "... src/index/conann.s"
+	@echo "... src/index/crc_calibrator.o"
+	@echo "... src/index/crc_calibrator.i"
+	@echo "... src/index/crc_calibrator.s"
 	@echo "... src/index/ivf_builder.o"
 	@echo "... src/index/ivf_builder.i"
 	@echo "... src/index/ivf_builder.s"
@@ -1192,6 +1313,9 @@ help:
 	@echo "... src/io/npy_reader.o"
 	@echo "... src/io/npy_reader.i"
 	@echo "... src/io/npy_reader.s"
+	@echo "... src/io/vecs_reader.o"
+	@echo "... src/io/vecs_reader.i"
+	@echo "... src/io/vecs_reader.s"
 	@echo "... src/query/buffer_pool.o"
 	@echo "... src/query/buffer_pool.i"
 	@echo "... src/query/buffer_pool.s"

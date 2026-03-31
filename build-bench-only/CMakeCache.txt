@@ -388,6 +388,23 @@ GIT:FILEPATH=/usr/bin/git
 //Git command line client
 GIT_EXECUTABLE:FILEPATH=/usr/bin/git
 
+//Path to a library.
+GSL_CBLAS_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libgslcblas.so
+
+//Path to a library.
+GSL_CBLAS_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libgslcblas.so
+
+//Path to a file.
+GSL_INCLUDE_DIR:PATH=/usr/include
+
+//Path to a library.
+GSL_LIBRARY:FILEPATH=/usr/lib/x86_64-linux-gnu/libgsl.so
+
+//Path to a library.
+GSL_LIBRARY_DEBUG:FILEPATH=/usr/lib/x86_64-linux-gnu/libgsl.so
+
+GSL_ROOT_DIR:STRING=/usr
+
 //Use Abseil and RE2. Requires Abseil and RE2 to be separately
 // added to the build.
 GTEST_HAS_ABSL:BOOL=OFF
@@ -395,6 +412,12 @@ GTEST_HAS_ABSL:BOOL=OFF
 //Enable installation of googletest. (Projects embedding googletest
 // may want to turn this OFF.)
 INSTALL_GTEST:BOOL=ON
+
+//Arguments to supply to pkg-config
+PKG_CONFIG_ARGN:STRING=
+
+//pkg-config executable
+PKG_CONFIG_EXECUTABLE:FILEPATH=/usr/bin/pkg-config
 
 //Path to a library.
 URING_LIB:FILEPATH=/usr/lib/x86_64-linux-gnu/liburing.so
@@ -459,6 +482,15 @@ gtest_force_shared_crt:BOOL=ON
 
 //Build gtest with internal symbols hidden in shared libraries.
 gtest_hide_internal_symbols:BOOL=OFF
+
+//Path to a library.
+pkgcfg_lib_GSL_gsl:FILEPATH=/usr/lib/x86_64-linux-gnu/libgsl.so
+
+//Path to a library.
+pkgcfg_lib_GSL_gslcblas:FILEPATH=/usr/lib/x86_64-linux-gnu/libgslcblas.so
+
+//Path to a library.
+pkgcfg_lib_GSL_m:FILEPATH=/usr/lib/x86_64-linux-gnu/libm.so
 
 //Value Computed by CMake
 vectordb_BINARY_DIR:STATIC=/home/zcq/VDB/VectorRetrival/build-bench-only
@@ -653,6 +685,8 @@ CMAKE_TAPI-ADVANCED:INTERNAL=1
 CMAKE_UNAME:INTERNAL=/usr/bin/uname
 //ADVANCED property for variable: CMAKE_VERBOSE_MAKEFILE
 CMAKE_VERBOSE_MAKEFILE-ADVANCED:INTERNAL=1
+//Details about finding GSL
+FIND_PACKAGE_MESSAGE_DETAILS_GSL:INTERNAL=[/usr/include][/usr/lib/x86_64-linux-gnu/libgsl.so][/usr/lib/x86_64-linux-gnu/libgslcblas.so][v2.7.1()]
 //Details about finding Python3
 FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/usr/bin/python3][cfound components: Interpreter ][v3.12.3()]
 //Details about finding Threads
@@ -663,8 +697,61 @@ FLATBUFFERS_HAS_STRTOF_L:INTERNAL=1
 FLATBUFFERS_HAS_STRTOULL_L:INTERNAL=1
 //ADVANCED property for variable: GIT_EXECUTABLE
 GIT_EXECUTABLE-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GSL_CBLAS_LIBRARY
+GSL_CBLAS_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GSL_CBLAS_LIBRARY_DEBUG
+GSL_CBLAS_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+GSL_CFLAGS:INTERNAL=-I/usr/include
+GSL_CFLAGS_I:INTERNAL=
+GSL_CFLAGS_OTHER:INTERNAL=
+GSL_FOUND:INTERNAL=1
+GSL_INCLUDEDIR:INTERNAL=/usr/include
+//ADVANCED property for variable: GSL_INCLUDE_DIR
+GSL_INCLUDE_DIR-ADVANCED:INTERNAL=1
+GSL_INCLUDE_DIRS:INTERNAL=/usr/include
+GSL_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lgsl;-lgslcblas;-lm
+GSL_LDFLAGS_OTHER:INTERNAL=
+GSL_LIBDIR:INTERNAL=/usr/lib/x86_64-linux-gnu
+GSL_LIBRARIES:INTERNAL=gsl;gslcblas;m
+//ADVANCED property for variable: GSL_LIBRARY
+GSL_LIBRARY-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: GSL_LIBRARY_DEBUG
+GSL_LIBRARY_DEBUG-ADVANCED:INTERNAL=1
+GSL_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+GSL_LIBS:INTERNAL=
+GSL_LIBS_L:INTERNAL=
+GSL_LIBS_OTHER:INTERNAL=
+GSL_LIBS_PATHS:INTERNAL=
+GSL_MODULE_NAME:INTERNAL=gsl
+GSL_PREFIX:INTERNAL=/usr
+//ADVANCED property for variable: GSL_ROOT_DIR
+GSL_ROOT_DIR-ADVANCED:INTERNAL=1
+GSL_STATIC_CFLAGS:INTERNAL=-I/usr/include
+GSL_STATIC_CFLAGS_I:INTERNAL=
+GSL_STATIC_CFLAGS_OTHER:INTERNAL=
+GSL_STATIC_INCLUDE_DIRS:INTERNAL=/usr/include
+GSL_STATIC_LDFLAGS:INTERNAL=-L/usr/lib/x86_64-linux-gnu;-lgsl;-lgslcblas;-lm
+GSL_STATIC_LDFLAGS_OTHER:INTERNAL=
+GSL_STATIC_LIBDIR:INTERNAL=
+GSL_STATIC_LIBRARIES:INTERNAL=gsl;gslcblas;m
+GSL_STATIC_LIBRARY_DIRS:INTERNAL=/usr/lib/x86_64-linux-gnu
+GSL_STATIC_LIBS:INTERNAL=
+GSL_STATIC_LIBS_L:INTERNAL=
+GSL_STATIC_LIBS_OTHER:INTERNAL=
+GSL_STATIC_LIBS_PATHS:INTERNAL=
+//ADVANCED property for variable: GSL_VERSION
+GSL_VERSION-ADVANCED:INTERNAL=1
+GSL_VERSION:INTERNAL=2.7.1
+GSL_gsl_INCLUDEDIR:INTERNAL=
+GSL_gsl_LIBDIR:INTERNAL=
+GSL_gsl_PREFIX:INTERNAL=
+GSL_gsl_VERSION:INTERNAL=
 //Have symbol realpath
 HAVE_REALPATH:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_ARGN
+PKG_CONFIG_ARGN-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: PKG_CONFIG_EXECUTABLE
+PKG_CONFIG_EXECUTABLE-ADVANCED:INTERNAL=1
 //linker supports push/pop state
 _CMAKE_LINKER_PUSHPOP_STATE_SUPPORTED:INTERNAL=TRUE
 //CMAKE_INSTALL_PREFIX during last run
@@ -680,6 +767,8 @@ _Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;32;;cpython-312-x86_64
 _Python3_INTERPRETER_SIGNATURE:INTERNAL=4c8bfa8951e99fa32e4000a94f8c04a2
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
+__pkg_config_arguments_GSL:INTERNAL=QUIET;gsl
+__pkg_config_checked_GSL:INTERNAL=1
 cmake_package_name:INTERNAL=GTest
 generated_dir:INTERNAL=/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googletest/generated
 //ADVANCED property for variable: gmock_build_tests
@@ -694,5 +783,12 @@ gtest_disable_pthreads-ADVANCED:INTERNAL=1
 gtest_force_shared_crt-ADVANCED:INTERNAL=1
 //ADVANCED property for variable: gtest_hide_internal_symbols
 gtest_hide_internal_symbols-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_GSL_gsl
+pkgcfg_lib_GSL_gsl-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_GSL_gslcblas
+pkgcfg_lib_GSL_gslcblas-ADVANCED:INTERNAL=1
+//ADVANCED property for variable: pkgcfg_lib_GSL_m
+pkgcfg_lib_GSL_m-ADVANCED:INTERNAL=1
+prefix_result:INTERNAL=/usr/lib/x86_64-linux-gnu
 targets_export_name:INTERNAL=GTestTargets
 

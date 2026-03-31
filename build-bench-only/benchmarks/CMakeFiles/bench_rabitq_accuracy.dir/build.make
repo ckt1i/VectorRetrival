@@ -97,9 +97,12 @@ benchmarks/bench_rabitq_accuracy: libvdb_io.a
 benchmarks/bench_rabitq_accuracy: libvdb_storage.a
 benchmarks/bench_rabitq_accuracy: libvdb_columns.a
 benchmarks/bench_rabitq_accuracy: libvdb_codec.a
+benchmarks/bench_rabitq_accuracy: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_rabitq_accuracy: libvdb_crc.a
 benchmarks/bench_rabitq_accuracy: libvdb_rabitq.a
 benchmarks/bench_rabitq_accuracy: libvdb_simd.a
-benchmarks/bench_rabitq_accuracy: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_rabitq_accuracy: /usr/lib/x86_64-linux-gnu/libgsl.so
+benchmarks/bench_rabitq_accuracy: /usr/lib/x86_64-linux-gnu/libgslcblas.so
 benchmarks/bench_rabitq_accuracy: benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bench_rabitq_accuracy"
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/bench_rabitq_accuracy.dir/link.txt --verbose=$(VERBOSE)

@@ -10,6 +10,7 @@ set(CMAKE_DEPENDS_LANGUAGES
 set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp" "CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o" "gcc" "CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/io/npy_reader.cpp" "CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o" "gcc" "CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o.d"
+  "/home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp" "CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o" "gcc" "CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o.d"
   )
 
 # Targets to which this target links which contain Fortran sources.

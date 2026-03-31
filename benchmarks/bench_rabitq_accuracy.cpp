@@ -1,14 +1,17 @@
-/// bench_rabitq_accuracy.cpp — Measure RaBitQ 1-bit distance estimation accuracy.
+/// bench_rabitq_accuracy.cpp — Measure RaBitQ M-bit distance estimation accuracy.
 ///
 /// For each query × each database vector:
 ///   - Compute exact L2² distance
-///   - Compute RaBitQ estimated distance (with correct norm)
+///   - Compute RaBitQ estimated distance (Stage 1: popcount, Stage 2: M-bit LUT)
 ///   - Compare and report error statistics
 ///
-/// Also evaluates SafeIn/SafeOut classification accuracy.
+/// Supports two-stage SafeIn/SafeOut classification:
+///   - Stage 1: MSB-plane popcount (same as 1-bit) with margin_s1
+///   - Stage 2: M-bit LUT scan (only for Uncertain from S1) with margin_s2
+///   - margin_s2 = margin_s1 / 2^(M-1)
 ///
 /// Usage:
-///   bench_rabitq_accuracy [--dataset /path/to/coco_1k] [--queries N] [--nlist K]
+///   bench_rabitq_accuracy [--dataset /path/to/coco_1k] [--queries N] [--nlist K] [--bits M]
 
 #include <algorithm>
 #include <chrono>
@@ -144,16 +147,19 @@ int main(int argc, char* argv[]) {
     uint32_t nlist = static_cast<uint32_t>(GetIntArg(argc, argv, "--nlist", 32));
     int q_limit = GetIntArg(argc, argv, "--queries", 100);
     uint32_t top_k = static_cast<uint32_t>(GetIntArg(argc, argv, "--topk", 10));
-    uint32_t p_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 90));
-    uint32_t p_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps-ip", 95));
+    uint32_t p_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-dk", 99));
+    uint32_t p_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--p-for-eps-ip", 99));
     uint32_t samples_for_dk = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-dk", 100));
     uint32_t samples_for_eps_ip = static_cast<uint32_t>(GetIntArg(argc, argv, "--samples-for-eps-ip", 100));
+    uint8_t bits = static_cast<uint8_t>(GetIntArg(argc, argv, "--bits", 1));
+    std::string centroids_path = GetArg(argc, argv, "--centroids", "");
+    std::string assignments_path = GetArg(argc, argv, "--assignments", "");
 
     // Fallback: --base/--query not specified → derive from --dataset
     if (base_path.empty())  base_path  = data_dir + "/image_embeddings.npy";
     if (query_path.empty()) query_path = data_dir + "/query_embeddings.npy";
 
-    Log("=== RaBitQ Accuracy Benchmark ===\n");
+    Log("=== RaBitQ Accuracy Benchmark (bits=%u) ===\n", bits);
     Log("Base:  %s\n", base_path.c_str());
     Log("Query: %s\n", query_path.c_str());
 
@@ -181,19 +187,53 @@ int main(int argc, char* argv[]) {
 
     Log("  N=%u, Q=%u, dim=%u\n\n", N, Q, dim);
 
-    // ================================================================
+    // ================================================================ 
     // Phase 2: K-Means clustering + RaBitQ encoding
     // ================================================================
-    Log("[Phase 2] K-Means (K=%u) + RaBitQ encoding...\n", nlist);
-
     std::vector<float> centroids;
     std::vector<uint32_t> assignments;
-    KMeans(img.data.data(), N, dim, nlist, 20, 42, centroids, assignments);
+
+    if (!centroids_path.empty() && !assignments_path.empty()) {
+        Log("[Phase 2] Loading precomputed centroids + assignments...\n");
+        auto c_or = io::LoadVectors(centroids_path);
+        if (!c_or.ok()) {
+            std::fprintf(stderr, "Failed to load centroids: %s\n",
+                         c_or.status().ToString().c_str());
+            return 1;
+        }
+        auto& c = c_or.value();
+        if (c.cols != dim) {
+            std::fprintf(stderr, "Centroid dim mismatch: %u vs %u\n", c.cols, dim);
+            return 1;
+        }
+        nlist = c.rows;
+        centroids.assign(c.data.begin(), c.data.end());
+
+        auto a_or = io::LoadIvecs(assignments_path);
+        if (!a_or.ok()) {
+            std::fprintf(stderr, "Failed to load assignments: %s\n",
+                         a_or.status().ToString().c_str());
+            return 1;
+        }
+        auto& a = a_or.value();
+        if (a.rows != N) {
+            std::fprintf(stderr, "Assignment count mismatch: %u vs %u\n", a.rows, N);
+            return 1;
+        }
+        assignments.resize(N);
+        for (uint32_t i = 0; i < N; ++i) {
+            assignments[i] = static_cast<uint32_t>(a.data[i]);
+        }
+        Log("  Loaded K=%u centroids, %u assignments.\n", nlist, N);
+    } else {
+        Log("[Phase 2] K-Means (K=%u) + RaBitQ encoding...\n", nlist);
+        KMeans(img.data.data(), N, dim, nlist, 20, 42, centroids, assignments);
+    }
 
     RotationMatrix rotation(dim);
     rotation.GenerateRandom(42);
-    RaBitQEncoder encoder(dim, rotation);
-    RaBitQEstimator estimator(dim);
+    RaBitQEncoder encoder(dim, rotation, bits);
+    RaBitQEstimator estimator(dim, bits);
 
     // Encode each vector with its cluster centroid
     std::vector<RaBitQCode> codes(N);
@@ -217,7 +257,7 @@ int main(int argc, char* argv[]) {
     }
 
     const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
-    const uint32_t num_words = (dim + 63) / 64;
+    const uint32_t num_words = (dim + 63) / 64;  // words per plane (MSB only)
 
     // Per-cluster r_max
     std::vector<float> per_cluster_r_max(nlist, 0.0f);
@@ -283,7 +323,7 @@ int main(int argc, char* argv[]) {
 
     Log("  ε_ip = %.6f (P%u of %zu samples)\n",
         eps_ip, p_for_eps_ip, ip_errors.size());
-
+    /*
     // Print per-cluster statistics table
     Log("\n  Per-Cluster Statistics:\n");
     Log("  %-10s %-14s %-12s\n", "Cluster", "Num Vectors", "r_max");
@@ -293,7 +333,7 @@ int main(int argc, char* argv[]) {
             per_cluster_r_max[k]);
     }
     Log("\n");
-
+    */
     // ================================================================
     // Phase 3: Calibrate d_k
     // ================================================================
@@ -312,17 +352,31 @@ int main(int argc, char* argv[]) {
         Q, N);
 
     // Accumulators
-    std::vector<float> all_abs_errors;
+    std::vector<float> all_abs_errors;     // Stage 1 errors
     std::vector<float> all_rel_errors;
+    std::vector<float> all_abs_errors_s2;  // Stage 2 errors (bits > 1)
+    std::vector<float> all_rel_errors_s2;
     float max_abs_error = 0.0f;
 
-    // Recall accumulators
+    // Recall accumulators — Stage 1 (popcount ranking)
     uint64_t recall_hit_1 = 0, recall_hit_5 = 0, recall_hit_10 = 0;
+    // Recall accumulators — Stage 2 (multi-bit ranking, bits > 1)
+    uint64_t s2_recall_hit_1 = 0, s2_recall_hit_5 = 0, s2_recall_hit_10 = 0;
 
-    // SafeIn/SafeOut classification accuracy
-    uint64_t total_safe_in = 0, total_safe_out = 0, total_uncertain = 0;
-    uint64_t false_safe_in = 0;   // Classified SafeIn but not in true top-K
-    uint64_t false_safe_out = 0;  // Classified SafeOut but IS in true top-K
+    // Stage 1 classification
+    uint64_t s1_safe_in = 0, s1_safe_out = 0, s1_uncertain = 0;
+    uint64_t s1_false_safe_in = 0, s1_false_safe_out = 0;
+
+    // Stage 2 classification (only for bits > 1, applied to S1 Uncertain)
+    uint64_t s2_safe_in = 0, s2_safe_out = 0, s2_uncertain = 0;
+    uint64_t s2_false_safe_in = 0, s2_false_safe_out = 0;
+
+    // Final (after both stages) classification
+    uint64_t final_safe_in = 0, final_safe_out = 0, final_uncertain = 0;
+    uint64_t final_false_safe_in = 0, final_false_safe_out = 0;
+
+    // Margin divisor for Stage 2: margin_s2 = margin_s1 / 2^(M-1)
+    const float margin_s2_divisor = static_cast<float>(1u << (bits - 1));
 
     auto t0 = std::chrono::steady_clock::now();
 
@@ -335,16 +389,31 @@ int main(int argc, char* argv[]) {
             exact[i] = {simd::L2Sqr(q_vec, img.data.data() + static_cast<size_t>(i) * dim, dim), i};
         }
 
-        // RaBitQ estimated distances (using the vector's assigned cluster centroid)
+        // PreparedQuery per cluster (cached for this query)
+        std::vector<PreparedQuery> pqs(nlist);
+        for (uint32_t k = 0; k < nlist; ++k) {
+            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
+            pqs[k] = estimator.PrepareQuery(q_vec, centroid, rotation);
+        }
+
+        // RaBitQ Stage 1 estimated distances
         std::vector<std::pair<float, uint32_t>> rabitq_dists(N);
         for (uint32_t i = 0; i < N; ++i) {
             uint32_t k = assignments[i];
-            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
-            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
-            rabitq_dists[i] = {estimator.EstimateDistance(pq, codes[i]), i};
+            rabitq_dists[i] = {estimator.EstimateDistance(pqs[k], codes[i]), i};
         }
 
-        // Distance error statistics
+        // Stage 2 estimated distances (only when bits > 1)
+        std::vector<float> rabitq_dists_s2(N, 0.0f);
+        if (bits > 1) {
+            for (uint32_t i = 0; i < N; ++i) {
+                uint32_t k = assignments[i];
+                rabitq_dists_s2[i] = estimator.EstimateDistanceMultiBit(
+                    pqs[k], codes[i]);
+            }
+        }
+
+        // Distance error statistics — Stage 1
         for (uint32_t i = 0; i < N; ++i) {
             float abs_err = std::abs(rabitq_dists[i].first - exact[i].first);
             all_abs_errors.push_back(abs_err);
@@ -352,6 +421,17 @@ int main(int argc, char* argv[]) {
 
             if (exact[i].first > 1e-6f) {
                 all_rel_errors.push_back(abs_err / exact[i].first);
+            }
+        }
+
+        // Distance error statistics — Stage 2 (bits > 1)
+        if (bits > 1) {
+            for (uint32_t i = 0; i < N; ++i) {
+                float abs_err = std::abs(rabitq_dists_s2[i] - exact[i].first);
+                all_abs_errors_s2.push_back(abs_err);
+                if (exact[i].first > 1e-6f) {
+                    all_rel_errors_s2.push_back(abs_err / exact[i].first);
+                }
             }
         }
 
@@ -377,32 +457,93 @@ int main(int argc, char* argv[]) {
         recall_hit_5 += count_hits(5);
         recall_hit_10 += count_hits(10);
 
-        // SafeIn/SafeOut classification accuracy (dynamic margin)
-        // Cache norm_qc per cluster for this query
-        std::vector<float> margin_per_cluster(nlist);
+        // Stage 2 recall (ranking by multi-bit distance)
+        if (bits > 1) {
+            std::vector<std::pair<float, uint32_t>> s2_ranked(N);
+            for (uint32_t i = 0; i < N; ++i) {
+                s2_ranked[i] = {rabitq_dists_s2[i], i};
+            }
+            std::partial_sort(s2_ranked.begin(),
+                              s2_ranked.begin() + top_k,
+                              s2_ranked.end());
+            auto count_hits_s2 = [&](uint32_t k_val) -> uint32_t {
+                uint32_t hits = 0;
+                for (uint32_t i = 0; i < std::min(k_val, top_k); ++i) {
+                    if (true_topk_set.count(s2_ranked[i].second)) hits++;
+                }
+                return hits;
+            };
+            s2_recall_hit_1 += (count_hits_s2(1) > 0) ? 1 : 0;
+            s2_recall_hit_5 += count_hits_s2(5);
+            s2_recall_hit_10 += count_hits_s2(10);
+        }
+
+        // Two-stage SafeIn/SafeOut classification
+        // Compute per-cluster margins (S1 and S2)
+        std::vector<float> margin_s1_per_cluster(nlist);
         ConANN conann(eps_ip, d_k);
         for (uint32_t k = 0; k < nlist; ++k) {
-            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
-            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
-            margin_per_cluster[k] = 2.0f * per_cluster_r_max[k] * pq.norm_qc * eps_ip;
+            margin_s1_per_cluster[k] = 2.0f * per_cluster_r_max[k] *
+                                        pqs[k].norm_qc * eps_ip;
         }
+
         for (uint32_t i = 0; i < N; ++i) {
             uint32_t vec_id = rabitq_dists[i].second;
             uint32_t k = assignments[vec_id];
-            ResultClass rc = conann.Classify(rabitq_dists[i].first, margin_per_cluster[k]);
+            float margin_s1 = margin_s1_per_cluster[k];
             bool is_true_topk = true_topk_set.count(vec_id) > 0;
 
-            switch (rc) {
+            // Stage 1 classification
+            ResultClass rc_s1 = conann.Classify(rabitq_dists[i].first, margin_s1);
+            switch (rc_s1) {
                 case ResultClass::SafeIn:
-                    total_safe_in++;
-                    if (!is_true_topk) false_safe_in++;
+                    s1_safe_in++;
+                    if (!is_true_topk) s1_false_safe_in++;
                     break;
                 case ResultClass::SafeOut:
-                    total_safe_out++;
-                    if (is_true_topk) false_safe_out++;
+                    s1_safe_out++;
+                    if (is_true_topk) s1_false_safe_out++;
                     break;
                 case ResultClass::Uncertain:
-                    total_uncertain++;
+                    s1_uncertain++;
+                    break;
+            }
+
+            // Final classification = S1 result by default
+            ResultClass rc_final = rc_s1;
+
+            // Stage 2: only for S1-Uncertain when bits > 1
+            if (rc_s1 == ResultClass::Uncertain && bits > 1) {
+                float margin_s2 = margin_s1 / margin_s2_divisor;
+                ResultClass rc_s2 = conann.Classify(rabitq_dists_s2[vec_id], margin_s2);
+                switch (rc_s2) {
+                    case ResultClass::SafeIn:
+                        s2_safe_in++;
+                        if (!is_true_topk) s2_false_safe_in++;
+                        break;
+                    case ResultClass::SafeOut:
+                        s2_safe_out++;
+                        if (is_true_topk) s2_false_safe_out++;
+                        break;
+                    case ResultClass::Uncertain:
+                        s2_uncertain++;
+                        break;
+                }
+                rc_final = rc_s2;
+            }
+
+            // Final statistics
+            switch (rc_final) {
+                case ResultClass::SafeIn:
+                    final_safe_in++;
+                    if (!is_true_topk) final_false_safe_in++;
+                    break;
+                case ResultClass::SafeOut:
+                    final_safe_out++;
+                    if (is_true_topk) final_false_safe_out++;
+                    break;
+                case ResultClass::Uncertain:
+                    final_uncertain++;
                     break;
             }
         }
@@ -424,12 +565,28 @@ int main(int argc, char* argv[]) {
     for (float e : all_rel_errors) mean_rel += e;
     mean_rel /= static_cast<float>(all_rel_errors.size());
 
-    Log("\n=== Distance Error ===\n");
+    Log("\n=== Stage 1 Distance Error (popcount) ===\n");
     Log("  Mean absolute error:     %.6f\n", mean_abs);
     Log("  Max absolute error:      %.6f\n", max_abs_error);
     Log("  Mean relative error:     %.6f\n", mean_rel);
     Log("  P95 relative error:      %.6f\n", Percentile(all_rel_errors, 0.95f));
     Log("  P99 relative error:      %.6f\n", Percentile(all_rel_errors, 0.99f));
+
+    if (bits > 1) {
+        float mean_abs_s2 = 0.0f;
+        for (float e : all_abs_errors_s2) mean_abs_s2 += e;
+        mean_abs_s2 /= static_cast<float>(all_abs_errors_s2.size());
+
+        float mean_rel_s2 = 0.0f;
+        for (float e : all_rel_errors_s2) mean_rel_s2 += e;
+        mean_rel_s2 /= static_cast<float>(all_rel_errors_s2.size());
+
+        Log("\n=== Stage 2 Distance Error (%u-bit LUT) ===\n", bits);
+        Log("  Mean absolute error:     %.6f\n", mean_abs_s2);
+        Log("  Mean relative error:     %.6f\n", mean_rel_s2);
+        Log("  P95 relative error:      %.6f\n", Percentile(all_rel_errors_s2, 0.95f));
+        Log("  P99 relative error:      %.6f\n", Percentile(all_rel_errors_s2, 0.99f));
+    }
 
     float recall_1 = static_cast<float>(recall_hit_1) / static_cast<float>(Q);
     float recall_5 = static_cast<float>(recall_hit_5) /
@@ -437,37 +594,68 @@ int main(int argc, char* argv[]) {
     float recall_10 = static_cast<float>(recall_hit_10) /
                       static_cast<float>(Q * std::min(10u, top_k));
 
-    Log("\n=== Ranking Accuracy (RaBitQ brute-force vs exact brute-force) ===\n");
+    Log("\n=== Stage 1 Ranking (popcount brute-force vs exact) ===\n");
     Log("  recall@1:                %.4f\n", recall_1);
     Log("  recall@5:                %.4f\n", recall_5);
     Log("  recall@10:               %.4f\n", recall_10);
 
-    uint64_t total_classified = total_safe_in + total_safe_out + total_uncertain;
-    Log("\n=== SafeIn/SafeOut Classification (per-cluster epsilon, d_k=%.4f) ===\n",
-        d_k);
-    Log("  Total classified:        %lu\n", total_classified);
-    Log("  SafeIn:                  %lu (%.2f%%)\n",
-        total_safe_in,
-        100.0 * static_cast<double>(total_safe_in) / static_cast<double>(total_classified));
-    Log("  SafeOut:                 %lu (%.2f%%)\n",
-        total_safe_out,
-        100.0 * static_cast<double>(total_safe_out) / static_cast<double>(total_classified));
-    Log("  Uncertain:               %lu (%.2f%%)\n",
-        total_uncertain,
-        100.0 * static_cast<double>(total_uncertain) / static_cast<double>(total_classified));
-    Log("\n");
-    Log("  False SafeIn:            %lu / %lu (%.4f%%)  [not top-K but classified SafeIn]\n",
-        false_safe_in, total_safe_in,
-        total_safe_in > 0
-            ? 100.0 * static_cast<double>(false_safe_in) / static_cast<double>(total_safe_in)
-            : 0.0);
-    Log("  False SafeOut:           %lu / %lu (%.4f%%)  [true top-K but classified SafeOut !!!]\n",
-        false_safe_out, total_safe_out,
-        total_safe_out > 0
-            ? 100.0 * static_cast<double>(false_safe_out) / static_cast<double>(total_safe_out)
-            : 0.0);
-    Log("  False SafeOut (abs):     %lu / %lu queries × top_%u = %lu total top-K checks\n",
-        false_safe_out, Q, top_k, static_cast<uint64_t>(Q) * top_k);
+    if (bits > 1) {
+        float s2_recall_1 = static_cast<float>(s2_recall_hit_1) / static_cast<float>(Q);
+        float s2_recall_5 = static_cast<float>(s2_recall_hit_5) /
+                            static_cast<float>(Q * std::min(5u, top_k));
+        float s2_recall_10 = static_cast<float>(s2_recall_hit_10) /
+                             static_cast<float>(Q * std::min(10u, top_k));
+
+        Log("\n=== Stage 2 Ranking (%u-bit brute-force vs exact) ===\n", bits);
+        Log("  recall@1:                %.4f\n", s2_recall_1);
+        Log("  recall@5:                %.4f\n", s2_recall_5);
+        Log("  recall@10:               %.4f\n", s2_recall_10);
+    }
+
+    // --- Stage 1 classification ---
+    uint64_t s1_total = s1_safe_in + s1_safe_out + s1_uncertain;
+    auto pct = [](uint64_t num, uint64_t den) -> double {
+        return den > 0 ? 100.0 * static_cast<double>(num) / static_cast<double>(den) : 0.0;
+    };
+
+    Log("\n=== Stage 1 Classification (popcount, d_k=%.4f, ε_ip=%.6f) ===\n",
+        d_k, eps_ip);
+    Log("  Total:                   %lu\n", s1_total);
+    Log("  SafeIn:                  %lu (%.2f%%)\n", s1_safe_in, pct(s1_safe_in, s1_total));
+    Log("  SafeOut:                 %lu (%.2f%%)\n", s1_safe_out, pct(s1_safe_out, s1_total));
+    Log("  Uncertain:               %lu (%.2f%%)\n", s1_uncertain, pct(s1_uncertain, s1_total));
+    Log("  False SafeIn:            %lu / %lu (%.4f%%)\n",
+        s1_false_safe_in, s1_safe_in, pct(s1_false_safe_in, s1_safe_in));
+    Log("  False SafeOut:           %lu / %lu (%.4f%%)\n",
+        s1_false_safe_out, s1_safe_out, pct(s1_false_safe_out, s1_safe_out));
+
+    // --- Stage 2 classification (only when bits > 1) ---
+    if (bits > 1) {
+        uint64_t s2_total = s2_safe_in + s2_safe_out + s2_uncertain;
+        Log("\n=== Stage 2 Classification (%u-bit LUT, margin_s2 = margin_s1 / %g) ===\n",
+            bits, static_cast<double>(margin_s2_divisor));
+        Log("  Input (S1 Uncertain):    %lu\n", s1_uncertain);
+        Log("  SafeIn:                  %lu (%.2f%%)\n", s2_safe_in, pct(s2_safe_in, s2_total));
+        Log("  SafeOut:                 %lu (%.2f%%)\n", s2_safe_out, pct(s2_safe_out, s2_total));
+        Log("  Uncertain:               %lu (%.2f%%)\n", s2_uncertain, pct(s2_uncertain, s2_total));
+        Log("  False SafeIn:            %lu / %lu (%.4f%%)\n",
+            s2_false_safe_in, s2_safe_in, pct(s2_false_safe_in, s2_safe_in));
+        Log("  False SafeOut:           %lu / %lu (%.4f%%)\n",
+            s2_false_safe_out, s2_safe_out, pct(s2_false_safe_out, s2_safe_out));
+    }
+
+    // --- Final (after both stages) ---
+    uint64_t final_total = final_safe_in + final_safe_out + final_uncertain;
+    Log("\n=== Final Classification (after S1%s) ===\n",
+        bits > 1 ? "+S2" : "");
+    Log("  Total:                   %lu\n", final_total);
+    Log("  SafeIn:                  %lu (%.2f%%)\n", final_safe_in, pct(final_safe_in, final_total));
+    Log("  SafeOut:                 %lu (%.2f%%)\n", final_safe_out, pct(final_safe_out, final_total));
+    Log("  Uncertain:               %lu (%.2f%%)\n", final_uncertain, pct(final_uncertain, final_total));
+    Log("  False SafeIn:            %lu / %lu (%.4f%%)\n",
+        final_false_safe_in, final_safe_in, pct(final_false_safe_in, final_safe_in));
+    Log("  False SafeOut:           %lu / %lu (%.4f%%)  [!!!]\n",
+        final_false_safe_out, final_safe_out, pct(final_false_safe_out, final_safe_out));
 
     Log("\nDone.\n");
     return 0;
