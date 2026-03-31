@@ -421,11 +421,13 @@ struct RaBitQConfig {
   uint8_t bits = 1;          // Quantization bits: 1, 2, 4, or 8
   uint32_t block_size = 64;  // Block granularity for SIMD (typically 64)
   float c_factor = 5.75f;    // Error bound factor: epsilon = c * 2^(-B/2) / sqrt(D)
+  uint8_t storage_version = 7;  // On-disk format version (7 = dual-region FastScan)
 
   bool operator==(const RaBitQConfig& other) const {
     return bits == other.bits &&
            block_size == other.block_size &&
-           c_factor == other.c_factor;
+           c_factor == other.c_factor &&
+           storage_version == other.storage_version;
   }
   bool operator!=(const RaBitQConfig& other) const { return !(*this == other); }
 };

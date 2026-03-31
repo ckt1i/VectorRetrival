@@ -23,8 +23,8 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 
 if(VDB_USE_AVX512)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl")
-    add_compile_definitions(VDB_USE_AVX512=1)
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma")
+    add_compile_definitions(VDB_USE_AVX512=1 VDB_USE_AVX2=1)
 elseif(VDB_USE_AVX2)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
     add_compile_definitions(VDB_USE_AVX2=1)
@@ -133,6 +133,7 @@ add_library(vdb_simd STATIC
     src/simd/popcount.cpp
     src/simd/transpose.cpp
     src/simd/ip_exrabitq.cpp
+    src/simd/fastscan.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -178,6 +179,7 @@ add_library(vdb_storage STATIC
     src/storage/data_file_writer.cpp
     src/storage/data_file_reader.cpp
     src/storage/cluster_store.cpp
+    src/storage/pack_codes.cpp
     src/storage/segment.cpp
 )
 target_include_directories(vdb_storage PUBLIC

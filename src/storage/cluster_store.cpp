@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "vdb/simd/popcount.h"
+#include "vdb/storage/pack_codes.h"
 
 namespace vdb {
 namespace storage {
@@ -17,7 +18,7 @@ namespace storage {
 
 /// Global file header magic: "VCML" (0x4C4D4356 little-endian)
 static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
-static constexpr uint32_t kFileVersion = 6;
+static constexpr uint32_t kFileVersion = 7;
 
 /// Per-cluster block mini-trailer magic: "VCLB" (0x424C4356 little-endian)
 static constexpr uint32_t kBlockMagic = 0x424C4356;
@@ -63,8 +64,10 @@ ClusterStoreWriter::~ClusterStoreWriter() {
 }
 
 uint64_t ClusterStoreWriter::lookup_entry_size() const {
-    // cluster_id(4) + num_records(4) + epsilon(4) + centroid(dim*4) + block_offset(8) + block_size(8)
-    return 4 + 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8;
+    // cluster_id(4) + num_records(4) + epsilon(4) + centroid(dim*4)
+    // + block_offset(8) + block_size(8)
+    // + num_fastscan_blocks(4) + exrabitq_region_offset(4)  [v7]
+    return 4 + 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8 + 4 + 4;
 }
 
 // ============================================================================
@@ -189,16 +192,59 @@ Status ClusterStoreWriter::WriteVectors(
         return Status::InvalidArgument("Vectors already written");
     }
 
-    for (const auto& code : codes) {
-        const uint32_t code_bytes =
-            static_cast<uint32_t>(code.code.size()) * sizeof(uint64_t);
-        file_.write(reinterpret_cast<const char*>(code.code.data()), code_bytes);
-        file_.write(reinterpret_cast<const char*>(&code.norm), sizeof(float));
-        file_.write(reinterpret_cast<const char*>(&code.sum_x), sizeof(uint32_t));
-        if (!file_.good()) {
-            return Status::IOError("Failed to write RaBitQ code");
+    const uint32_t N = static_cast<uint32_t>(codes.size());
+    const uint32_t dim = info_.dim;
+    const uint32_t num_blocks = (N + 31) / 32;
+    const uint32_t packed_size = FastScanPackedSize(dim);
+    const uint32_t block_bytes = FastScanBlockSize(dim);
+
+    current_num_fastscan_blocks_ = num_blocks;
+
+    // --- Region 1: FastScan Blocks ---
+    std::vector<uint8_t> packed_buf(packed_size, 0);
+
+    for (uint32_t b = 0; b < num_blocks; ++b) {
+        uint32_t start = b * 32;
+        uint32_t count = std::min(32u, N - start);
+
+        // Pack sign bits for this block of 32
+        PackSignBitsForFastScan(&codes[start], count, dim, packed_buf.data());
+
+        // Write packed codes
+        WriteRaw(file_, packed_buf.data(), packed_size);
+
+        // Write norm_oc factors (32 floats, zero-padded for last block)
+        float norms[32] = {0};
+        for (uint32_t j = 0; j < count; ++j) {
+            norms[j] = codes[start + j].norm;
         }
-        current_offset_ += code_bytes + sizeof(float) + sizeof(uint32_t);
+        WriteRaw(file_, norms, 32 * sizeof(float));
+
+        if (!file_.good()) {
+            return Status::IOError("Failed to write FastScan block");
+        }
+        current_offset_ += block_bytes;
+    }
+
+    // Track Region 2 offset within the cluster block
+    current_exrabitq_region_offset_ = static_cast<uint32_t>(
+        current_offset_ - block_start_);
+
+    // --- Region 2: ExRaBitQ Entries (only when bits > 1) ---
+    if (info_.rabitq_config.bits > 1) {
+        for (const auto& code : codes) {
+            if (code.ex_code.size() != dim || code.ex_sign.size() != dim) {
+                return Status::InvalidArgument(
+                    "ExRaBitQ code/sign size mismatch with dim");
+            }
+            WriteRaw(file_, code.ex_code.data(), dim);
+            WriteRaw(file_, code.ex_sign.data(), dim);
+            WriteVal(file_, code.xipnorm);
+            if (!file_.good()) {
+                return Status::IOError("Failed to write ExRaBitQ entry");
+            }
+            current_offset_ += 2 * dim + sizeof(float);
+        }
     }
 
     vectors_written_ = true;
@@ -304,6 +350,8 @@ Status ClusterStoreWriter::EndCluster() {
     auto& entry = info_.lookup_table[current_cluster_index_];
     entry.block_offset = block_start_;
     entry.block_size = current_offset_ - block_start_;
+    entry.num_fastscan_blocks = current_num_fastscan_blocks_;
+    entry.exrabitq_region_offset = current_exrabitq_region_offset_;
 
     // Seek to the lookup table entry and write it
     uint64_t entry_offset = lookup_table_start_ +
@@ -317,6 +365,8 @@ Status ClusterStoreWriter::EndCluster() {
                 static_cast<std::streamsize>(info_.dim * sizeof(float)));
     WriteVal(file_, entry.block_offset);
     WriteVal(file_, entry.block_size);
+    WriteVal(file_, entry.num_fastscan_blocks);
+    WriteVal(file_, entry.exrabitq_region_offset);
 
     if (!file_.good()) {
         return Status::IOError("Failed to patch lookup table entry");
@@ -330,6 +380,8 @@ Status ClusterStoreWriter::EndCluster() {
     vectors_written_ = false;
     address_written_ = false;
     current_address_column_ = EncodedAddressColumn{};
+    current_num_fastscan_blocks_ = 0;
+    current_exrabitq_region_offset_ = 0;
 
     return Status::OK();
 }
@@ -545,6 +597,18 @@ Status ClusterStoreReader::Open(const std::string& path) {
         }
         pos += sizeof(uint64_t);
 
+        if (!PreadValue(fd_, pos, entry.num_fastscan_blocks)) {
+            Close();
+            return Status::IOError("Failed to read num_fastscan_blocks");
+        }
+        pos += sizeof(uint32_t);
+
+        if (!PreadValue(fd_, pos, entry.exrabitq_region_offset)) {
+            Close();
+            return Status::IOError("Failed to read exrabitq_region_offset");
+        }
+        pos += sizeof(uint32_t);
+
         cluster_index_[entry.cluster_id] = i;
     }
 
@@ -688,9 +752,12 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
     }
 
     data.codes_offset = entry.block_offset;
-    data.codes_length = entry.num_records * code_entry_size();
+    // v7: codes_length = Region 1 (FastScan blocks) + Region 2 (ExRaBitQ entries)
+    const uint32_t region1_size = entry.num_fastscan_blocks * fastscan_block_bytes();
+    const uint32_t region2_size = entry.num_records * exrabitq_entry_size();
+    data.codes_length = region1_size + region2_size;
 
-    // Cache full codes region in memory for zero-syscall Probe access
+    // Cache full codes region (Region 1 + Region 2) in memory for zero-syscall Probe access
     if (data.codes_length > 0) {
         data.codes_buffer.resize(data.codes_length);
         if (!PreadBytes(fd_, static_cast<off_t>(data.codes_offset),
@@ -850,13 +917,17 @@ Status ClusterStoreReader::ParseClusterBlock(
         return Status::Corruption("Invalid address block granularity");
     }
 
-    // --- Codes: zero-copy pointer into block_buf ---
-    const uint32_t codes_length = entry.num_records * code_entry_size();
+    // --- v7: Compute region sizes ---
+    const uint32_t fb_size = fastscan_block_bytes();
+    const uint32_t region1_size = entry.num_fastscan_blocks * fb_size;
+    const uint32_t ex_entry_size = exrabitq_entry_size();
+    const uint32_t region2_size = entry.num_records * ex_entry_size;
+    const uint32_t codes_length = region1_size + region2_size;
 
     // --- Validate address payload region ---
     if (codes_length > block_size) {
         return Status::Corruption(
-            "Cluster block shorter than RaBitQ code region");
+            "Cluster block shorter than code regions");
     }
     uint64_t expected_payload_bytes = 0;
     if (num_blocks > 0) {
@@ -893,13 +964,22 @@ Status ClusterStoreReader::ParseClusterBlock(
     VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
         address_layout, address_blocks, entry.num_records, decoded));
 
-    // --- Fill output ---
-    out.codes_start = block_buf.get();
-    out.code_entry_size = code_entry_size();
+    // --- Fill output (v7 dual-region) ---
+    out.fastscan_blocks = block_buf.get();
+    out.fastscan_block_size = fb_size;
+    out.num_fastscan_blocks = entry.num_fastscan_blocks;
+    out.exrabitq_entries = (ex_entry_size > 0)
+        ? block_buf.get() + region1_size
+        : nullptr;
+    out.exrabitq_entry_size = ex_entry_size;
     out.num_records = entry.num_records;
     out.epsilon = entry.epsilon;
     out.decoded_addresses = std::move(decoded);
     out.block_buf = std::move(block_buf);
+
+    // Legacy fields (for backward compat during transition)
+    out.codes_start = out.fastscan_blocks;
+    out.code_entry_size = 0;  // Not meaningful in v7
 
     return Status::OK();
 }
@@ -955,17 +1035,18 @@ Status ClusterStoreReader::LoadCode(uint32_t cluster_id,
         return Status::InvalidArgument("Record index out of range");
     }
 
+    // v7: Extract sign bits from packed FastScan blocks
     const uint32_t nwords = num_code_words();
-    const uint32_t entry_sz = code_entry_size();
+    const uint32_t dim = info_.dim;
+    const uint32_t block_idx = record_idx / 32;
+    const uint32_t vec_in_block = record_idx % 32;
+    const uint32_t fb_bytes = fastscan_block_bytes();
 
-    uint64_t code_offset = it->second.codes_offset +
-                           static_cast<uint64_t>(record_idx) * entry_sz;
+    const uint8_t* block_data = it->second.codes_buffer.data() +
+                                 block_idx * fb_bytes;
 
     out_code.resize(nwords);
-    if (!PreadBytes(fd_, static_cast<off_t>(code_offset),
-                    out_code.data(), nwords * sizeof(uint64_t))) {
-        return Status::IOError("Failed to read RaBitQ code");
-    }
+    UnpackSignBitsFromFastScan(block_data, vec_in_block, dim, out_code.data());
 
     return Status::OK();
 }
@@ -979,24 +1060,49 @@ Status ClusterStoreReader::LoadCodes(
     }
 
     out_codes.resize(indices.size());
+    const uint32_t dim = info_.dim;
+    const uint32_t fb_bytes = fastscan_block_bytes();
+    const uint32_t packed_sz = fastscan_packed_size();
+    const uint32_t ex_entry_sz = exrabitq_entry_size();
+
+    auto cid_it = cluster_index_.find(cluster_id);
+    if (cid_it == cluster_index_.end()) {
+        return Status::InvalidArgument("Cluster not found");
+    }
+    const auto& entry = info_.lookup_table[cid_it->second];
 
     for (size_t i = 0; i < indices.size(); ++i) {
+        // Extract sign code words
         std::vector<uint64_t> code;
         VDB_RETURN_IF_ERROR(LoadCode(cluster_id, indices[i], code));
-
         out_codes[i].code = std::move(code);
 
-        // Read norm + sum_x from cached codes_buffer (v5 format)
+        // Read norm_oc from FastScan block factors
         const auto& cluster_data = loaded_clusters_.at(cluster_id);
-        const uint32_t nwords = num_code_words();
-        const uint32_t entry_sz = code_entry_size();
-        const size_t norm_offset =
-            static_cast<size_t>(indices[i]) * entry_sz + nwords * sizeof(uint64_t);
-        std::memcpy(&out_codes[i].norm,
-                    cluster_data.codes_buffer.data() + norm_offset, sizeof(float));
-        std::memcpy(&out_codes[i].sum_x,
-                    cluster_data.codes_buffer.data() + norm_offset + sizeof(float),
-                    sizeof(uint32_t));
+        uint32_t block_idx = indices[i] / 32;
+        uint32_t vec_in_block = indices[i] % 32;
+        const uint8_t* block_data = cluster_data.codes_buffer.data() +
+                                     block_idx * fb_bytes;
+        const float* norms = reinterpret_cast<const float*>(
+            block_data + packed_sz);
+        out_codes[i].norm = norms[vec_in_block];
+
+        // sum_x = popcount of the sign code
+        out_codes[i].sum_x = 0;
+        for (auto w : out_codes[i].code) {
+            out_codes[i].sum_x += __builtin_popcountll(w);
+        }
+
+        // Read ExRaBitQ fields from Region 2 (if bits > 1)
+        if (ex_entry_sz > 0) {
+            uint32_t region1_size = entry.num_fastscan_blocks * fb_bytes;
+            const uint8_t* ex_ptr = cluster_data.codes_buffer.data() +
+                                     region1_size +
+                                     static_cast<size_t>(indices[i]) * ex_entry_sz;
+            out_codes[i].ex_code.assign(ex_ptr, ex_ptr + dim);
+            out_codes[i].ex_sign.assign(ex_ptr + dim, ex_ptr + 2 * dim);
+            std::memcpy(&out_codes[i].xipnorm, ex_ptr + 2 * dim, sizeof(float));
+        }
     }
 
     return Status::OK();
@@ -1008,12 +1114,15 @@ Status ClusterStoreReader::LoadCodes(
 
 const uint8_t* ClusterStoreReader::GetCodePtr(uint32_t cluster_id,
                                                uint32_t record_idx) const {
+    // v7: Return pointer to the start of the FastScan block containing this vector.
+    // Callers should use ParsedCluster helpers instead for structured access.
     auto it = loaded_clusters_.find(cluster_id);
     if (it == loaded_clusters_.end()) return nullptr;
 
-    const uint32_t entry_sz = code_entry_size();
-    const uint32_t offset = record_idx * entry_sz;
-    if (offset + entry_sz > it->second.codes_buffer.size()) return nullptr;
+    const uint32_t fb_bytes = fastscan_block_bytes();
+    const uint32_t block_idx = record_idx / 32;
+    const uint32_t offset = block_idx * fb_bytes;
+    if (offset + fb_bytes > it->second.codes_buffer.size()) return nullptr;
 
     return it->second.codes_buffer.data() + offset;
 }

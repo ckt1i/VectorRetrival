@@ -8,9 +8,69 @@ namespace vdb {
 namespace simd {
 
 // ============================================================================
+// AVX-512 implementation — VPOPCNTDQ
+// ============================================================================
+#if defined(VDB_USE_AVX512)
+
+uint32_t PopcountXor(const uint64_t* VDB_RESTRICT a,
+                     const uint64_t* VDB_RESTRICT b,
+                     uint32_t num_words) {
+    __m512i acc = _mm512_setzero_si512();
+    uint32_t i = 0;
+
+    for (; i + 8 <= num_words; i += 8) {
+        __m512i va = _mm512_loadu_si512(a + i);
+        __m512i vb = _mm512_loadu_si512(b + i);
+        __m512i xored = _mm512_xor_si512(va, vb);
+        acc = _mm512_add_epi64(acc, _mm512_popcnt_epi64(xored));
+    }
+
+    // Horizontal sum of 8 uint64 lanes
+    __m256i lo256 = _mm512_castsi512_si256(acc);
+    __m256i hi256 = _mm512_extracti64x4_epi64(acc, 1);
+    __m256i sum256 = _mm256_add_epi64(lo256, hi256);
+    __m128i lo128 = _mm256_castsi256_si128(sum256);
+    __m128i hi128 = _mm256_extracti128_si256(sum256, 1);
+    __m128i sum128 = _mm_add_epi64(lo128, hi128);
+    uint64_t total = static_cast<uint64_t>(_mm_extract_epi64(sum128, 0)) +
+                     static_cast<uint64_t>(_mm_extract_epi64(sum128, 1));
+
+    for (; i < num_words; ++i) {
+        total += Popcount64(a[i] ^ b[i]);
+    }
+
+    return static_cast<uint32_t>(total);
+}
+
+uint32_t PopcountTotal(const uint64_t* code, uint32_t num_words) {
+    __m512i acc = _mm512_setzero_si512();
+    uint32_t i = 0;
+
+    for (; i + 8 <= num_words; i += 8) {
+        __m512i v = _mm512_loadu_si512(code + i);
+        acc = _mm512_add_epi64(acc, _mm512_popcnt_epi64(v));
+    }
+
+    __m256i lo256 = _mm512_castsi512_si256(acc);
+    __m256i hi256 = _mm512_extracti64x4_epi64(acc, 1);
+    __m256i sum256 = _mm256_add_epi64(lo256, hi256);
+    __m128i lo128 = _mm256_castsi256_si128(sum256);
+    __m128i hi128 = _mm256_extracti128_si256(sum256, 1);
+    __m128i sum128 = _mm_add_epi64(lo128, hi128);
+    uint64_t total = static_cast<uint64_t>(_mm_extract_epi64(sum128, 0)) +
+                     static_cast<uint64_t>(_mm_extract_epi64(sum128, 1));
+
+    for (; i < num_words; ++i) {
+        total += Popcount64(code[i]);
+    }
+
+    return static_cast<uint32_t>(total);
+}
+
+// ============================================================================
 // AVX2 implementation — VPSHUFB-based popcount
 // ============================================================================
-#ifdef VDB_USE_AVX2
+#elif defined(VDB_USE_AVX2)
 
 namespace {
 

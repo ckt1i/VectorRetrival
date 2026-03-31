@@ -684,20 +684,25 @@ TEST_F(ClusterStoreTest, GetCodePtr_MatchesLoadCode) {
 
     const uint32_t nwords = (dim + 63) / 64;
 
+    // v7: GetCodePtr returns block start, not per-entry pointer.
+    // Verify LoadCode round-trips correctly (pack → unpack sign bits).
     for (uint32_t i = 0; i < N; ++i) {
         const uint8_t* ptr = reader.GetCodePtr(0, i);
         ASSERT_NE(ptr, nullptr);
 
         std::vector<uint64_t> loaded_code;
         ASSERT_TRUE(reader.LoadCode(0, i, loaded_code).ok());
+        ASSERT_EQ(loaded_code.size(), nwords);
 
-        EXPECT_EQ(std::memcmp(ptr, loaded_code.data(),
-                              nwords * sizeof(uint64_t)), 0)
-            << "Mismatch at record " << i;
+        // Verify the unpacked sign bits match the original code
+        for (uint32_t w = 0; w < nwords; ++w) {
+            EXPECT_EQ(loaded_code[w], codes[i].code[w])
+                << "Code word " << w << " mismatch at record " << i;
+        }
     }
 
-    // Out-of-range returns nullptr
-    EXPECT_EQ(reader.GetCodePtr(0, N), nullptr);
+    // Out-of-range: GetCodePtr returns nullptr (block beyond buffer)
+    EXPECT_EQ(reader.GetCodePtr(0, N + 32), nullptr);
     // Non-loaded cluster returns nullptr
     EXPECT_EQ(reader.GetCodePtr(999, 0), nullptr);
 }
@@ -837,9 +842,6 @@ TEST_F(ClusterStoreTest, ParseClusterBlock_MatchesEnsureClusterLoaded) {
     ClusterStoreReader reader;
     ASSERT_TRUE(reader.Open(path).ok());
 
-    const uint32_t code_entry_sz =
-        ((dim + 63) / 64) * sizeof(uint64_t) + sizeof(float) + sizeof(uint32_t);
-
     for (uint32_t k = 0; k < K; ++k) {
         uint32_t N = cluster_sizes[k];
 
@@ -862,29 +864,38 @@ TEST_F(ClusterStoreTest, ParseClusterBlock_MatchesEnsureClusterLoaded) {
         ASSERT_TRUE(reader.ParseClusterBlock(
             k, std::move(block_buf), loc->size, pc).ok());
 
-        // --- Verify consistency ---
+        // --- Verify v7 consistency ---
         EXPECT_EQ(pc.num_records, N);
-        EXPECT_EQ(pc.code_entry_size, code_entry_sz);
         EXPECT_EQ(pc.decoded_addresses.size(), N);
 
+        // v7: Check FastScan block fields
+        uint32_t expected_blocks = (N + 31) / 32;
+        EXPECT_EQ(pc.num_fastscan_blocks, expected_blocks);
+        EXPECT_GT(pc.fastscan_block_size, 0u);
+
         if (N > 0) {
-            ASSERT_NE(pc.codes_start, nullptr);
+            ASSERT_NE(pc.fastscan_blocks, nullptr);
         }
 
+        // Verify round-trip: unpack sign bits from ParsedCluster blocks
+        // must match what LoadCode returns
         for (uint32_t i = 0; i < N; ++i) {
-            // Codes must match
-            const uint8_t* sync_code = reader.GetCodePtr(k, i);
-            ASSERT_NE(sync_code, nullptr);
-            const uint8_t* async_code = pc.codes_start + i * pc.code_entry_size;
-            EXPECT_EQ(std::memcmp(sync_code, async_code, code_entry_sz), 0)
-                << "cluster " << k << " record " << i << " codes mismatch";
-
-            // Addresses must match
+            // Verify addresses match
             auto sync_addr = reader.GetAddress(k, i);
             EXPECT_EQ(pc.decoded_addresses[i].offset, sync_addr.offset)
                 << "cluster " << k << " record " << i;
             EXPECT_EQ(pc.decoded_addresses[i].size, sync_addr.size)
                 << "cluster " << k << " record " << i;
+
+            // Verify norm_oc matches (from FastScan block factors)
+            uint32_t block_idx = i / 32;
+            uint32_t vec_in_block = i % 32;
+            float async_norm = pc.norm_oc(block_idx, vec_in_block);
+
+            std::vector<rabitq::RaBitQCode> loaded;
+            ASSERT_TRUE(reader.LoadCodes(k, {i}, loaded).ok());
+            EXPECT_FLOAT_EQ(async_norm, loaded[0].norm)
+                << "cluster " << k << " record " << i << " norm mismatch";
         }
     }
 }

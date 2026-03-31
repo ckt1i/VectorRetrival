@@ -9,6 +9,8 @@
 #include "vdb/common/distance.h"
 #include "vdb/query/rerank_consumer.h"
 #include "vdb/rabitq/rabitq_estimator.h"
+#include "vdb/simd/fastscan.h"
+#include "vdb/storage/pack_codes.h"
 
 namespace vdb {
 namespace query {
@@ -150,6 +152,7 @@ void OverlapScheduler::ProbeCluster(
 
     rabitq::RaBitQEstimator estimator(index_.dim());
     int dat_fd = index_.segment().data_reader().fd();
+    const uint32_t dim = index_.dim();
 
     ctx.stats().total_probed += pc.num_records;
 
@@ -168,45 +171,44 @@ void OverlapScheduler::ProbeCluster(
         ? est_heap_.front().first
         : index_.conann().d_k();
 
-    const uint32_t batch_size = config_.probe_batch_size;
-    std::vector<float> dists(batch_size);
-    const uint32_t norm_byte_offset = num_words_ * sizeof(uint64_t);
+    // v7: Iterate by FastScan blocks of 32 vectors
+    const uint32_t packed_sz = storage::FastScanPackedSize(dim);
+    alignas(64) float dists[32];
 
-    for (uint32_t offset = 0; offset < pc.num_records; offset += batch_size) {
-        uint32_t actual = std::min(batch_size, pc.num_records - offset);
+    for (uint32_t b = 0; b < pc.num_fastscan_blocks; ++b) {
+        const uint32_t base = b * 32;
+        const uint32_t count = std::min(32u, pc.num_records - base);
 
-        // Zero-copy: read code/norm directly from block_buf, no heap allocation
-        for (uint32_t i = 0; i < actual; ++i) {
-            const auto* entry =
-                pc.codes_start + (offset + i) * pc.code_entry_size;
-            const auto* words = reinterpret_cast<const uint64_t*>(entry);
-            float norm_oc;
-            std::memcpy(&norm_oc, entry + norm_byte_offset, sizeof(float));
-            dists[i] = estimator.EstimateDistanceRaw(
-                pq, words, num_words_, norm_oc);
-        }
+        const uint8_t* block_ptr =
+            pc.fastscan_blocks + b * pc.fastscan_block_size;
+        const float* block_norms = reinterpret_cast<const float*>(
+            block_ptr + packed_sz);
 
-        // Update est_heap_ with ALL RaBitQ estimates (before classify, so
-        // even SafeOut vectors contribute to a tighter dynamic_d_k for the
-        // next cluster).
+        // FastScan batch-32: VPSHUFB accumulation with 14-bit query precision
+        estimator.EstimateDistanceFastScan(
+            pq, block_ptr, block_norms, count, dists);
+
+        // Update est_heap_ with ALL RaBitQ estimates
         if (use_crc_) {
-            for (uint32_t i = 0; i < actual; ++i) {
+            for (uint32_t j = 0; j < count; ++j) {
+                uint32_t global_idx = base + j;
                 if (est_heap_.size() < est_top_k_) {
-                    est_heap_.push_back({dists[i], offset + i});
+                    est_heap_.push_back({dists[j], global_idx});
                     std::push_heap(est_heap_.begin(), est_heap_.end());
-                } else if (dists[i] < est_heap_.front().first) {
+                } else if (dists[j] < est_heap_.front().first) {
                     std::pop_heap(est_heap_.begin(), est_heap_.end());
-                    est_heap_.back() = {dists[i], offset + i};
+                    est_heap_.back() = {dists[j], global_idx};
                     std::push_heap(est_heap_.begin(), est_heap_.end());
                 }
             }
         }
 
-        for (uint32_t i = 0; i < actual; ++i) {
+        for (uint32_t j = 0; j < count; ++j) {
+            uint32_t global_idx = base + j;
             ResultClass rc = use_crc_
-                ? index_.conann().ClassifyAdaptive(dists[i], margin, dynamic_d_k)
-                : index_.conann().Classify(dists[i], margin);
-            AddressEntry addr = pc.decoded_addresses[offset + i];
+                ? index_.conann().ClassifyAdaptive(dists[j], margin, dynamic_d_k)
+                : index_.conann().Classify(dists[j], margin);
+            AddressEntry addr = pc.decoded_addresses[global_idx];
 
             if (rc == ResultClass::SafeOut) {
                 ctx.stats().total_safe_out++;

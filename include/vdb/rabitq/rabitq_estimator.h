@@ -37,6 +37,13 @@ struct PreparedQuery {
 
     // Multi-bit fields
     uint8_t               bits = 1;    // M: quantization bits
+
+    // FastScan fields (populated alongside sign_code in PrepareQuery)
+    std::vector<int16_t>  quant_query;   // 14-bit quantized q' (length = dim)
+    std::vector<uint8_t>  fastscan_lut;  // Packed VPSHUFB LUT (dim*4 bytes + alignment pad)
+    uint8_t*              lut_aligned = nullptr;  // 64-byte aligned pointer into fastscan_lut
+    float                 fs_width = 0.0f;  // Quantization step width
+    int32_t               fs_shift = 0;     // Accumulated v_min shift from BuildFastScanLUT
 };
 
 // ============================================================================
@@ -105,6 +112,22 @@ class RaBitQEstimator {
                                const uint64_t* code_words,
                                uint32_t num_words,
                                float norm_oc) const;
+
+    /// FastScan Stage 1: batch-32 distance estimation using VPSHUFB.
+    ///
+    /// Processes one FastScan block of up to 32 vectors simultaneously.
+    /// Uses 14-bit quantized query for higher precision than PopcountXor.
+    ///
+    /// @param pq           Prepared query (must have fastscan_lut populated)
+    /// @param packed_codes  Packed sign bits in VPSHUFB block-32 layout (dim*4 bytes)
+    /// @param block_norms   Per-vector norm_oc[32] (from FastScan block factors)
+    /// @param count         Actual vectors in this block (1..32)
+    /// @param out_dist      Output: estimated distances (at least 32 floats)
+    void EstimateDistanceFastScan(const PreparedQuery& pq,
+                                   const uint8_t* packed_codes,
+                                   const float* block_norms,
+                                   uint32_t count,
+                                   float* out_dist) const;
 
     /// Stage 2: Estimate distance using full M-bit LUT scan.
     ///

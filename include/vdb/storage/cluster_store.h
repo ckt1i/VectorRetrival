@@ -36,10 +36,13 @@ namespace storage {
 ///   │      centroid[dim],                                │
 ///   │      block_offset, block_size                      │
 ///   ├────────────────────────────────────────────────────┤
-///   │  Per-Cluster Data Blocks (in lookup table order)   │
+///   │  Per-Cluster Data Blocks (v7 dual-region layout)    │
 ///   │    Block[i]:                                        │
-///   │      RaBitQ codes (uint64[nwords] × num_records)   │
-///   │      Address packed data                           │
+///   │      Region 1: FastScan blocks (packed sign codes   │
+///   │                + norm_oc factors, blocks of 32)     │
+///   │      Region 2: ExRaBitQ entries (if bits > 1)       │
+///   │                 ex_code[D] + ex_sign[D] + xipnorm   │
+///   │      Region 3: Address packed data                  │
 ///   │      Block mini-trailer                            │
 ///   └────────────────────────────────────────────────────┘
 ///
@@ -67,6 +70,8 @@ class ClusterStoreWriter {
         std::vector<float> centroid;   // dim floats
         uint64_t block_offset;         // absolute byte offset in .clu
         uint64_t block_size;           // byte length of block
+        uint32_t num_fastscan_blocks = 0;     // v7: ceil(num_records / 32)
+        uint32_t exrabitq_region_offset = 0;  // v7: byte offset within block to Region 2
     };
 
     /// Global metadata for the .clu file.
@@ -152,6 +157,10 @@ class ClusterStoreWriter {
 
     // Current cluster's encoded address column (for mini-trailer)
     EncodedAddressColumn current_address_column_;
+
+    // v7 per-cluster write tracking
+    uint32_t current_num_fastscan_blocks_ = 0;
+    uint32_t current_exrabitq_region_offset_ = 0;
 
     /// Size in bytes of one lookup table entry on disk.
     uint64_t lookup_entry_size() const;
@@ -304,12 +313,21 @@ class ClusterStoreReader {
 
     std::map<uint32_t, ClusterData> loaded_clusters_;
 
-    /// Number of uint64_t words per code
+    /// Number of uint64_t words per code (1-bit sign plane only)
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }
 
-    /// Byte size of one code entry (v5: code_bits + norm(f32) + sum_x(u32))
-    uint32_t code_entry_size() const {
-        return num_code_words() * sizeof(uint64_t) + sizeof(float) + sizeof(uint32_t);
+    /// v7: Bytes of packed sign codes per FastScan block of 32 vectors.
+    /// For 1-bit codes with D dims: D/4 sub-quantizers, packed nibble-interleaved = D*4 bytes.
+    uint32_t fastscan_packed_size() const { return info_.dim * 4; }
+
+    /// v7: Total bytes per FastScan block (packed codes + 32 norm_oc floats).
+    uint32_t fastscan_block_bytes() const { return fastscan_packed_size() + 32 * sizeof(float); }
+
+    /// v7: Bytes per ExRaBitQ entry (ex_code[D] + ex_sign[D] + xipnorm).
+    /// Returns 0 if bits == 1.
+    uint32_t exrabitq_entry_size() const {
+        if (info_.rabitq_config.bits <= 1) return 0;
+        return 2 * info_.dim + sizeof(float);
     }
 };
 

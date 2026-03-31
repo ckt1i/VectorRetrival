@@ -1,6 +1,8 @@
 #include "vdb/simd/bit_unpack.h"
 
-#ifdef VDB_USE_AVX2
+#include <cstring>
+
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
 #include <immintrin.h>
 #endif
 
@@ -45,6 +47,43 @@ void BitUnpackScalar(const uint8_t* VDB_RESTRICT packed,
         bit_pos += bit_width;
     }
 }
+
+// ============================================================================
+// AVX-512 specialized path for bit_width == 1
+// ============================================================================
+#if defined(VDB_USE_AVX512)
+
+void BitUnpack1Bit_AVX512(const uint8_t* VDB_RESTRICT packed,
+                           uint32_t* VDB_RESTRICT       out,
+                           uint32_t                     count) {
+    const __m512i shifts = _mm512_set_epi32(15,14,13,12,11,10,9,8,7,6,5,4,3,2,1,0);
+    const __m512i ones = _mm512_set1_epi32(1);
+
+    const uint32_t full_16 = count >> 4;
+    for (uint32_t b = 0; b < full_16; b++) {
+        uint16_t val;
+        std::memcpy(&val, packed + b * 2, 2);
+        __m512i v = _mm512_set1_epi32(static_cast<int>(val));
+        v = _mm512_srlv_epi32(v, shifts);
+        v = _mm512_and_si512(v, ones);
+        _mm512_storeu_si512(reinterpret_cast<__m512i*>(out + b * 16u), v);
+    }
+
+    // Scalar tail
+    const uint32_t done = full_16 * 16u;
+    const uint32_t remaining = count - done;
+    if (remaining > 0u) {
+        uint32_t bit_pos = done;
+        for (uint32_t i = 0; i < remaining; i++) {
+            uint32_t byte_idx = bit_pos >> 3;
+            uint32_t bit_off = bit_pos & 7u;
+            out[done + i] = (static_cast<uint32_t>(packed[byte_idx]) >> bit_off) & 1u;
+            ++bit_pos;
+        }
+    }
+}
+
+#endif  // VDB_USE_AVX512
 
 // ============================================================================
 // AVX2 specialized path for bit_width == 1
@@ -95,7 +134,12 @@ void BitUnpack(const uint8_t* VDB_RESTRICT packed,
                uint32_t                     count) {
     if (count == 0u) return;
 
-#ifdef VDB_USE_AVX2
+#if defined(VDB_USE_AVX512)
+    if (bit_width == 1u) {
+        BitUnpack1Bit_AVX512(packed, out, count);
+        return;
+    }
+#elif defined(VDB_USE_AVX2)
     if (bit_width == 1u) {
         BitUnpack1Bit_AVX2(packed, out, count);
         return;

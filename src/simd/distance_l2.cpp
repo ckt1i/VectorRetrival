@@ -8,9 +8,35 @@ namespace vdb {
 namespace simd {
 
 // ============================================================================
+// AVX-512 implementation
+// ============================================================================
+#if defined(VDB_USE_AVX512)
+
+float L2Sqr(const float* VDB_RESTRICT a, const float* VDB_RESTRICT b, Dim d) {
+    __m512 sum = _mm512_setzero_ps();
+    uint32_t i = 0;
+
+    for (; i + 16 <= d; i += 16) {
+        __m512 va   = _mm512_loadu_ps(a + i);
+        __m512 vb   = _mm512_loadu_ps(b + i);
+        __m512 diff = _mm512_sub_ps(va, vb);
+        sum = _mm512_fmadd_ps(diff, diff, sum);
+    }
+
+    float result = _mm512_reduce_add_ps(sum);
+
+    for (; i < d; i++) {
+        float diff = a[i] - b[i];
+        result += diff * diff;
+    }
+
+    return result;
+}
+
+// ============================================================================
 // AVX2 implementation
 // ============================================================================
-#ifdef VDB_USE_AVX2
+#elif defined(VDB_USE_AVX2)
 
 namespace {
 

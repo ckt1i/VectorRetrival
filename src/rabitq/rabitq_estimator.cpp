@@ -1,9 +1,11 @@
 #include "vdb/rabitq/rabitq_estimator.h"
+#include "vdb/simd/fastscan.h"
 #include "vdb/simd/ip_exrabitq.h"
 #include "vdb/simd/popcount.h"
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
 
 namespace vdb {
@@ -80,6 +82,24 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
         pq.sum_q += pq.rotated[i];
     }
 
+    // Step 7: FastScan query quantization + LUT construction
+    pq.quant_query.resize(L);
+    pq.fs_width = simd::QuantizeQuery14Bit(
+        pq.rotated.data(), pq.quant_query.data(), dim_);
+
+    // Allocate 64-byte aligned LUT buffer.
+    // Two-plane LUT: lo + hi byte planes, ceil(M/4)*128 bytes = dim*8 bytes.
+    const size_t lut_size = static_cast<size_t>(dim_) * 8;
+    pq.fastscan_lut.resize(lut_size + 63);
+    // Compute 64-byte aligned pointer
+    uintptr_t raw = reinterpret_cast<uintptr_t>(pq.fastscan_lut.data());
+    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
+    pq.lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+    std::memset(pq.lut_aligned, 0, lut_size);
+
+    pq.fs_shift = simd::BuildFastScanLUT(
+        pq.quant_query.data(), pq.lut_aligned, dim_);
+
     return pq;
 }
 
@@ -118,6 +138,43 @@ float RaBitQEstimator::EstimateDistanceRaw(
                     - 2.0f * norm_oc * pq.norm_qc * ip_est;
 
     return std::max(dist_sq, 0.0f);
+}
+
+// ============================================================================
+// EstimateDistanceFastScan — batch-32 VPSHUFB path
+// ============================================================================
+
+void RaBitQEstimator::EstimateDistanceFastScan(
+    const PreparedQuery& pq,
+    const uint8_t* packed_codes,
+    const float* block_norms,
+    uint32_t count,
+    float* out_dist) const {
+    // 1. VPSHUFB accumulation: get raw LUT sums for 32 vectors
+    alignas(64) uint32_t raw_accu[32] = {0};
+    simd::AccumulateBlock(packed_codes, pq.lut_aligned, raw_accu, dim_);
+
+    // 2. De-quantize and compute distances.
+    //
+    // raw_accu[v] = Σ_{d where x[v][d]=1} (quant_q[d] - v_min_per_group)
+    //
+    // After shift + width:
+    //   ip_raw = (raw_accu[v] + fs_shift) * fs_width  ≈  Σ_{x[d]=1} q'[d]
+    //
+    // Inner product estimate (matching EstimateDistanceAccurate):
+    //   ⟨q̄, ô⟩ = (1/√D) * (2*ip_raw - sum_q)
+    //
+    // Distance:
+    //   dist = norm_oc² + norm_qc² - 2*norm_oc*norm_qc*⟨q̄,ô⟩
+
+    for (uint32_t v = 0; v < count; ++v) {
+        float ip_raw = (static_cast<float>(raw_accu[v]) +
+                        static_cast<float>(pq.fs_shift)) * pq.fs_width;
+        float ip_est = (2.0f * ip_raw - pq.sum_q) * inv_sqrt_dim_;
+        float dist_sq = block_norms[v] * block_norms[v] + pq.norm_qc_sq
+                        - 2.0f * block_norms[v] * pq.norm_qc * ip_est;
+        out_dist[v] = std::max(dist_sq, 0.0f);
+    }
 }
 
 // ============================================================================
