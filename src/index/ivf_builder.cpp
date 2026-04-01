@@ -18,8 +18,10 @@
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
+#include "vdb/simd/fastscan.h"
 #include "vdb/simd/popcount.h"
 #include "vdb/storage/address_column.h"
+#include "vdb/storage/pack_codes.h"
 #include "vdb/storage/cluster_store.h"
 #include "vdb/storage/data_file_writer.h"
 
@@ -164,11 +166,12 @@ static float CalibrateEpsilonIp(
     uint32_t K,
     uint32_t max_samples_per_cluster,
     float percentile,
-    uint64_t seed) {
+    uint64_t seed,
+    uint8_t bits = 1) {
 
     const uint32_t num_words = (dim + 63) / 64;
     const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
-    rabitq::RaBitQEstimator estimator(dim);
+    rabitq::RaBitQEstimator estimator(dim, bits);
 
     std::vector<float> ip_errors;
 
@@ -235,6 +238,110 @@ static float CalibrateEpsilonIp(
 }
 
 // ============================================================================
+// CalibrateEpsilonIpFastScan — FastScan-specific IP error bound
+// ============================================================================
+//
+// Same structure as CalibrateEpsilonIp but measures FastScan quantization error
+// instead of popcount error.  FastScan uses 14-bit query quantization + VPSHUFB
+// LUT accumulation, which has lower error than 1-bit popcount.
+
+static float CalibrateEpsilonIpFastScan(
+    const std::vector<std::vector<rabitq::RaBitQCode>>& all_codes,
+    const std::vector<std::vector<uint32_t>>& cluster_members,
+    const float* vectors,
+    const float* centroids,
+    const rabitq::RotationMatrix& rotation,
+    Dim dim,
+    uint32_t K,
+    uint32_t max_samples_per_cluster,
+    float percentile,
+    uint64_t seed,
+    uint8_t bits = 1) {
+
+    const float inv_sqrt_dim = 1.0f / std::sqrt(static_cast<float>(dim));
+    rabitq::RaBitQEstimator estimator(dim, bits);
+    const uint32_t packed_sz = storage::FastScanPackedSize(dim);
+
+    std::vector<float> ip_errors;
+
+    // Temporary buffers for FastScan block packing (reused across iterations)
+    std::vector<uint8_t> packed_codes(packed_sz, 0);
+
+    for (uint32_t k = 0; k < K; ++k) {
+        const auto& members = cluster_members[k];
+        const auto& codes = all_codes[k];
+        const uint32_t n_members = static_cast<uint32_t>(members.size());
+        if (n_members < 2) continue;
+
+        uint32_t n_queries = max_samples_per_cluster;
+        if (n_members < 2 * max_samples_per_cluster) {
+            n_queries = std::max(n_members / 2, 1u);
+        }
+        n_queries = std::min(n_queries, n_members);
+
+        std::vector<uint32_t> indices(n_members);
+        std::iota(indices.begin(), indices.end(), 0u);
+        std::mt19937 rng(seed + k);
+        std::shuffle(indices.begin(), indices.end(), rng);
+
+        const float* centroid = centroids + static_cast<size_t>(k) * dim;
+
+        for (uint32_t q = 0; q < n_queries; ++q) {
+            const uint32_t q_idx = indices[q];
+            const float* query = vectors +
+                static_cast<size_t>(members[q_idx]) * dim;
+
+            auto pq = estimator.PrepareQuery(query, centroid, rotation);
+
+            // Process targets in blocks of 32 for FastScan
+            for (uint32_t t_base = 0; t_base < n_members; t_base += 32) {
+                uint32_t block_count = std::min(32u, n_members - t_base);
+
+                // Pack this block's sign bits
+                storage::PackSignBitsForFastScan(
+                    &codes[t_base], block_count, dim, packed_codes.data());
+
+                // Run VPSHUFB accumulation
+                alignas(64) uint32_t raw_accu[32] = {0};
+                simd::AccumulateBlock(
+                    packed_codes.data(), pq.lut_aligned, raw_accu, dim);
+
+                // For each vector in block, compute FastScan IP and accurate IP
+                for (uint32_t j = 0; j < block_count; ++j) {
+                    uint32_t t = t_base + j;
+                    if (t == q_idx) continue;
+
+                    // FastScan IP estimate
+                    float ip_raw = (static_cast<float>(raw_accu[j]) +
+                                    static_cast<float>(pq.fs_shift)) * pq.fs_width;
+                    float ip_fastscan = (2.0f * ip_raw - pq.sum_q) * inv_sqrt_dim;
+
+                    // Accurate IP: (1/√dim) · Σ rotated_q[i] × (2·bit[i]-1)
+                    const auto& code = codes[t];
+                    float dot = 0.0f;
+                    for (size_t i = 0; i < dim; ++i) {
+                        int bit = (code.code[i / 64] >> (i % 64)) & 1;
+                        float sign = 2.0f * bit - 1.0f;
+                        dot += pq.rotated[i] * sign;
+                    }
+                    float ip_accurate = dot * inv_sqrt_dim;
+
+                    ip_errors.push_back(std::abs(ip_fastscan - ip_accurate));
+                }
+            }
+        }
+    }
+
+    if (ip_errors.empty()) return 0.0f;
+
+    std::sort(ip_errors.begin(), ip_errors.end());
+    float findex = percentile * static_cast<float>(ip_errors.size() - 1);
+    auto idx = static_cast<size_t>(std::min(
+        findex, static_cast<float>(ip_errors.size() - 1)));
+    return ip_errors[idx];
+}
+
+// ============================================================================
 // Phase C+D: Write per-cluster files + global metadata
 // ============================================================================
 
@@ -273,7 +380,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     }
 
     // --- Build encoder ---
-    rabitq::RaBitQEncoder encoder(dim, rotation);
+    rabitq::RaBitQEncoder encoder(dim, rotation, config_.rabitq.bits);
 
     // =======================================================================
     // Unified file writing: single data.dat + single cluster.clu
@@ -334,10 +441,18 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     }
 
     // --- Phase 2b: calibrate global ε_ip ---
+    // Always use popcount-based calibration for eps_ip (conservative upper
+    // bound on IP estimation error).  FastScan (14-bit) has lower error than
+    // popcount, so the popcount-calibrated margin is conservative — it
+    // over-estimates the margin, producing more Uncertain vectors.  This is
+    // safe: S2 (ExRaBitQ) efficiently re-classifies the extra Uncertain when
+    // bits > 1.  Using FastScan-calibrated eps_ip would produce margins too
+    // narrow for safe S1 classification.
     calibrated_eps_ip_ = CalibrateEpsilonIp(
         all_codes, cluster_members, vectors, centroids_.data(),
         rotation, dim, K,
-        config_.epsilon_samples, config_.epsilon_percentile, config_.seed);
+        config_.epsilon_samples, config_.epsilon_percentile, config_.seed,
+        config_.rabitq.bits);
 
     // --- Phase 2c: write unified cluster.clu ---
     storage::ClusterStoreWriter clu_writer;

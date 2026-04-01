@@ -41,7 +41,21 @@ Status IoUringReader::PrepRead(int fd, uint8_t* buf,
                                 uint32_t len, uint64_t offset) {
     struct io_uring_sqe* sqe = io_uring_get_sqe(&impl_->ring);
     if (!sqe) {
-        return Status::IOError("io_uring SQ full, cannot prep read");
+        // SQ full — flush current SQEs to kernel, then retry.
+        int ret = io_uring_submit(&impl_->ring);
+        if (ret < 0) {
+            return Status::IOError(
+                std::string("io_uring auto-flush submit failed: ") +
+                strerror(-ret));
+        }
+        in_flight_ += prepped_;
+        prepped_ = 0;
+
+        sqe = io_uring_get_sqe(&impl_->ring);
+        if (!sqe) {
+            return Status::IOError(
+                "io_uring SQ full after auto-flush");
+        }
     }
     io_uring_prep_read(sqe, fd, buf, len, offset);
     io_uring_sqe_set_data(sqe, buf);

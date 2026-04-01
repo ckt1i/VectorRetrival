@@ -80,6 +80,10 @@ class OverlapScheduler {
     std::vector<std::pair<float, uint32_t>> est_heap_;
     uint32_t est_top_k_ = 0;
     bool use_crc_ = false;
+
+    // Stage 2 ExRaBitQ re-classification
+    float margin_s2_divisor_ = 1.0f;  // 2^(bits-1), precomputed
+    bool has_s2_ = false;             // true when bits > 1
 };
 
 }  // namespace query

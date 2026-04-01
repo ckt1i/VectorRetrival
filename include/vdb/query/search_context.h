@@ -47,6 +47,10 @@ struct SearchStats {
     double rerank_time_ms = 0;
     double total_time_ms = 0;
     double io_wait_time_ms = 0;
+    // Stage 2 (ExRaBitQ re-classification, only when bits > 1)
+    uint32_t s2_safe_in = 0;
+    uint32_t s2_safe_out = 0;
+    uint32_t s2_uncertain = 0;
 };
 
 class SearchContext {

@@ -225,6 +225,11 @@ struct QueryResult {
     uint32_t safe_in;
     uint32_t safe_out;
     uint32_t uncertain;
+    uint32_t s2_safe_in;
+    uint32_t s2_safe_out;
+    uint32_t s2_uncertain;
+    uint32_t false_safeout;       // GT IDs missing from predicted results
+    uint32_t false_safein_upper;  // safe_in - hits_in_topk (upper bound)
 };
 
 // ============================================================================
@@ -242,6 +247,12 @@ struct RoundMetrics {
     double avg_safe_in = 0;
     double avg_safe_out = 0;
     double avg_uncertain = 0;
+    double avg_s2_safe_in = 0;
+    double avg_s2_safe_out = 0;
+    double avg_s2_uncertain = 0;
+    double avg_false_safeout = 0;
+    double avg_false_safein_upper = 0;
+    uint64_t total_final_safein = 0;   // absolute count: S1 SafeIn + S2 SafeIn
     double early_pct = 0;
     double avg_skipped = 0;
     double overlap_ratio = 0;
@@ -257,7 +268,8 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     const SearchConfig& search_cfg,
     const float* queries, uint32_t Q, Dim dim,
     const std::vector<int64_t>& qry_ids_data,
-    const std::vector<std::vector<int64_t>>& gt_topk) {
+    const std::vector<std::vector<int64_t>>& gt_topk,
+    const std::vector<std::vector<float>>& gt_dists) {
 
     Log("\n[%s] Querying %u vectors...\n", label, Q);
 
@@ -279,6 +291,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.safe_in = results.stats().total_safe_in;
         qr.safe_out = results.stats().total_safe_out;
         qr.uncertain = results.stats().total_uncertain;
+        qr.s2_safe_in = results.stats().s2_safe_in;
+        qr.s2_safe_out = results.stats().s2_safe_out;
+        qr.s2_uncertain = results.stats().s2_uncertain;
 
         for (uint32_t j = 0; j < results.size(); ++j) {
             qr.predicted_dists.push_back(results[j].distance);
@@ -286,6 +301,23 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
                 results[j].payload[0].dtype == DType::INT64) {
                 qr.predicted_ids.push_back(results[j].payload[0].fixed.i64);
             }
+        }
+
+        // False SafeOut: GT IDs not found in predicted results
+        {
+            uint32_t gt_k = std::min(search_cfg.top_k,
+                static_cast<uint32_t>(gt_topk[qi].size()));
+            std::unordered_set<int64_t> pred_set(
+                qr.predicted_ids.begin(), qr.predicted_ids.end());
+            uint32_t missing = 0;
+            uint32_t hits = 0;
+            for (uint32_t g = 0; g < gt_k; ++g) {
+                if (pred_set.count(gt_topk[qi][g]) == 0) missing++;
+                else hits++;
+            }
+            qr.false_safeout = missing;
+            qr.false_safein_upper = (qr.safe_in > hits)
+                ? (qr.safe_in - hits) : 0;
         }
 
         if ((qi + 1) % 100 == 0 || qi + 1 == Q) {
@@ -315,6 +347,8 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.p99 = Percentile(query_times, 0.99);
 
     double sum_probed = 0, sum_si = 0, sum_so = 0, sum_unc = 0;
+    double sum_s2_si = 0, sum_s2_so = 0, sum_s2_unc = 0;
+    double sum_false_so = 0, sum_false_si = 0;
     double sum_io_wait = 0, sum_probe = 0, sum_total = 0;
     uint32_t early_count = 0;
     double sum_skipped = 0;
@@ -323,6 +357,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_si += qresults[qi].safe_in;
         sum_so += qresults[qi].safe_out;
         sum_unc += qresults[qi].uncertain;
+        sum_s2_si += qresults[qi].s2_safe_in;
+        sum_s2_so += qresults[qi].s2_safe_out;
+        sum_s2_unc += qresults[qi].s2_uncertain;
+        sum_false_so += qresults[qi].false_safeout;
+        sum_false_si += qresults[qi].false_safein_upper;
         sum_io_wait += qresults[qi].io_wait_ms;
         sum_probe += qresults[qi].probe_time_ms;
         sum_total += qresults[qi].query_time_ms;
@@ -339,6 +378,12 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_safe_in = sum_si / Q;
     m.avg_safe_out = sum_so / Q;
     m.avg_uncertain = sum_unc / Q;
+    m.avg_s2_safe_in = sum_s2_si / Q;
+    m.avg_s2_safe_out = sum_s2_so / Q;
+    m.avg_s2_uncertain = sum_s2_unc / Q;
+    m.avg_false_safeout = sum_false_so / Q;
+    m.avg_false_safein_upper = sum_false_si / Q;
+    m.total_final_safein = static_cast<uint64_t>(sum_si + sum_s2_si);
     m.early_pct = static_cast<double>(early_count) / Q;
     m.avg_skipped = early_count > 0 ? sum_skipped / early_count : 0;
     m.overlap_ratio = (sum_total > 0) ? 1.0 - sum_io_wait / sum_total : 0.0;
@@ -351,37 +396,15 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         m.avg_io_wait, m.avg_cpu, m.avg_probe);
     Log("  %s: safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n", label,
         m.avg_safe_in, m.avg_safe_out, m.avg_uncertain);
+    Log("  %s: s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n", label,
+        m.avg_s2_safe_in, m.avg_s2_safe_out, m.avg_s2_uncertain);
+    Log("  %s: false_safeout=%.2f  false_safein_upper=%.1f  total_safein=%lu\n",
+        label, m.avg_false_safeout, m.avg_false_safein_upper,
+        static_cast<unsigned long>(m.total_final_safein));
     Log("  %s: early_stop=%.1f%%  avg_skipped=%.1f  overlap=%.4f\n", label,
         m.early_pct * 100, m.avg_skipped, m.overlap_ratio);
 
     return {std::move(qresults), m};
-}
-
-// ============================================================================
-// Write round metrics to JSON
-// ============================================================================
-
-static void WriteRoundMetricsJson(std::ofstream& f, const std::string& prefix,
-                                   const RoundMetrics& m) {
-    f << "    \"" << prefix << "\": {\n";
-    f << "      " << JNum("recall_at_1", m.recall_at[0]) << ",\n";
-    f << "      " << JNum("recall_at_5", m.recall_at[1]) << ",\n";
-    f << "      " << JNum("recall_at_10", m.recall_at[2]) << ",\n";
-    f << "      " << JNum("avg_query_time_ms", m.avg_query_ms) << ",\n";
-    f << "      " << JNum("p50_query_time_ms", m.p50) << ",\n";
-    f << "      " << JNum("p95_query_time_ms", m.p95) << ",\n";
-    f << "      " << JNum("p99_query_time_ms", m.p99) << ",\n";
-    f << "      " << JNum("avg_io_wait_ms", m.avg_io_wait) << ",\n";
-    f << "      " << JNum("avg_cpu_time_ms", m.avg_cpu) << ",\n";
-    f << "      " << JNum("avg_probe_time_ms", m.avg_probe) << ",\n";
-    f << "      " << JNum("avg_total_probed", m.avg_probed) << ",\n";
-    f << "      " << JNum("avg_safe_in", m.avg_safe_in) << ",\n";
-    f << "      " << JNum("avg_safe_out", m.avg_safe_out) << ",\n";
-    f << "      " << JNum("avg_uncertain", m.avg_uncertain) << ",\n";
-    f << "      " << JNum("early_stopped_pct", m.early_pct) << ",\n";
-    f << "      " << JNum("avg_clusters_skipped", m.avg_skipped) << ",\n";
-    f << "      " << JNum("overlap_ratio", m.overlap_ratio) << "\n";
-    f << "    }";
 }
 
 // ============================================================================
@@ -405,8 +428,11 @@ int main(int argc, char* argv[]) {
     int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
     int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
 
-    // CRC comparison mode
-    int arg_crc         = GetIntArg(argc, argv, "--crc", 0);
+    // Precomputed clustering (skip KMeans if both provided)
+    std::string arg_centroids = GetStringArg(argc, argv, "--centroids", "");
+    std::string arg_assignments = GetStringArg(argc, argv, "--assignments", "");
+
+    // CRC parameters (CRC always enabled)
     float arg_crc_alpha = GetFloatArg(argc, argv, "--crc-alpha", 0.1f);
     float arg_crc_calib = GetFloatArg(argc, argv, "--crc-calib", 0.5f);
     float arg_crc_tune  = GetFloatArg(argc, argv, "--crc-tune", 0.1f);
@@ -416,7 +442,7 @@ int main(int argc, char* argv[]) {
 
     Log("=== VDB E2E Benchmark ===\n");
     Log("Dataset: %s\n", data_dir.c_str());
-    if (arg_crc) Log("CRC comparison mode: ON (alpha=%.2f)\n", arg_crc_alpha);
+    Log("CRC mode: ON (alpha=%.2f)\n", arg_crc_alpha);
 
     // ================================================================
     // Phase A: Load Data
@@ -489,6 +515,7 @@ int main(int argc, char* argv[]) {
     auto t_bf_start = std::chrono::steady_clock::now();
 
     std::vector<std::vector<int64_t>> gt_topk(Q);
+    std::vector<std::vector<float>> gt_dists(Q);
     for (uint32_t qi = 0; qi < Q; ++qi) {
         const float* qvec = qry_emb.data.data() + static_cast<size_t>(qi) * dim;
 
@@ -504,8 +531,10 @@ int main(int argc, char* argv[]) {
             [](const auto& a, const auto& b) { return a.first < b.first; });
 
         gt_topk[qi].resize(GT_K);
+        gt_dists[qi].resize(GT_K);
         for (uint32_t k = 0; k < GT_K; ++k) {
             gt_topk[qi][k] = dists[k].second;
+            gt_dists[qi][k] = dists[k].first;
         }
 
         if ((qi + 1) % 100 == 0 || qi + 1 == Q) {
@@ -535,14 +564,16 @@ int main(int argc, char* argv[]) {
     cfg.rabitq = {static_cast<uint8_t>(arg_bits),
                   static_cast<uint32_t>(arg_block_size), arg_c_factor};
     cfg.calibration_samples = std::min(100u, N);
+    cfg.epsilon_samples = 100;
+    cfg.epsilon_percentile = 0.99f;  // match bench_vector_search P99
     cfg.calibration_topk = GT_K;
     cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
     cfg.page_size = static_cast<uint32_t>(arg_page_size);
     cfg.calibration_queries = qry_emb.data.data();
     cfg.num_calibration_queries = Q;
-    if (arg_crc) {
-        cfg.crc_top_k = GT_K;  // precompute CRC scores at build time
-    }
+    cfg.centroids_path = arg_centroids;
+    cfg.assignments_path = arg_assignments;
+    cfg.crc_top_k = GT_K;  // always precompute CRC scores at build time
     cfg.payload_schemas = {
         {0, "id",      DType::INT64,  false},
         {1, "caption", DType::STRING, false},
@@ -584,9 +615,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    CalibrationResults calib_results;
+    Log("  Index params: eps_ip=%.6f  d_k=%.6f\n",
+        index.conann().epsilon(), index.conann().d_k());
 
-    if (arg_crc) {
+    CalibrationResults calib_results;
+    {
         Log("\n[Phase C.5] CRC calibration from precomputed scores...\n");
         auto t_crc_start = std::chrono::steady_clock::now();
 
@@ -720,70 +753,41 @@ int main(int argc, char* argv[]) {
     std::vector<int64_t> qry_ids_vec(qry_ids.data.begin(),
                                       qry_ids.data.begin() + Q);
 
-    // Round 1: Baseline (d_k early stop, static SafeOut)
-    SearchConfig baseline_cfg;
-    baseline_cfg.top_k = GT_K;
-    baseline_cfg.nprobe = static_cast<uint32_t>(arg_nprobe);
-    baseline_cfg.early_stop = (arg_early_stop != 0);
-    baseline_cfg.prefetch_depth = 16;
-    baseline_cfg.io_queue_depth = 64;
-    baseline_cfg.crc_params = nullptr;
+    // Single round: CRC early stop + dynamic SafeOut
+    SearchConfig search_cfg;
+    search_cfg.top_k = GT_K;
+    search_cfg.nprobe = static_cast<uint32_t>(arg_nprobe);
+    search_cfg.early_stop = (arg_early_stop != 0);
+    search_cfg.prefetch_depth = 16;
+    search_cfg.io_queue_depth = 64;
+    search_cfg.crc_params = &calib_results;
+    search_cfg.initial_prefetch = 4;
 
-    auto [qresults, baseline_m] = RunQueryRound(
-        "Baseline", index, reader, baseline_cfg,
-        qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk);
-
-    // Round 2: CRC (CRC early stop + dynamic SafeOut)
-    std::vector<QueryResult> crc_qresults;
-    RoundMetrics crc_m;
-
-    if (arg_crc) {
-        SearchConfig crc_search_cfg = baseline_cfg;
-        crc_search_cfg.crc_params = &calib_results;
-        crc_search_cfg.initial_prefetch = 4;
-
-        auto [crc_qr, cm] = RunQueryRound(
-            "CRC", index, reader, crc_search_cfg,
-            qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk);
-        crc_qresults = std::move(crc_qr);
-        crc_m = cm;
-    }
+    auto [qresults, metrics] = RunQueryRound(
+        "CRC", index, reader, search_cfg,
+        qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
 
     // ================================================================
-    // Phase E: Comparison Output
+    // Phase E: Summary Output
     // ================================================================
-    if (arg_crc) {
-        Log("\n=== Baseline vs CRC Comparison ===\n");
-        Log("  %-22s %10s %10s\n", "Metric", "Baseline", "CRC");
-        Log("  %-22s %10s %10s\n", "----------------------", "----------", "----------");
-        Log("  %-22s %10.4f %10.4f\n", "recall@1",   baseline_m.recall_at[0], crc_m.recall_at[0]);
-        Log("  %-22s %10.4f %10.4f\n", "recall@5",   baseline_m.recall_at[1], crc_m.recall_at[1]);
-        Log("  %-22s %10.4f %10.4f\n", "recall@10",  baseline_m.recall_at[2], crc_m.recall_at[2]);
-        Log("  %-22s %10.3f %10.3f\n", "avg_query_ms",   baseline_m.avg_query_ms, crc_m.avg_query_ms);
-        Log("  %-22s %10.3f %10.3f\n", "p50_ms",         baseline_m.p50, crc_m.p50);
-        Log("  %-22s %10.3f %10.3f\n", "p95_ms",         baseline_m.p95, crc_m.p95);
-        Log("  %-22s %10.3f %10.3f\n", "p99_ms",         baseline_m.p99, crc_m.p99);
-        Log("  %-22s %10.3f %10.3f\n", "avg_io_wait_ms", baseline_m.avg_io_wait, crc_m.avg_io_wait);
-        Log("  %-22s %10.3f %10.3f\n", "avg_probe_ms",   baseline_m.avg_probe, crc_m.avg_probe);
-        Log("  %-22s %10.4f %10.4f\n", "overlap_ratio",  baseline_m.overlap_ratio, crc_m.overlap_ratio);
-        Log("  %-22s %10.1f %10.1f\n", "avg_probed",     baseline_m.avg_probed, crc_m.avg_probed);
-        Log("  %-22s %10.1f %10.1f\n", "avg_safe_out",   baseline_m.avg_safe_out, crc_m.avg_safe_out);
-        Log("  %-22s %10.1f %10.1f\n", "avg_safe_in",    baseline_m.avg_safe_in, crc_m.avg_safe_in);
-        Log("  %-22s %10.1f %10.1f\n", "avg_uncertain",  baseline_m.avg_uncertain, crc_m.avg_uncertain);
-        Log("  %-22s %10.1f%% %9.1f%%\n", "early_stop_rate",
-            baseline_m.early_pct * 100, crc_m.early_pct * 100);
-        Log("  %-22s %10.1f %10.1f\n", "avg_skipped",    baseline_m.avg_skipped, crc_m.avg_skipped);
-    } else {
-        Log("\n=== Summary ===\n");
-        Log("  recall@1=%.4f  recall@5=%.4f  recall@10=%.4f\n",
-            baseline_m.recall_at[0], baseline_m.recall_at[1], baseline_m.recall_at[2]);
-        Log("  avg_query=%.3f ms  p50=%.3f  p95=%.3f  p99=%.3f\n",
-            baseline_m.avg_query_ms, baseline_m.p50, baseline_m.p95, baseline_m.p99);
-        Log("  build_time=%.1f ms  brute_force=%.1f ms\n",
-            training_time_ms, brute_force_time_ms);
-        Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
-            baseline_m.avg_io_wait, baseline_m.avg_cpu, baseline_m.avg_probe);
-    }
+    Log("\n=== Summary ===\n");
+    Log("  recall@1=%.4f  recall@5=%.4f  recall@10=%.4f\n",
+        metrics.recall_at[0], metrics.recall_at[1], metrics.recall_at[2]);
+    Log("  avg_query=%.3f ms  p50=%.3f  p95=%.3f  p99=%.3f\n",
+        metrics.avg_query_ms, metrics.p50, metrics.p95, metrics.p99);
+    Log("  build_time=%.1f ms  brute_force=%.1f ms\n",
+        training_time_ms, brute_force_time_ms);
+    Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
+        metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
+    Log("  safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n",
+        metrics.avg_safe_in, metrics.avg_safe_out, metrics.avg_uncertain);
+    Log("  s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n",
+        metrics.avg_s2_safe_in, metrics.avg_s2_safe_out, metrics.avg_s2_uncertain);
+    Log("  false_safeout=%.2f  false_safein_upper=%.1f  total_safein=%lu\n",
+        metrics.avg_false_safeout, metrics.avg_false_safein_upper,
+        static_cast<unsigned long>(metrics.total_final_safein));
+    Log("  early_stop=%.1f%%  avg_skipped=%.1f  overlap=%.4f\n",
+        metrics.early_pct * 100, metrics.avg_skipped, metrics.overlap_ratio);
 
     // ================================================================
     // Phase F: Output JSON
@@ -810,20 +814,18 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("page_size", cfg.page_size) << "\n";
         f << "  },\n";
         f << "  \"search_config\": {\n";
-        f << "    " << JInt("top_k", baseline_cfg.top_k) << ",\n";
-        f << "    " << JInt("nprobe", baseline_cfg.nprobe) << ",\n";
-        f << "    " << JBool("early_stop", baseline_cfg.early_stop) << ",\n";
-        f << "    " << JInt("prefetch_depth", baseline_cfg.prefetch_depth) << ",\n";
-        f << "    " << JInt("io_queue_depth", baseline_cfg.io_queue_depth) << "\n";
-        f << "  }";
-        if (arg_crc) {
-            f << ",\n  \"crc_config\": {\n";
-            f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
-            f << "    " << JNum("calib_ratio", arg_crc_calib) << ",\n";
-            f << "    " << JNum("tune_ratio", arg_crc_tune) << "\n";
-            f << "  }";
-        }
-        f << "\n}\n";
+        f << "    " << JInt("top_k", search_cfg.top_k) << ",\n";
+        f << "    " << JInt("nprobe", search_cfg.nprobe) << ",\n";
+        f << "    " << JBool("early_stop", search_cfg.early_stop) << ",\n";
+        f << "    " << JInt("prefetch_depth", search_cfg.prefetch_depth) << ",\n";
+        f << "    " << JInt("io_queue_depth", search_cfg.io_queue_depth) << "\n";
+        f << "  },\n";
+        f << "  \"crc_config\": {\n";
+        f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
+        f << "    " << JNum("calib_ratio", arg_crc_calib) << ",\n";
+        f << "    " << JNum("tune_ratio", arg_crc_tune) << "\n";
+        f << "  }\n";
+        f << "}\n";
     }
 
     // results.json
@@ -831,35 +833,41 @@ int main(int argc, char* argv[]) {
         std::ofstream f(output_dir + "/results.json");
         f << "{\n";
 
-        // metrics (baseline)
+        // metrics
         f << "  \"metrics\": {\n";
         f << "    " << JNum("training_time_ms", training_time_ms) << ",\n";
         f << "    " << JNum("brute_force_time_ms", brute_force_time_ms) << ",\n";
-        f << "    " << JNum("recall_at_1", baseline_m.recall_at[0]) << ",\n";
-        f << "    " << JNum("recall_at_5", baseline_m.recall_at[1]) << ",\n";
-        f << "    " << JNum("recall_at_10", baseline_m.recall_at[2]) << ",\n";
-        f << "    " << JNum("avg_query_time_ms", baseline_m.avg_query_ms) << ",\n";
-        f << "    " << JNum("p50_query_time_ms", baseline_m.p50) << ",\n";
-        f << "    " << JNum("p95_query_time_ms", baseline_m.p95) << ",\n";
-        f << "    " << JNum("p99_query_time_ms", baseline_m.p99) << ",\n";
+        f << "    " << JNum("recall_at_1", metrics.recall_at[0]) << ",\n";
+        f << "    " << JNum("recall_at_5", metrics.recall_at[1]) << ",\n";
+        f << "    " << JNum("recall_at_10", metrics.recall_at[2]) << ",\n";
+        f << "    " << JNum("avg_query_time_ms", metrics.avg_query_ms) << ",\n";
+        f << "    " << JNum("p50_query_time_ms", metrics.p50) << ",\n";
+        f << "    " << JNum("p95_query_time_ms", metrics.p95) << ",\n";
+        f << "    " << JNum("p99_query_time_ms", metrics.p99) << ",\n";
         f << "    " << JInt("num_queries", Q) << "\n";
         f << "  },\n";
 
-        // pipeline_stats (baseline)
+        // pipeline_stats
         f << "  \"pipeline_stats\": {\n";
-        f << "    " << JNum("avg_total_probed", baseline_m.avg_probed) << ",\n";
-        f << "    " << JNum("avg_safe_in", baseline_m.avg_safe_in) << ",\n";
-        f << "    " << JNum("avg_safe_out", baseline_m.avg_safe_out) << ",\n";
-        f << "    " << JNum("avg_uncertain", baseline_m.avg_uncertain) << ",\n";
-        f << "    " << JNum("avg_io_wait_ms", baseline_m.avg_io_wait) << ",\n";
-        f << "    " << JNum("avg_cpu_time_ms", baseline_m.avg_cpu) << ",\n";
-        f << "    " << JNum("avg_probe_time_ms", baseline_m.avg_probe) << ",\n";
-        f << "    " << JNum("early_stopped_pct", baseline_m.early_pct) << ",\n";
-        f << "    " << JNum("avg_clusters_skipped", baseline_m.avg_skipped) << ",\n";
-        f << "    " << JNum("overlap_ratio", baseline_m.overlap_ratio) << "\n";
+        f << "    " << JNum("avg_total_probed", metrics.avg_probed) << ",\n";
+        f << "    " << JNum("avg_safe_in", metrics.avg_safe_in) << ",\n";
+        f << "    " << JNum("avg_safe_out", metrics.avg_safe_out) << ",\n";
+        f << "    " << JNum("avg_uncertain", metrics.avg_uncertain) << ",\n";
+        f << "    " << JNum("avg_s2_safe_in", metrics.avg_s2_safe_in) << ",\n";
+        f << "    " << JNum("avg_s2_safe_out", metrics.avg_s2_safe_out) << ",\n";
+        f << "    " << JNum("avg_s2_uncertain", metrics.avg_s2_uncertain) << ",\n";
+        f << "    " << JNum("avg_false_safeout", metrics.avg_false_safeout) << ",\n";
+        f << "    " << JNum("avg_false_safein_upper", metrics.avg_false_safein_upper) << ",\n";
+        f << "    " << JInt("total_final_safein", static_cast<int64_t>(metrics.total_final_safein)) << ",\n";
+        f << "    " << JNum("avg_io_wait_ms", metrics.avg_io_wait) << ",\n";
+        f << "    " << JNum("avg_cpu_time_ms", metrics.avg_cpu) << ",\n";
+        f << "    " << JNum("avg_probe_time_ms", metrics.avg_probe) << ",\n";
+        f << "    " << JNum("early_stopped_pct", metrics.early_pct) << ",\n";
+        f << "    " << JNum("avg_clusters_skipped", metrics.avg_skipped) << ",\n";
+        f << "    " << JNum("overlap_ratio", metrics.overlap_ratio) << "\n";
         f << "  },\n";
 
-        // per_query_sample (baseline)
+        // per_query_sample
         uint32_t stride = std::max(Q / 50, 1u);
         f << "  \"per_query_sample\": [\n";
         bool first = true;
@@ -887,26 +895,18 @@ int main(int argc, char* argv[]) {
             f << "      " << JInt("clusters_skipped", qr.clusters_skipped) << "\n";
             f << "    }";
         }
-        f << "\n  ]";
+        f << "\n  ],\n";
 
-        // CRC comparison section
-        if (arg_crc) {
-            f << ",\n  \"crc_comparison\": {\n";
-            WriteRoundMetricsJson(f, "baseline", baseline_m);
-            f << ",\n";
-            WriteRoundMetricsJson(f, "crc", crc_m);
-            f << ",\n";
-            f << "    \"calibration\": {\n";
-            f << "      " << JNum("d_min", calib_results.d_min) << ",\n";
-            f << "      " << JNum("d_max", calib_results.d_max) << ",\n";
-            f << "      " << JNum("lamhat", calib_results.lamhat) << ",\n";
-            f << "      " << JInt("kreg", calib_results.kreg) << ",\n";
-            f << "      " << JNum("reg_lambda", calib_results.reg_lambda) << "\n";
-            f << "    }\n";
-            f << "  }";
-        }
+        // CRC calibration
+        f << "  \"crc_calibration\": {\n";
+        f << "    " << JNum("d_min", calib_results.d_min) << ",\n";
+        f << "    " << JNum("d_max", calib_results.d_max) << ",\n";
+        f << "    " << JNum("lamhat", calib_results.lamhat) << ",\n";
+        f << "    " << JInt("kreg", calib_results.kreg) << ",\n";
+        f << "    " << JNum("reg_lambda", calib_results.reg_lambda) << "\n";
+        f << "  }\n";
 
-        f << "\n}\n";
+        f << "}\n";
     }
 
     Log("  Output: %s\n", output_dir.c_str());

@@ -252,6 +252,33 @@ int main(int argc, char* argv[]) {
     } else {
         Log("\n[Phase B] KMeans (K=%u) + RaBitQ encoding...\n", nlist);
         RunSuperKMeans(base.data.data(), N, dim, nlist, centroids, assignments);
+
+        // Export centroids and assignments if --outdir is set
+        if (!outdir.empty()) {
+            fs::create_directories(outdir);
+            {
+                std::string p = outdir + "/centroids.fvecs";
+                std::ofstream f(p, std::ios::binary);
+                for (uint32_t k = 0; k < nlist; ++k) {
+                    f.write(reinterpret_cast<const char*>(&dim), sizeof(int32_t));
+                    f.write(reinterpret_cast<const char*>(
+                        centroids.data() + static_cast<size_t>(k) * dim),
+                        dim * sizeof(float));
+                }
+                Log("  Exported centroids -> %s\n", p.c_str());
+            }
+            {
+                std::string p = outdir + "/assignments.ivecs";
+                std::ofstream f(p, std::ios::binary);
+                int32_t one = 1;
+                for (uint32_t i = 0; i < N; ++i) {
+                    f.write(reinterpret_cast<const char*>(&one), sizeof(int32_t));
+                    int32_t a = static_cast<int32_t>(assignments[i]);
+                    f.write(reinterpret_cast<const char*>(&a), sizeof(int32_t));
+                }
+                Log("  Exported assignments -> %s\n", p.c_str());
+            }
+        }
     }
 
     RotationMatrix rotation(dim);
