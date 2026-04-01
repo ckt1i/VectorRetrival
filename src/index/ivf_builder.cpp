@@ -9,8 +9,11 @@
 #include <numeric>
 #include <random>
 
+#include "superkmeans/superkmeans.h"
+
 #include "vdb/index/conann.h"
 #include "vdb/index/crc_calibrator.h"
+#include "vdb/io/vecs_reader.h"
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
@@ -63,180 +66,55 @@ Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
 }
 
 // ============================================================================
-// Phase A: Capacity-Constrained K-Means
+// Phase A: Clustering (SuperKMeans or precomputed)
 // ============================================================================
 
 Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
     const uint32_t K = config_.nlist;
 
-    // --- Initialization: K-means++ ---
-    centroids_.resize(static_cast<size_t>(K) * dim);
-    assignments_.resize(N);
-
-    std::mt19937_64 rng(config_.seed);
-
-    // Choose first centroid uniformly at random
-    std::uniform_int_distribution<uint32_t> uni(0, N - 1);
-    uint32_t first = uni(rng);
-    std::memcpy(centroids_.data(), vectors + static_cast<size_t>(first) * dim,
-                dim * sizeof(float));
-
-    // K-means++ initialization for remaining centroids
-    std::vector<float> min_dist(N, std::numeric_limits<float>::max());
-    for (uint32_t k = 1; k < K; ++k) {
-        // Update min distances to the newly added centroid k-1
-        const float* prev = centroids_.data() + static_cast<size_t>(k - 1) * dim;
-        double sum_dist = 0.0;
-        for (uint32_t i = 0; i < N; ++i) {
-            float d = simd::L2Sqr(vectors + static_cast<size_t>(i) * dim, prev, dim);
-            if (d < min_dist[i]) {
-                min_dist[i] = d;
-            }
-            sum_dist += min_dist[i];
+    // Path 1: Load precomputed centroids and assignments
+    if (!config_.centroids_path.empty() && !config_.assignments_path.empty()) {
+        auto c_or = io::LoadVectors(config_.centroids_path);
+        if (!c_or.ok()) {
+            return Status::IOError("Failed to load centroids: " +
+                                   c_or.status().ToString());
         }
-
-        // Weighted sampling proportional to D^2
-        std::uniform_real_distribution<double> real_dist(0.0, sum_dist);
-        double target = real_dist(rng);
-        double running = 0.0;
-        uint32_t chosen = N - 1;
-        for (uint32_t i = 0; i < N; ++i) {
-            running += min_dist[i];
-            if (running >= target) {
-                chosen = i;
-                break;
-            }
+        auto& c = c_or.value();
+        if (c.cols != dim) {
+            return Status::InvalidArgument("Centroid dim mismatch");
         }
+        centroids_.assign(c.data.begin(), c.data.end());
 
-        std::memcpy(centroids_.data() + static_cast<size_t>(k) * dim,
-                     vectors + static_cast<size_t>(chosen) * dim,
-                     dim * sizeof(float));
+        auto a_or = io::LoadIvecs(config_.assignments_path);
+        if (!a_or.ok()) {
+            return Status::IOError("Failed to load assignments: " +
+                                   a_or.status().ToString());
+        }
+        auto& a = a_or.value();
+        if (a.rows != N) {
+            return Status::InvalidArgument("Assignment count mismatch");
+        }
+        assignments_.resize(N);
+        for (uint32_t i = 0; i < N; ++i) {
+            assignments_[i] = static_cast<uint32_t>(a.data[i]);
+        }
+        return Status::OK();
     }
 
-    // --- Iterative refinement ---
-    const bool use_balance = config_.balance_factor > 0.0f;
-    // Maximum per-cluster capacity when balancing
-    const uint32_t max_cap =
-        use_balance
-            ? static_cast<uint32_t>(
-                  std::ceil(static_cast<double>(N) *
-                            (1.0 + config_.balance_factor) /
-                            static_cast<double>(K)))
-            : N;  // no limit
+    // Path 2: SuperKMeans automatic clustering
+    skmeans::SuperKMeansConfig skm_cfg;
+    skm_cfg.iters = config_.max_iterations;
+    skm_cfg.seed = static_cast<uint32_t>(config_.seed);
+    skm_cfg.verbose = false;
+    skm_cfg.early_termination = true;
+    skm_cfg.tol = config_.tolerance;
 
-    std::vector<float> new_centroids(static_cast<size_t>(K) * dim);
-    std::vector<uint32_t> counts(K);
+    auto skm = skmeans::SuperKMeans(K, dim, skm_cfg);
+    auto c = skm.Train(vectors, N);
+    auto a = skm.Assign(vectors, c.data(), N, K);
 
-    for (uint32_t iter = 0; iter < config_.max_iterations; ++iter) {
-        // ----- Assignment step -----
-        for (uint32_t i = 0; i < N; ++i) {
-            const float* vec = vectors + static_cast<size_t>(i) * dim;
-            float best_dist = std::numeric_limits<float>::max();
-            uint32_t best_k = 0;
-            for (uint32_t k = 0; k < K; ++k) {
-                float d = simd::L2Sqr(vec, centroids_.data() + static_cast<size_t>(k) * dim, dim);
-                if (d < best_dist) {
-                    best_dist = d;
-                    best_k = k;
-                }
-            }
-            assignments_[i] = best_k;
-        }
-
-        // ----- Capacity-constrained reassignment -----
-        if (use_balance) {
-            // Count current sizes
-            std::fill(counts.begin(), counts.end(), 0);
-            for (uint32_t i = 0; i < N; ++i) {
-                counts[assignments_[i]]++;
-            }
-
-            // For each over-capacity cluster, move farthest vectors
-            for (uint32_t k = 0; k < K; ++k) {
-                if (counts[k] <= max_cap) continue;
-
-                // Gather (distance, index) for members of cluster k
-                std::vector<std::pair<float, uint32_t>> members;
-                members.reserve(counts[k]);
-                const float* ck = centroids_.data() + static_cast<size_t>(k) * dim;
-                for (uint32_t i = 0; i < N; ++i) {
-                    if (assignments_[i] == k) {
-                        float d = simd::L2Sqr(vectors + static_cast<size_t>(i) * dim, ck, dim);
-                        members.push_back({d, i});
-                    }
-                }
-                // Sort descending by distance (farthest first)
-                std::sort(members.begin(), members.end(),
-                          [](const auto& a, const auto& b) {
-                              return a.first > b.first;
-                          });
-
-                // Move excess vectors to nearest under-capacity cluster
-                uint32_t excess = counts[k] - max_cap;
-                for (uint32_t e = 0; e < excess && e < members.size(); ++e) {
-                    uint32_t vi = members[e].second;
-                    const float* vec = vectors + static_cast<size_t>(vi) * dim;
-
-                    // Find nearest under-capacity cluster (excluding k)
-                    float best_d = std::numeric_limits<float>::max();
-                    uint32_t best_j = k;
-                    for (uint32_t j = 0; j < K; ++j) {
-                        if (j == k || counts[j] >= max_cap) continue;
-                        float d = simd::L2Sqr(vec, centroids_.data() + static_cast<size_t>(j) * dim, dim);
-                        if (d < best_d) {
-                            best_d = d;
-                            best_j = j;
-                        }
-                    }
-                    if (best_j != k) {
-                        assignments_[vi] = best_j;
-                        counts[k]--;
-                        counts[best_j]++;
-                    }
-                }
-            }
-        }
-
-        // ----- Update step: recompute centroids -----
-        std::fill(new_centroids.begin(), new_centroids.end(), 0.0f);
-        std::fill(counts.begin(), counts.end(), 0);
-
-        for (uint32_t i = 0; i < N; ++i) {
-            uint32_t k = assignments_[i];
-            counts[k]++;
-            const float* vec = vectors + static_cast<size_t>(i) * dim;
-            float* c = new_centroids.data() + static_cast<size_t>(k) * dim;
-            for (Dim d = 0; d < dim; ++d) {
-                c[d] += vec[d];
-            }
-        }
-
-        // Average and check convergence
-        float max_shift = 0.0f;
-        for (uint32_t k = 0; k < K; ++k) {
-            float* c = new_centroids.data() + static_cast<size_t>(k) * dim;
-            if (counts[k] > 0) {
-                float inv = 1.0f / static_cast<float>(counts[k]);
-                for (Dim d = 0; d < dim; ++d) {
-                    c[d] *= inv;
-                }
-            } else {
-                // Empty cluster: reinitialize to a random vector
-                uint32_t ri = uni(rng);
-                std::memcpy(c, vectors + static_cast<size_t>(ri) * dim,
-                             dim * sizeof(float));
-            }
-
-            float shift = simd::L2Sqr(
-                c, centroids_.data() + static_cast<size_t>(k) * dim, dim);
-            if (shift > max_shift) max_shift = shift;
-        }
-
-        centroids_ = new_centroids;
-
-        // Convergence check
-        if (max_shift < config_.tolerance) break;
-    }
+    centroids_.assign(c.begin(), c.end());
+    assignments_.assign(a.begin(), a.end());
 
     return Status::OK();
 }
@@ -508,7 +386,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         N,                         // training_vectors
         config_.max_iterations,    // kmeans_iterations
         0, 0, 0.0f,               // min/max/avg list size (not computed here)
-        config_.balance_factor     // balance_factor
+        0.0f                       // balance_factor (deprecated, always 0)
     );
 
     // RaBitQParams

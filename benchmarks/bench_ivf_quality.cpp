@@ -120,7 +120,6 @@ int main(int argc, char* argv[]) {
         static_cast<uint32_t>(GetIntArg(argc, argv, "--nlist", 8));
     const uint32_t nprobe =
         static_cast<uint32_t>(GetIntArg(argc, argv, "--nprobe", 2));
-    const float balance_factor = GetFloatArg(argc, argv, "--balance", 0.0f);
     const uint64_t seed =
         static_cast<uint64_t>(GetIntArg(argc, argv, "--seed", 42));
     const uint32_t topk =
@@ -129,8 +128,8 @@ int main(int argc, char* argv[]) {
         static_cast<uint32_t>(GetIntArg(argc, argv, "--queries", 50));
 
     std::printf("=== Phase 6 IVF+RaBitQ Quality Benchmark ===\n");
-    std::printf("  N=%u  dim=%u  nlist=%u  nprobe=%u  balance=%.2f  seed=%lu  topk=%u  queries=%u\n\n",
-                N, dim, nlist, nprobe, balance_factor,
+    std::printf("  N=%u  dim=%u  nlist=%u  nprobe=%u  seed=%lu  topk=%u  queries=%u\n\n",
+                N, dim, nlist, nprobe,
                 static_cast<unsigned long>(seed), topk, num_queries);
 
     // --- Generate random dataset ---
@@ -149,7 +148,6 @@ int main(int argc, char* argv[]) {
     cfg.max_iterations = 30;
     cfg.tolerance = 1e-5f;
     cfg.seed = seed;
-    cfg.balance_factor = balance_factor;
     cfg.rabitq = {1, 64, 5.75f};
     cfg.calibration_samples = std::min(N, 200u);
     cfg.calibration_topk = topk;

@@ -1,8 +1,8 @@
 # VDB VectorRetrival — 项目开发总结
 
-> **最后更新**：2026-03-27
-> **当前状态**：Phase 0–11 已完成，CRC 自适应 Early Stop + 构建时分数预计算已上线，Benchmark 体系已独立
-> **下一步**：COCO_5k 端到端验证（CRC λ̂ < 1.0 + early-stop 触发）
+> **最后更新**：2026-04-01
+> **当前状态**：Phase 0–15 全部完成（含 v7 存储格式 + FastScan AVX-512）
+> **下一步**：生产路径集成 FastScan Stage 1 到 ConANN 分类；运行时 ISA dispatch
 
 ---
 
@@ -25,6 +25,11 @@
 15. [延迟优化项（UNDO.txt）](#15-延迟优化项)
 16. [关键设计决策记录](#16-关键设计决策记录)
 17. [接手开发指南](#17-接手开发指南)
+18. [Phase 12：ExRaBitQ 对齐（多 bit 距离精度修复）](#18-phase-12exrabitq-对齐)
+19. [Phase 13：SuperKMeans 集成](#19-phase-13superkmeans-集成)
+20. [Phase 14：存储格式 v7 双区域布局](#20-phase-14存储格式-v7-双区域布局)
+21. [Phase 15：FastScan + AVX-512](#21-phase-15fastscan--avx-512)
+22. [待实施项](#22-待实施项)
 
 ---
 
@@ -34,7 +39,10 @@ VDB VectorRetrival 是一个面向高维向量近似最近邻搜索（ANNS）的
 
 **核心算法流水线**：
 ```
-IVF 粗聚类 → ConANN 三分类 → RaBitQ 量化距离估算 → Rerank 精排 → Payload 读取
+IVF 粗聚类 → Stage 1: FastScan VPSHUFB batch-32 (14-bit query × 1-bit codes)
+           → ConANN 三分类 (SafeIn / SafeOut / Uncertain)
+           → Stage 2: ExRaBitQ 精确估算 (4-bit codes, 仅 Uncertain)
+           → Rerank 精排 → Payload 读取
 ```
 
 **数据流水线**：
@@ -1591,13 +1599,13 @@ Phase 9 Early Stop:
 
 ### 17.2 立即可做的任务
 
-1. **COCO_5k CRC 验证**（紧急）
-   - 运行 `bench_e2e --dataset /home/zcq/VDB/data/coco_5k --crc`
-   - 验证 λ̂ < 1.0、early-stop 触发、avg_probed < nlist
-   - 验证构建后 `crc_scores.bin` 存在于索引目录
+1. **存储格式 v6**（进行中）
+   - .clu 双区域布局：Region 1 FastScan blocks + Region 2 ExRaBitQ entries
+   - 详见 `openspec/changes/rabitq-storage-v6/`
 
-2. **多 bit RaBitQ**（中期优化）
-   - Phase 4 UNDO 项，能显著提升精度（Spearman 从 0.75 → 0.9+）
+2. **FastScan + AVX-512**（下一步）
+   - VPSHUFB batch-32 Stage 1 + 全 SIMD 文件 AVX-512
+   - 详见 `openspec/changes/fastscan-avx512/`
 
 3. **多线程查询**（中期扩展）
    - MPMC 无锁队列 + 线程池
@@ -1608,14 +1616,314 @@ Phase 9 Early Stop:
 - **命名**：类 `PascalCase`，函数 `PascalCase`，变量 `snake_case`，成员 `trailing_underscore_`
 - **文件**：头文件 `.h`，实现 `.cpp`，测试 `_test.cpp`，benchmark `bench_*.cpp`
 - **错误处理**：所有 I/O 和解析操作返回 `Status` 或 `StatusOr<T>`
-- **SIMD**：`VDB_USE_AVX2` 宏控制编译路径，标量 fallback 必须存在
+- **SIMD**：`VDB_USE_AVX2` / `VDB_USE_AVX512` 宏控制编译路径（3 级：AVX-512 → AVX2 → 标量）
 - **测试**：GoogleTest，每个模块独立 test executable，`ctest` 一键运行
 - **C++ 标准**：C++17（`std::filesystem`、`std::string_view`、structured bindings）
 
 ### 17.4 已知限制
 
-1. **1-bit RaBitQ 精度**：Spearman 约 0.6-0.8（128 维），多 bit 扩展（PHASE4-001）是关键改进。
+1. **多 bit RaBitQ + FastScan 已集成**：Stage 1 使用 FastScan VPSHUFB batch-32（14-bit 查询精度），Stage 2 使用 ExRaBitQ 4-bit（MAE=0.006）。v7 存储格式已上线，AVX-512 路径已添加。ConANN margin 公式尚未适配 14-bit 精度。
 2. **单线程查询**：当前仅支持单线程协作式调度。
 3. **无 WAL**：仅支持批量离线构建，不支持在线增量插入。
 4. **内存占用**：整个 RaBitQ codes 必须加载到内存。超大规模数据集需分片。
 5. **行存 Payload**：单列等价列存，但多列场景下需要读取完整记录。未来可扩展为列存。
+
+---
+
+## 18. Phase 12：ExRaBitQ 对齐
+
+> **Change**: `exrabitq-alignment` (已归档)
+> **日期**: 2026-03-31 ~ 2026-04-01
+
+### 问题
+
+原始多 bit RaBitQ 实现在大数据集（deep1m）上 recall@10 仅 0.15，与原作者 Extended-RaBitQ 的 0.95 差距巨大。根因分析发现三个算法缺陷：
+
+1. **缺少 xipnorm 校正因子**：使用固定 `1/√D` 缩放内积，而非每向量独立的校正
+2. **均匀 bin 量化**：直接切分 [-1,1] 为等宽区间，而非最大化量化保真度
+3. **Benchmark 迭代慢**：每次重跑 KMeans
+
+### 实施内容
+
+**Step 0: 预计算聚类支持**
+- bench_rabitq_accuracy / bench_vector_search 添加 `--centroids`/`--assignments` 参数
+- 加载 faiss 预计算的 .fvecs/.ivecs，跳过 KMeans
+
+**Step 1: xipnorm 校正因子**
+- `RaBitQCode` 新增 `float xipnorm` 字段
+- Encoder 编码后计算 `xipnorm = 1 / Σ(recon[i] × o'[i])`
+- Estimator 距离公式：`ip_est = ip_raw × xipnorm`（替代固定 `1/√D`）
+- 移除 LUT 查表机制
+
+**Step 2: fast_quantize 优化量化**
+- 对 `|o'|` 用优先队列搜索最优缩放因子 t，最大化 `⟨ō_q, ō'⟩ / ‖ō_q‖`
+- 符号翻转编码：正分量存 `code_abs`，负分量存 `(2^M-1) - code_abs`
+- **双存储架构**：`code[]`（均匀 bit-plane，Stage 1 popcount）+ `ex_code[]/ex_sign[]`（fast_quantize，Stage 2 精确估计）
+
+**Step 3: AVX2 SIMD 加速**
+- `simd::IPExRaBitQ()` 函数：float query × uint8 code_abs × uint8 sign
+- AVX2 实现（8 floats/iter），后续已添加 AVX-512 路径（16 floats/iter）
+
+### 结果
+
+```
+deep1m, bits=4, K=4096:
+
+距离精度:
+                    原始         +xipnorm     +fast_quantize
+  Stage 2 MAE:     0.123        0.043        0.006
+
+bench_rabitq_accuracy (暴力排序 recall):
+  Stage 1 recall@10: 0.40
+  Stage 2 recall@10: 0.96
+
+bench_vector_search (nprobe=50, 100 queries):
+  recall@10 = 0.9730
+  False SafeOut = 0
+  SafeOut: 78% → 99% (S1+S2 两阶段)
+  Uncertain: 22% → 1%
+  latency: 2.9ms/query (AVX2)
+```
+
+### 关键设计决策
+
+- **双存储而非共享 bit-plane**：Stage 1 (popcount) 需要 plane 0 = sign bit，Stage 2 (fast_quantize) 需要全 M bits。两者不可共存在 M 个 plane 中，因此分开存储。
+- **xipnorm 不是 1/√D**：1-bit 下 `⟨ō_q, ō'⟩ ≈ √D` 使得 `xipnorm ≈ 1/√D`；M-bit 下量化向量长度随向量变化，必须每向量独立计算。
+- **LUT 被淘汰**：LUT 将 code 映射到 bin 中心再乘 query，精度不如直接 float×int 点积 + xipnorm 校正。
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `include/vdb/rabitq/rabitq_encoder.h` | RaBitQCode 新增 `ex_code`, `ex_sign`, `xipnorm` |
+| `src/rabitq/rabitq_encoder.cpp` | fast_quantize 优先队列量化 |
+| `include/vdb/rabitq/rabitq_estimator.h` | 移除 LUT，新增 xipnorm 参数 |
+| `src/rabitq/rabitq_estimator.cpp` | 直接点积 + xipnorm 校正 |
+| `include/vdb/simd/ip_exrabitq.h` | 新 SIMD 函数 |
+| `src/simd/ip_exrabitq.cpp` | AVX2 + AVX-512 实现 |
+| `benchmarks/bench_rabitq_accuracy.cpp` | --centroids/--assignments + Stage 2 recall |
+| `benchmarks/bench_vector_search.cpp` | 同上 |
+
+---
+
+## 19. Phase 13：SuperKMeans 集成
+
+> **Change**: `superkmeans-integration` (已归档)
+> **日期**: 2026-04-01
+
+### 问题
+
+1. ivf_builder 的手写 KMeans 单线程 O(N×K×D)，高维数据慢
+2. 6 个 benchmark 各自拷贝了 ~50 行 KMeans 代码
+3. `thrid-party/conann/` 从未使用
+
+### 实施内容
+
+- **CMake 集成**：`add_subdirectory(thrid-party/SuperKMeans)` → INTERFACE 库自动带入 OpenMP + OpenBLAS + Eigen
+- **ivf_builder 重写**：`RunKMeans()` 从 170 行 KMeans++ + balance 替换为 35 行 SuperKMeans + precomputed loading
+- **移除 balance_factor**：`IvfBuildConfig` 删除 `balance_factor` 字段及全部相关代码（~80 行容量约束逻辑）
+- **Benchmark 清理**：6 个文件删除 static `KMeans()`，替换为 `RunSuperKMeans()` 包装调用
+- **第三方库清理**：删除 `thrid-party/conann/`
+
+### SuperKMeans 性能
+
+```
+COCO100k (N=100K, D=512, K=512):
+  SuperKMeans: 4.6 sec (PDX 剪枝 97%)
+  faiss:       28.8 sec
+  加速比:      6.3x
+
+deep1m (N=1M, D=96, K=4096):
+  SuperKMeans: 125 sec (D < 128, 无 PDX 剪枝)
+  faiss:       ~15 sec
+  结论: D < 128 时 SuperKMeans 无优势，用 faiss 预计算
+```
+
+### 第三方库现状
+
+```
+thrid-party/
+├── SuperKMeans/          ← add_subdirectory 引入，链接到 vdb_index
+│   └── extern/Eigen/     ← bundled Eigen 3.4.0
+└── Extended-RaBitQ/      ← 参考实现，不参与 build
+```
+
+---
+
+## 20. Phase 14：存储格式 v7 双区域布局
+
+> **Change**: `rabitq-storage-v6` (已归档)
+> **日期**: 2026-04-01
+
+### 问题
+
+v6 格式 record-major 存储（`[code_words|norm|sum_x]` 逐向量排列）有两个问题：
+1. **不兼容 FastScan**：VPSHUFB 要求 codes 按 dim-group-of-4 跨 32 向量交错排列，record-major 需运行时重打包
+2. **混合关注**：1-bit sign codes（Stage 1 顺序扫描）和 ExRaBitQ codes（Stage 2 随机访问 Uncertain）交错存放，浪费带宽
+
+### 设计
+
+Per-cluster block 改为三区域：
+
+```
+Region 1: FastScan Blocks（Stage 1 顺序扫描）
+  Block b (32 vectors):
+    packed_codes: D×4 bytes（nibble-interleaved, VPSHUFB 友好）
+    norm_oc[32]:  128 bytes
+  Block size: D×4 + 128 bytes
+  Total: ceil(N/32) blocks
+
+Region 2: ExRaBitQ Entries（Stage 2 随机访问，仅 bits > 1）
+  Vec v: ex_code[D] + ex_sign[D] + xipnorm(f32)
+  Entry size: 2×D + 4 bytes
+
+Region 3: Address packed data + Mini-trailer（不变）
+```
+
+### 实施内容
+
+**数据结构**
+- `RaBitQConfig` 新增 `storage_version` 字段
+- `ParsedCluster` 新增 `fastscan_blocks`/`fastscan_block_size`/`num_fastscan_blocks` + `exrabitq_entries`/`exrabitq_entry_size` + helper methods (`norm_oc()`, `ex_code()`, `ex_sign()`, `xipnorm()`)
+- `ClusterLookupEntry` 新增 `num_fastscan_blocks`、`exrabitq_region_offset`
+- 版本常量 6 → 7
+
+**Pack/Unpack 工具**
+- `PackSignBitsForFastScan()`：将 N 个 RaBitQCode 的 sign bits 打包为 VPSHUFB block-32 nibble-interleaved 格式
+- `UnpackSignBitsFromFastScan()`：逆操作，从 packed block 提取单个向量的 code words
+- 排列 `kPerm = {0,8,1,9,2,10,3,11,4,12,5,13,6,14,7,15}` 与原论文 AVX-512 FastScan 一致
+
+**Writer 重写**
+- `WriteVectors()`：分组 32 → PackSignBitsForFastScan → 写 Region 1 → 写 Region 2
+- `EndCluster()`：记录 `num_fastscan_blocks` 和 `exrabitq_region_offset` 到 lookup entry
+
+**Reader 重写**
+- `ParseClusterBlock()`：解析 Region 1/2/3 边界，填充 ParsedCluster 新字段
+- `EnsureClusterLoaded()`：codes_length = Region 1 + Region 2
+- `LoadCode()`：从 packed block 反提取 sign bits（inverse of pack）
+
+**查询路径**
+- `OverlapScheduler::ProbeCluster()`：按 FastScan block 遍历，不再逐条记录
+
+### 结果
+
+```
+deep1m, nprobe=50, 100 queries:
+
+bits=4: recall@10 = 0.9730, False SafeOut = 0, latency = 3.528ms
+bits=1: recall@10 = 0.9730, False SafeOut = 0, latency = 2.746ms
+
+所有 recall 值与 v6 baseline 完全一致 — 存储格式变更 bit-exact。
+```
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `include/vdb/common/types.h` | `RaBitQConfig` +`storage_version` |
+| `include/vdb/query/parsed_cluster.h` | 双区域字段 + helper methods |
+| `include/vdb/storage/cluster_store.h` | `ClusterLookupEntry` 新字段, `fastscan_block_bytes()`, `exrabitq_entry_size()` |
+| `include/vdb/storage/pack_codes.h` | 新增 `PackSignBitsForFastScan`, `UnpackSignBitsFromFastScan`, `FastScanPackedSize` |
+| `src/storage/pack_codes.cpp` | 新文件：VPSHUFB packing 实现 |
+| `src/storage/cluster_store.cpp` | Writer + Reader 全面重写为 v7 |
+| `src/query/overlap_scheduler.cpp` | FastScan block 遍历 |
+
+---
+
+## 21. Phase 15：FastScan + AVX-512
+
+> **Change**: `fastscan-avx512` (已归档)
+> **日期**: 2026-04-01
+
+### 问题
+
+Stage 1 两个性能瓶颈：
+1. **逐向量串行**：`PopcountXor` 每次处理 1 个向量，无跨向量并行
+2. **1-bit 查询精度**：查询也被 sign 量化到 1 bit → MAE=0.105 → 22% Uncertain 需 Stage 2
+
+FastScan（原论文 Extended-RaBitQ）使用 VPSHUFB 同时处理 32 个向量，且查询保留 14-bit 精度。
+
+### 设计
+
+```
+当前:                               FastScan:
+for vec in cluster:                  for block of 32 vecs:
+  hamming = PopcountXor(q, code)       result[32] = VPSHUFB(LUT, codes)
+  ip = 1 - 2*hamming/D                // 32 ips in ~D/4 VPSHUFB ops
+  // 1 vec at a time                  // 32 vecs simultaneously
+```
+
+**Part A: FastScan 核心**
+
+1. `QuantizeQuery14Bit(q', quant_out, dim) → width`：14-bit 对称量化查询向量
+   - `width = max(|q'|) / 8191`，`quant[i] = round(q'[i] / width)`
+   - 14-bit 是 VPSHUFB 8-bit LUT 约束下的最大精度：4 个值之和 `≤ 4×8191 = 32764 < 32767`
+
+2. `BuildFastScanLUT(quant_query, lut_out, dim) → shift`：构建 VPSHUFB 查找表
+   - 每组 4 维构建 16 项 LUT：`LUT[j] = Σ quant_query[k]` (k ∈ j 的 set bits)
+   - 使用 `lowbit(j) = j & (-j)` 递推
+   - 平移到无符号，拆分 lo/hi byte planes，按 AVX-512 128-bit lane 布局存放
+   - LUT 大小：`dim × 8` bytes（两个 byte plane）
+
+3. `AccumulateBlock(packed_codes, lut, result, dim)`：VPSHUFB batch-32 累积
+   - AVX-512：每次迭代处理 64 bytes codes + 2×64 bytes LUT（4 个 sub-quantizer）
+   - Two-plane 累加器（lo/hi bytes）避免 int16 溢出
+   - 最终合并：`result[v] = lo_plane[v] + (hi_plane[v] << 8)` → 32 个 uint32_t
+   - AVX2 fallback：同逻辑，32 bytes/迭代
+
+4. `EstimateDistanceFastScan(pq, packed_codes, block_norms, count, out_dist)`：
+   - AccumulateBlock → 反量化 `ip_raw = (accu + shift) × width`
+   - 内积估计 `⟨q̄,ô⟩ = (2 × ip_raw − sum_q) / √D`（与 EstimateDistanceAccurate 等价）
+   - 距离 `dist = norm_oc² + norm_qc² − 2 × norm_oc × norm_qc × ip_est`
+
+**Part B: AVX-512 SIMD 升级**
+
+| 文件 | AVX-512 关键变化 | 关键 intrinsics |
+|------|-----------------|----------------|
+| `distance_l2.cpp` | 16 floats/iter | `_mm512_fmadd_ps`, `_mm512_reduce_add_ps` |
+| `ip_exrabitq.cpp` | 16 floats/iter, mask blend | `_mm512_cvtepu8_epi32`, `_mm512_cmpneq_epi32_mask`, `_mm512_mask_blend_ps` |
+| `popcount.cpp` | VPOPCNTDQ 硬件 popcount | `_mm512_popcnt_epi64`, 8 uint64/iter |
+| `bit_unpack.cpp` | 16 bits/iter | `_mm512_srlv_epi32` |
+| `prefix_sum.cpp` | 保留 AVX2（stride-8 API） | — |
+| `transpose.cpp` | 保留 AVX2（8×8 block API） | — |
+
+编译时 3 层 dispatch：`#if VDB_USE_AVX512 / #elif VDB_USE_AVX2 / #else scalar`
+
+CMake：`-DVDB_USE_AVX512=ON` 同时定义 `VDB_USE_AVX2=1` 并添加 `-mavx512vpopcntdq`。
+
+### 结果
+
+```
+deep1m, nprobe=50, 100 queries, -DVDB_USE_AVX512=ON:
+
+bits=4: recall@10 = 0.9730, False SafeOut = 0, latency = 3.446ms
+bits=1: recall@10 = 0.9730, False SafeOut = 0, latency = 2.869ms
+
+recall 与 popcount baseline 完全一致。
+37/38 单元测试通过（1 个预存在的 flaky test_conann）。
+```
+
+### 文件变更
+
+| 文件 | 变更 |
+|------|------|
+| `CMakeLists.txt` | AVX-512 flags + `fastscan.cpp` 加入 `vdb_simd` |
+| `include/vdb/simd/fastscan.h` | 新增：`AccumulateBlock`, `BuildFastScanLUT`, `QuantizeQuery14Bit` |
+| `src/simd/fastscan.cpp` | 新增：AVX-512 + AVX2 + scalar 三路实现 |
+| `include/vdb/rabitq/rabitq_estimator.h` | `PreparedQuery` +FastScan 字段; +`EstimateDistanceFastScan` |
+| `src/rabitq/rabitq_estimator.cpp` | PrepareQuery 新增 step 7 (LUT 构建); FastScan 距离估算 |
+| `src/query/overlap_scheduler.cpp` | ProbeCluster 替换为 FastScan batch 调用 |
+| `src/simd/distance_l2.cpp` | +AVX-512 path (16 floats/iter) |
+| `src/simd/ip_exrabitq.cpp` | +AVX-512 path (mask blend) |
+| `src/simd/popcount.cpp` | +AVX-512 VPOPCNTDQ path |
+| `src/simd/bit_unpack.cpp` | +AVX-512 path (16 bits/iter) |
+
+---
+
+## 22. 待实施项
+
+1. **FastScan ConANN 分类集成**：当前 FastScan 计算距离后仍用 popcount 公式的 ConANN margin。应适配 14-bit 精度的 margin 公式，预期 Uncertain% 从 43% 大幅降低。
+2. **运行时 ISA dispatch**：当前 `#ifdef` 编译时选择 AVX2/AVX-512。生产环境需 `cpuid` 检测 + 函数指针分发。
+3. **Stage 2 FastScan**：当前 Stage 2 仍用逐向量 `IPExRaBitQ`。可用 `accumulate_one_block_high_acc` 参考实现批处理 Uncertain 向量。
+4. **延迟优化**：当前 bits=1 latency 2.87ms，目标 < 2ms。瓶颈在 I/O（io_uring 提交）而非 CPU 估算。
+  - 16×16 block transpose

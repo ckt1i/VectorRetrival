@@ -31,16 +31,13 @@ struct IvfBuilderConfig {
     /// Random seed for K-means initialization and ConANN calibration.
     uint64_t seed = 42;
 
-    /// Balance factor for capacity-constrained K-means.
-    /// 0 = standard K-means (no balancing).
-    /// 1 = strict capacity constraint (each cluster gets exactly N/K vectors).
-    /// Values in (0, 1) interpolate between standard and strict.
-    ///
-    /// When > 0, a capacity-constrained reassignment is applied after each
-    /// standard K-means iteration: clusters exceeding
-    ///   max_cap = ceil(N * (1 + balance_factor) / nlist)
-    /// have their farthest vectors moved to the nearest under-capacity cluster.
-    float balance_factor = 0.0f;
+    /// Optional precomputed centroids file (.fvecs).
+    /// When set (along with assignments_path), skip clustering entirely.
+    std::string centroids_path;
+
+    /// Optional precomputed assignments file (.ivecs).
+    /// When set (along with centroids_path), skip clustering entirely.
+    std::string assignments_path;
 
     /// RaBitQ configuration for encoding.
     RaBitQConfig rabitq;

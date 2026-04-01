@@ -37,6 +37,13 @@ include(FetchContent)
 find_package(Threads REQUIRED)
 find_package(GSL REQUIRED)
 
+# SuperKMeans — fast clustering library (header-only INTERFACE)
+set(SKMEANS_COMPILE_TESTS OFF CACHE BOOL "" FORCE)
+set(SKMEANS_COMPILE_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(SKMEANS_COMPILE_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(SKMEANS_SKIP_FFTW ON CACHE BOOL "" FORCE)
+add_subdirectory(thrid-party/SuperKMeans)
+
 # FlatBuffers - build from source to get flatc compiler
 FetchContent_Declare(
     flatbuffers
@@ -202,7 +209,7 @@ target_include_directories(vdb_index PUBLIC
     $<BUILD_INTERFACE:${FLATBUFFERS_GENERATED_DIR}>
     $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema)
+target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema vdb_io superkmeans)
 # IvfBuilder uses CrcCalibrator for offline CRC score precomputation.
 # GSL dependency stays PRIVATE within vdb_crc, not exposed to vdb_index consumers.
 target_link_libraries(vdb_index PRIVATE vdb_crc)

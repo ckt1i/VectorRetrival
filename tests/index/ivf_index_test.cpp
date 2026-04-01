@@ -43,7 +43,6 @@ class IvfIndexTest : public ::testing::Test {
         cfg.max_iterations = 10;
         cfg.tolerance = 1e-4f;
         cfg.seed = kSeed;
-        cfg.balance_factor = 0.0f;
         cfg.rabitq = {1, 64, 5.75f};
         cfg.calibration_samples = 10;
         cfg.calibration_topk = 5;

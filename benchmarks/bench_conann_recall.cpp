@@ -20,6 +20,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include "superkmeans/superkmeans.h"
+
 #include "vdb/common/types.h"
 #include "vdb/index/conann.h"
 #include "vdb/io/npy_reader.h"
@@ -55,57 +57,21 @@ static void Log(const char* fmt, ...) {
 }
 
 // ============================================================================
-// K-Means
+// K-Means (SuperKMeans)
 // ============================================================================
 
-static void KMeans(const float* data, uint32_t N, Dim dim, uint32_t K,
-                   uint32_t max_iter, uint64_t seed,
-                   std::vector<float>& centroids,
-                   std::vector<uint32_t>& assignments) {
-    centroids.resize(static_cast<size_t>(K) * dim);
-    assignments.resize(N);
-
-    std::mt19937_64 rng(seed);
-    std::vector<uint32_t> indices(N);
-    std::iota(indices.begin(), indices.end(), 0u);
-    std::shuffle(indices.begin(), indices.end(), rng);
-    for (uint32_t k = 0; k < K; ++k) {
-        std::memcpy(centroids.data() + static_cast<size_t>(k) * dim,
-                    data + static_cast<size_t>(indices[k]) * dim,
-                    dim * sizeof(float));
-    }
-
-    std::vector<uint32_t> counts(K);
-    std::vector<float> new_centroids(static_cast<size_t>(K) * dim);
-
-    for (uint32_t iter = 0; iter < max_iter; ++iter) {
-        for (uint32_t i = 0; i < N; ++i) {
-            const float* v = data + static_cast<size_t>(i) * dim;
-            float best_dist = std::numeric_limits<float>::max();
-            uint32_t best_k = 0;
-            for (uint32_t k = 0; k < K; ++k) {
-                float d = simd::L2Sqr(v, centroids.data() + static_cast<size_t>(k) * dim, dim);
-                if (d < best_dist) { best_dist = d; best_k = k; }
-            }
-            assignments[i] = best_k;
-        }
-        std::fill(counts.begin(), counts.end(), 0);
-        std::fill(new_centroids.begin(), new_centroids.end(), 0.0f);
-        for (uint32_t i = 0; i < N; ++i) {
-            uint32_t k = assignments[i];
-            counts[k]++;
-            const float* v = data + static_cast<size_t>(i) * dim;
-            float* c = new_centroids.data() + static_cast<size_t>(k) * dim;
-            for (uint32_t d = 0; d < dim; ++d) c[d] += v[d];
-        }
-        for (uint32_t k = 0; k < K; ++k) {
-            if (counts[k] == 0) continue;
-            float* c = new_centroids.data() + static_cast<size_t>(k) * dim;
-            float inv = 1.0f / static_cast<float>(counts[k]);
-            for (uint32_t d = 0; d < dim; ++d) c[d] *= inv;
-        }
-        centroids = new_centroids;
-    }
+static void RunSuperKMeans(const float* data, uint32_t N, Dim dim, uint32_t K,
+                           std::vector<float>& centroids,
+                           std::vector<uint32_t>& assignments) {
+    skmeans::SuperKMeansConfig cfg;
+    cfg.iters = 10;
+    cfg.seed = 42;
+    cfg.verbose = false;
+    auto skm = skmeans::SuperKMeans(K, dim, cfg);
+    auto c = skm.Train(data, N);
+    auto a = skm.Assign(data, c.data(), N, K);
+    centroids.assign(c.begin(), c.end());
+    assignments.assign(a.begin(), a.end());
 }
 
 // ============================================================================
@@ -207,7 +173,7 @@ int main(int argc, char* argv[]) {
 
     std::vector<float> centroids;
     std::vector<uint32_t> assignments;
-    KMeans(img.data.data(), N, dim, nlist, max_iter, seed, centroids, assignments);
+    RunSuperKMeans(img.data.data(), N, dim, nlist, centroids, assignments);
 
     // Build cluster member lists
     std::vector<std::vector<uint32_t>> cluster_members(nlist);
