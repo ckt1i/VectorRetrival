@@ -1,8 +1,8 @@
 # VDB VectorRetrival — 项目开发总结
 
-> **最后更新**：2026-04-01
-> **当前状态**：Phase 0–15 全部完成（含 v7 存储格式 + FastScan AVX-512）
-> **下一步**：生产路径集成 FastScan Stage 1 到 ConANN 分类；运行时 ISA dispatch
+> **最后更新**：2026-04-02
+> **当前状态**：Phase 0–15 全部完成（含 v7 存储格式 + FastScan AVX-512）；IO 优化方案已完成分析
+> **下一步**：NVMe 目标机器上实施 IO 优化（详见 [IO优化方案.md](IO优化方案.md)）；生产路径集成 FastScan Stage 1 到 ConANN 分类；运行时 ISA dispatch
 
 ---
 
@@ -30,6 +30,7 @@
 20. [Phase 14：存储格式 v7 双区域布局](#20-phase-14存储格式-v7-双区域布局)
 21. [Phase 15：FastScan + AVX-512](#21-phase-15fastscan--avx-512)
 22. [待实施项](#22-待实施项)
+23. [Phase 16：IO 优化方案](#23-phase-16io-优化方案)
 
 ---
 
@@ -1927,3 +1928,57 @@ recall 与 popcount baseline 完全一致。
 3. **Stage 2 FastScan**：当前 Stage 2 仍用逐向量 `IPExRaBitQ`。可用 `accumulate_one_block_high_acc` 参考实现批处理 Uncertain 向量。
 4. **延迟优化**：当前 bits=1 latency 2.87ms，目标 < 2ms。瓶颈在 I/O（io_uring 提交）而非 CPU 估算。
   - 16×16 block transpose
+5. **IO 优化**：详见 [IO优化方案.md](IO优化方案.md)，优先实施 DEFER_TASKRUN + O_DIRECT 链路。
+
+---
+
+## 23. Phase 16：IO 优化方案
+
+> 详细方案文档：[IO优化方案.md](IO优化方案.md)
+
+### 23.1 背景
+
+基于 100K 数据集（nlist=256, dim=512, bits=4）的 benchmark 分析，当前单线程查询 **100% CPU-bound**（io_wait=0.02ms / 126ms 总时间）。在 `nlist = 4√N` 策略下，IO/CPU 比率在所有规模（100K~100M）下始终 ≈ 1%。IO 优化目标不是追求极致吞吐，而是：
+
+1. 确保数据集超 RAM 时 IO 不成为瓶颈
+2. 减少 p99 延迟毛刺
+3. 为多线程查询做好基础
+
+### 23.2 关键决策
+
+- **io_uring vs mmap**：保持 io_uring，不换 mmap（cluster block 随机访问 + 已有精确 IO-计算重叠）
+- **O_DIRECT 策略**：.clu 开 O_DIRECT（大块读对齐容易），.dat 保持 buffered IO（小块随机读 page cache 友好）
+- **分阶段读 cluster block**：暂不实施（当前单簇 block 太大，流水线延迟增加）
+
+### 23.3 优化清单摘要
+
+**三条并行实施路径**：
+
+| 路径 | 内容 | 优先级 |
+|------|------|--------|
+| A：io_uring flags | DEFER_TASKRUN + SINGLE_ISSUER（3行）→ Fixed Files（可选） | 高，立即可做 |
+| B：O_DIRECT 链路 | .clu 布局 4KB 对齐 → Buffer 对齐 → O_DIRECT → IOPOLL | 中，大数据集必需 |
+| C：内存/提交优化 | 分配器改造 → Registered Buffers；bulk pread lookup table | 低 |
+
+**目标 NVMe 机器上首要任务**：
+1. 检查内核版本（≥ 5.19 for DEFER_TASKRUN）
+2. 查看 NVMe 队列参数（`/sys/block/nvme*/queue/`）
+3. 冷读 benchmark（`echo 3 > /proc/sys/vm/drop_caches`）获取真实 IO 延迟
+4. 对比热读 vs 冷读，确定 O_DIRECT 优先级
+
+### 23.4 当前 Benchmark 数据
+
+**100K, nlist=256, dim=512, bits=4（本机 page cache 热读）**：
+
+| 指标 | 值 |
+|------|-----|
+| avg_query_time | 125.8ms |
+| avg_io_wait | 0.02ms (0.016%) |
+| avg_probe_time | 110.0ms (87.4%) |
+| S1 SafeOut | 55.9% |
+| S2 SafeOut | 44.0% |
+| Uncertain | 0.14% (~141 vecs) |
+| recall@10 | 0.977 |
+| p99-p50 | 3.9ms |
+
+**Cluster block 特征**：avg=419KB, median=388KB, max=1.1MB, 256/256 offset 不对齐 4KB。
