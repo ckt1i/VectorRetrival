@@ -5,6 +5,7 @@
 #include <unordered_map>
 
 #include "vdb/common/types.h"
+#include "vdb/query/parsed_cluster.h"
 #include "vdb/query/result_collector.h"
 #include "vdb/query/search_context.h"
 
@@ -44,11 +45,11 @@ class RerankConsumer {
     bool HasPayload(uint64_t offset) const;
 
     /// Take ownership of a cached payload buffer (removes from cache).
-    /// Returns nullptr if not found.
-    std::unique_ptr<uint8_t[]> TakePayload(uint64_t offset);
+    /// Returns nullptr if not found.  Buffer was allocated via aligned_alloc.
+    AlignedBufPtr TakePayload(uint64_t offset);
 
     /// Cache a payload buffer (takes ownership).
-    void CachePayload(uint64_t offset, std::unique_ptr<uint8_t[]> buf);
+    void CachePayload(uint64_t offset, AlignedBufPtr buf);
 
     /// Remove cached payloads not in the final TopK.
     /// Call after Finalize to free memory for entries that didn't make it.
@@ -59,8 +60,8 @@ class RerankConsumer {
     Dim dim_;
     uint32_t vec_bytes_;  // dim * sizeof(float)
 
-    // Payload cache: addr.offset → owned payload buffer
-    std::unordered_map<uint64_t, std::unique_ptr<uint8_t[]>> payload_cache_;
+    // Payload cache: addr.offset → owned payload buffer (freed via free())
+    std::unordered_map<uint64_t, AlignedBufPtr> payload_cache_;
 };
 
 }  // namespace query

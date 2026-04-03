@@ -1,5 +1,6 @@
 #include "vdb/query/rerank_consumer.h"
 
+#include <cstdlib>
 #include <cstring>
 #include <unordered_set>
 
@@ -26,17 +27,18 @@ void RerankConsumer::ConsumeAll(uint8_t* buf, AddressEntry addr) {
     bool entered = ctx_.collector().TryInsert(dist, addr);
 
     if (entered && addr.size > vec_bytes_) {
-        // Copy payload portion to cache
+        // Copy payload portion to cache (aligned for consistency)
         uint32_t payload_len = addr.size - vec_bytes_;
-        auto payload_buf = std::make_unique<uint8_t[]>(payload_len);
-        std::memcpy(payload_buf.get(), buf + vec_bytes_, payload_len);
-        payload_cache_[addr.offset] = std::move(payload_buf);
+        uint32_t alloc_len = (payload_len + 4095u) & ~4095u;
+        uint8_t* pbuf = static_cast<uint8_t*>(std::aligned_alloc(4096, alloc_len));
+        std::memcpy(pbuf, buf + vec_bytes_, payload_len);
+        payload_cache_[addr.offset] = AlignedBufPtr(pbuf);
     }
     ctx_.stats().total_reranked++;
 }
 
 void RerankConsumer::ConsumePayload(uint8_t* buf, AddressEntry addr) {
-    payload_cache_[addr.offset] = std::unique_ptr<uint8_t[]>(buf);
+    payload_cache_[addr.offset] = AlignedBufPtr(buf);
     ctx_.stats().total_payload_prefetched++;
 }
 
@@ -44,7 +46,7 @@ bool RerankConsumer::HasPayload(uint64_t offset) const {
     return payload_cache_.count(offset) > 0;
 }
 
-std::unique_ptr<uint8_t[]> RerankConsumer::TakePayload(uint64_t offset) {
+AlignedBufPtr RerankConsumer::TakePayload(uint64_t offset) {
     auto it = payload_cache_.find(offset);
     if (it == payload_cache_.end()) return nullptr;
     auto buf = std::move(it->second);
@@ -52,8 +54,7 @@ std::unique_ptr<uint8_t[]> RerankConsumer::TakePayload(uint64_t offset) {
     return buf;
 }
 
-void RerankConsumer::CachePayload(uint64_t offset,
-                                   std::unique_ptr<uint8_t[]> buf) {
+void RerankConsumer::CachePayload(uint64_t offset, AlignedBufPtr buf) {
     payload_cache_[offset] = std::move(buf);
 }
 

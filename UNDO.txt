@@ -1,44 +1,189 @@
 ================================================================================
-UNDO.txt — Phase 3 Deferred Optimizations & Known Limitations
+UNDO.txt — Deferred Optimizations & Known Limitations
 ================================================================================
 
-This file tracks intentional simplifications made during Phase 3 (SIMD + Codec)
-implementation. Each entry describes what was deferred, why, and how to implement
-it when the need arises.
+This file tracks intentional simplifications and planned optimizations.
+Each entry describes what was deferred, why, and how to implement it.
+
+================================================================================
+Phase 5 — IO Optimization (Single-Query Focus)
+================================================================================
+Target hardware: Kioxia KCD61LUL3T84 NVMe (3.5TB, 1M IOPS, ~6.9 GB/s seq read)
+Server kernel: 6.8.0-87-generic (supports DEFER_TASKRUN)
+NVMe params: max_hw_sectors_kb=128, max_segments=33, nr_requests=1023
+Reference docs: IO优化方案.md, 优化技巧.md
 
 --------------------------------------------------------------------------------
-[PHASE3-001] AVX-512 Path Deferred
+[PHASE5-001] DEFER_TASKRUN + SINGLE_ISSUER (Path A: io_uring flags)
 --------------------------------------------------------------------------------
-Status  : Not implemented
-Files   : include/vdb/simd/distance_l2.h, src/simd/distance_l2.cpp
-          include/vdb/simd/bit_unpack.h,  src/simd/bit_unpack.cpp
-          include/vdb/simd/prefix_sum.h,  src/simd/prefix_sum.cpp
+Status   : Not implemented
+Priority : HIGH — 3 lines, zero risk, immediate benefit
+Files    : src/query/io_uring_reader.cpp (Init)
 
-What was done:
-  - Only AVX2 (+FMA) and scalar fallback paths are implemented.
-  - The CMake option VDB_USE_AVX512=OFF already exists but is not wired into
-    any SIMD kernel in Phase 3.
+What to do:
+  - Add IORING_SETUP_SINGLE_ISSUER | IORING_SETUP_DEFER_TASKRUN to params.flags
+  - Add fallback: if io_uring_queue_init_params fails, retry without these flags
+    (for kernels < 5.19)
+
+Benefit: p99 tail latency stabilized — eliminates random kernel preemption of
+  CPU-intensive ProbeCluster computations.
+
+Constraint: SINGLE_ISSUER limits the ring to the creating thread only.
+  Compatible with current single-threaded model. Future multi-thread needs
+  one ring per thread.
+
+--------------------------------------------------------------------------------
+[PHASE5-002] Registered File Descriptors (Fixed Files)
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : LOW — ~15 lines, minor benefit (~80μs/query)
+Files    : src/query/io_uring_reader.cpp, include/vdb/query/async_reader.h
+
+What to do:
+  - After Init(): io_uring_register_files(&ring, fds, 2) for clu_fd + dat_fd
+  - PrepRead: sqe->flags |= IOSQE_FIXED_FILE, use fd_index instead of fd
+  - Saves fget/fput atomic ops per SQE (~200ns × ~756 SQE = 151μs/query)
+
+--------------------------------------------------------------------------------
+[PHASE5-003] .clu File Layout 4KB Alignment (Path B: O_DIRECT prerequisite)
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : HIGH — required for O_DIRECT
+Files    : src/storage/cluster_store.cpp (Writer side)
+
+What to do:
+  - BeginCluster/EndCluster: pad each block to 4KB boundary
+  - Lookup table offset/size reflect aligned values
+  - Add file format version number for compatibility
+
+Breaking change: old .clu files incompatible, need index rebuild.
+Space overhead: ≤ nlist × 4095B ≈ 1MB (<1% of .clu total).
+
+Note: .dat is ALREADY 4KB-aligned (page_size=4096 padding). No changes needed.
+
+--------------------------------------------------------------------------------
+[PHASE5-004] Buffer Allocation Alignment
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : HIGH — required for O_DIRECT
+Files    : src/query/overlap_scheduler.cpp (SubmitClusterRead)
+           include/vdb/query/buffer_pool.h, src/query/buffer_pool.cpp
+
+What to do:
+  - Cluster block: change `new uint8_t[size]` → `aligned_alloc(4096, round_up(size, 4096))`
+  - BufferPool: internal alloc → aligned_alloc(4096, ...), free() instead of delete[]
+  - Check nullptr return from aligned_alloc (returns nullptr on failure, not exception)
+
+--------------------------------------------------------------------------------
+[PHASE5-005] O_DIRECT Toggle
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : MEDIUM — needs PHASE5-003 + PHASE5-004 first
+Files    : src/storage/cluster_store.cpp, src/storage/data_file_reader.cpp
+
+What to do:
+  - Add SearchConfig.use_direct_io = false
+  - open() with O_DIRECT when enabled
+  - Strategy: small dataset (<50% RAM) → buffered IO; large dataset → O_DIRECT
+
+Dependency chain: PHASE5-003 (.clu align) + PHASE5-004 (buffer align) → PHASE5-005
+
+--------------------------------------------------------------------------------
+[PHASE5-006] IOPOLL (Conditional — needs cold-read benchmark)
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : LOW — only valuable when IO-bound (data >> RAM)
+Files    : src/query/io_uring_reader.cpp
+
+What to do:
+  - Add IORING_SETUP_IOPOLL to params.flags
+  - Requires O_DIRECT (PHASE5-005)
+
+Caution: Current workload is CPU-bound (io_wait=0.016%). IOPOLL's busy-wait
+  may waste CPU. Only beneficial for cold-data scenarios. Benchmark first:
+    echo 3 > /proc/sys/vm/drop_caches → measure real io_wait
+
+--------------------------------------------------------------------------------
+[PHASE5-007] Lookup Table Bulk Pread
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : MEDIUM — mandatory under O_DIRECT (small preads violate alignment)
+Files    : src/storage/cluster_store.cpp (ClusterStoreReader::Open)
+
+What to do:
+  - Replace ~2000 per-field PreadValue calls with single pread of entire
+    lookup table (nlist × entry_size), then parse in memory
+  - Saves ~4ms startup time; becomes REQUIRED under O_DIRECT
+
+--------------------------------------------------------------------------------
+[PHASE5-008] pending_ HashMap → Slot Vector
+--------------------------------------------------------------------------------
+Status   : Not implemented
+Priority : LOW — ~30 lines, ~160μs/query saving
+Files    : include/vdb/query/overlap_scheduler.h, src/query/overlap_scheduler.cpp
+
+What to do:
+  - Encode PendingIO slot index into io_uring user_data (64-bit)
+  - Replace unordered_map<uint8_t*, PendingIO> with vector<PendingIO> + freelist
+  - Eliminates hash lookup on every CQE dispatch
+
+--------------------------------------------------------------------------------
+[PHASE5-009] IO Size Awareness: max_segments=33 → 4.1MB Threshold
+--------------------------------------------------------------------------------
+Status   : Not implemented (currently not needed)
+Priority : LOW — only relevant at 100M+ scale
+
+Note: This server's max_segments=33 means the io_uring async worker slow path
+  triggers at 33 × 128KB = 4.1MB (NOT the 15.9MB assumed in IO优化方案.md).
+  Current max cluster block = 1.1MB (100K scale) → safe.
+  At 100M scale (avg=2.7MB, some blocks may exceed 4.1MB), need user-space
+  splitting in PrepRead: split large IO into ≤4MB sub-SQEs, aggregate CQEs
+  internally, report single completion to OverlapScheduler.
+
+================================================================================
+Phase 6 — Coroutine/Fiber Architecture (DEFERRED)
+================================================================================
+
+--------------------------------------------------------------------------------
+[PHASE6-001] Fiber-Based Query Scheduler (boost.fcontext)
+--------------------------------------------------------------------------------
+Status   : Not implemented — deferred until multi-query/batch query phase
+Priority : FUTURE — architectural change, ~700-900 lines
 
 Why deferred:
-  - AVX-512 requires a separate CPU target and complicates the dispatch table.
-  - AVX-512 doubles the vector width (512-bit) but offers diminishing returns
-    for short vectors (dim < 512) or small batch sizes.
-  - Hardware availability: AVX-512 is not universally supported on dev machines.
+  - Current single-query pipeline is 100% CPU-bound (io_wait=0.016%)
+  - overlap_ratio=99.98% — manual event loop already achieves near-perfect overlap
+  - Fiber yield/resume overhead (~1-5μs) × nprobe × yields would be non-trivial
+  - Coroutines solve "IO wait while CPU idle" — a problem that doesn't exist yet
 
-How to implement later:
-  1. Add a new #elif VDB_USE_AVX512 branch in each .cpp file.
-  2. distance_l2: use _mm512_loadu_ps (16 floats/iter), _mm512_sub_ps,
-     _mm512_fmadd_ps, _mm512_reduce_add_ps for horizontal sum.
-  3. bit_unpack 1-bit: use _mm512_srlv_epi32 with 16-element shift vectors
-     to process 2 bytes → 16 uint32_t per iteration.
-  4. prefix_sum: use _mm512_alignr_epi32 for cross-lane carries; process
-     16 uint32_t per AVX-512 register.
-  5. Guard with #if defined(VDB_USE_AVX512) && defined(__AVX512F__).
-  6. Add a CMake compile-definition VDB_USE_AVX512=1 and compiler flag
-     -mavx512f -mavx512dq -mavx512bw -mavx512vl when the option is ON.
+When to implement:
+  - When implementing batch/concurrent query execution (multiple queries sharing
+    worker threads)
+  - When data exceeds RAM and IO becomes a real bottleneck
+
+Architecture (from 优化技巧.md):
+  1. Per-CPU worker thread, each with 1 io_uring ring + 1 FiberScheduler
+  2. Each query = fiber. ProbeCluster becomes fiber function with yield on IO
+  3. Scheduler main loop: run_ready_fibers → submitIO (batch) → poll CQE → wake
+  4. Multi-query IO requests aggregate into large batches → saturate NVMe IOPS
+  5. No locks needed (fibers within same thread are cooperative)
+
+Implementation layers:
+  Layer 1: CMake + Boost.Context dependency (~10 lines)
+  Layer 2: FiberScheduler class (ready queue, IO wait table, main loop) ~200-300 lines
+  Layer 3: Rewrite OverlapScheduler as fiber functions ~300-400 lines
+  Layer 4: Multi-thread dispatch (round-robin or work-stealing) ~200 lines
+
+Alternative: C++20 coroutines (co_await) — zero overhead but more complex to write.
+  Boost.fcontext preferred for stackful semantics and simpler migration from
+  current explicit state machine.
+
+================================================================================
+Phase 3 — SIMD & Codec Deferred Items
+================================================================================
 
 --------------------------------------------------------------------------------
-[PHASE3-002] bit_unpack: Only 1-bit Has AVX2 Specialization
+[PHASE3-002] bit_unpack: Only 1-bit Has AVX2/AVX-512 Specialization
 --------------------------------------------------------------------------------
 Status  : Partially specialized
 Files   : include/vdb/simd/bit_unpack.h, src/simd/bit_unpack.cpp
@@ -202,40 +347,13 @@ Future optimization:
      per-index-load).
 
 --------------------------------------------------------------------------------
-[PHASE4-002] Multi-bit RaBitQ (M=2, 4, 8) Not Implemented
---------------------------------------------------------------------------------
-Status  : Not implemented (only M=1)
-Files   : include/vdb/rabitq/rabitq_encoder.h, include/vdb/rabitq/rabitq_estimator.h
-
-What was done:
-  - Only 1-bit RaBitQ (32× compression) is implemented.
-  - The distance estimator uses sign-code XOR + popcount for the fast path.
-
-How to implement later:
-  1. Extend encoder to quantize each rotated dimension into 2^M bins
-     (uniform quantization in [-1, 1]).
-  2. Pack M-bit codes using the existing bitpack_codec.
-  3. Distance computation uses a precomputed LUT[2^M] per query:
-     LUT[v] = weighted sum for quantization level v.
-  4. MSB optimization: use MSB (= sign bit) for Stage 1 pruning, then
-     full M-bit for Stage 2 refinement.
-  5. Template on BITS: RaBitQEncoder<1>, RaBitQEncoder<2>, etc.
-
---------------------------------------------------------------------------------
-[PHASE4-003] Estimator PopcountXor: No AVX-512 VPOPCNTDQ Path
---------------------------------------------------------------------------------
-Status  : Not implemented
-Files   : src/simd/popcount.cpp
-
-What was done:
-  - AVX2 VPSHUFB-based popcount (nibble lookup table).
-  - Scalar __builtin_popcountll fallback.
-
-How to implement later:
-  1. On AVX-512 VPOPCNT (Ice Lake+), use _mm512_popcnt_epi64 directly.
-  2. This eliminates the lookup + accumulate overhead entirely.
-  3. Guard with #if defined(__AVX512VPOPCNTDQ__).
-
+  [REMOVED] PHASE4-002: Multi-bit RaBitQ — IMPLEMENTED as ExRaBitQ
+    (ip_exrabitq.cpp, parsed_cluster.h ex_code/ex_sign, overlap_scheduler has_s2_)
+  [REMOVED] PHASE4-003: AVX-512 VPOPCNTDQ — IMPLEMENTED in popcount.cpp
+    (_mm512_popcnt_epi64)
+  [REMOVED] PHASE3-001: AVX-512 paths — IMPLEMENTED in distance_l2, popcount,
+    ip_exrabitq, fastscan. (bit_unpack/prefix_sum still lack AVX-512, tracked
+    in PHASE3-002 and PHASE3-003 respectively)
 --------------------------------------------------------------------------------
 [PHASE4-004] RaBitQ Encoder: Per-vector Heap Allocation
 --------------------------------------------------------------------------------

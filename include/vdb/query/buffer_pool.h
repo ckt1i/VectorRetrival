@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <memory>
+#include <cstdlib>
 #include <unordered_map>
 #include <vector>
 
@@ -13,7 +13,10 @@ namespace query {
 class BufferPool {
  public:
     BufferPool() = default;
-    ~BufferPool() = default;
+    ~BufferPool() {
+        for (auto& e : pool_) std::free(e.buf);
+        // outstanding_ buffers are owned by callers — not freed here
+    }
 
     /// Acquire a buffer of at least `size` bytes.
     /// Reuses a pooled buffer if one with sufficient capacity exists,
@@ -36,8 +39,9 @@ class BufferPool {
 
  private:
     struct PoolEntry {
-        std::unique_ptr<uint8_t[]> buf;
+        uint8_t* buf;
         uint32_t capacity;
+        ~PoolEntry() = default;
     };
 
     std::vector<PoolEntry> pool_;

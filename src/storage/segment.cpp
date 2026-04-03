@@ -16,17 +16,19 @@ Segment::~Segment() = default;
 // ============================================================================
 
 Status Segment::Open(const std::string& dir,
-                     const std::vector<ColumnSchema>& payload_schemas) {
+                     const std::vector<ColumnSchema>& payload_schemas,
+                     bool use_direct_io) {
     const std::string clu_path = dir + "/cluster.clu";
     const std::string dat_path = dir + "/data.dat";
 
     // Open cluster store (reads header + lookup table)
-    VDB_RETURN_IF_ERROR(clu_reader_.Open(clu_path));
+    VDB_RETURN_IF_ERROR(clu_reader_.Open(clu_path, use_direct_io));
 
     // Open data file
     VDB_RETURN_IF_ERROR(dat_reader_.Open(dat_path,
                                           clu_reader_.dim(),
-                                          payload_schemas));
+                                          payload_schemas,
+                                          use_direct_io));
 
     return Status::OK();
 }

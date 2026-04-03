@@ -48,7 +48,7 @@ class IvfIndex {
     ///
     /// @param dir  Path to the directory containing the index files
     /// @return     Status
-    Status Open(const std::string& dir);
+    Status Open(const std::string& dir, bool use_direct_io = false);
 
     /// Find the nprobe nearest clusters for a query vector.
     ///

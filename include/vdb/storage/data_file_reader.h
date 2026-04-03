@@ -47,7 +47,8 @@ class DataFileReader {
     /// @return Status
     Status Open(const std::string& path,
                 Dim dim,
-                const std::vector<ColumnSchema>& payload_schemas = {});
+                const std::vector<ColumnSchema>& payload_schemas = {},
+                bool use_direct_io = false);
 
     /// Close the file.
     void Close();

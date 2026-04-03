@@ -92,15 +92,22 @@ void OverlapScheduler::SubmitClusterRead(uint32_t cluster_id) {
 
     int clu_fd = index_.segment().clu_fd();
     uint32_t size32 = static_cast<uint32_t>(loc->size);
-    // Not from BufferPool — ownership transfers to ParsedCluster.block_buf
-    uint8_t* buf = new uint8_t[size32];
-    CheckPrepRead(reader_.PrepRead(clu_fd, buf, size32, loc->offset),
+    // Round up read length to 4KB for O_DIRECT compatibility
+    uint32_t read_size = (size32 + 4095u) & ~4095u;
+    // 4KB-aligned buffer allocation for O_DIRECT compatibility
+    uint8_t* buf = static_cast<uint8_t*>(
+        std::aligned_alloc(4096, read_size));
+    if (!buf) {
+        std::fprintf(stderr, "FATAL: aligned_alloc failed for cluster block (%u bytes)\n", read_size);
+        std::abort();
+    }
+    CheckPrepRead(reader_.PrepRead(clu_fd, buf, read_size, loc->offset),
                   "cluster block");
 
     PendingIO io;
     io.type = PendingIO::Type::CLUSTER_BLOCK;
     io.cluster_id = cluster_id;
-    io.block_size = size32;
+    io.block_size = size32;  // original size for parsing
     pending_[buf] = io;
     inflight_clusters_++;
 }
@@ -137,7 +144,7 @@ void OverlapScheduler::DispatchCompletion(
     switch (io.type) {
         case PendingIO::Type::CLUSTER_BLOCK: {
             inflight_clusters_--;
-            auto block_buf = std::unique_ptr<uint8_t[]>(buf);
+            auto block_buf = AlignedBufPtr(buf);
             ParsedCluster pc;
             auto s = index_.segment().ParseClusterBlock(
                 io.cluster_id, std::move(block_buf), io.block_size, pc);
@@ -458,7 +465,7 @@ void OverlapScheduler::FinalDrain(SearchContext& ctx,
     // a previous query whose buffers no longer match pending_ entries).
     for (auto& [buf, pio] : pending_) {
         if (pio.type == PendingIO::Type::CLUSTER_BLOCK) {
-            delete[] buf;
+            std::free(buf);
         } else {
             buffer_pool_.Release(buf);
         }

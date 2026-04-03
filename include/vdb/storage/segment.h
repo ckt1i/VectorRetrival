@@ -52,7 +52,8 @@ class Segment {
     /// @param payload_schemas  Payload column schemas for DataFileReader
     /// @return Status
     Status Open(const std::string& dir,
-                const std::vector<ColumnSchema>& payload_schemas = {});
+                const std::vector<ColumnSchema>& payload_schemas = {},
+                bool use_direct_io = false);
 
     /// Whether the segment is open.
     bool is_open() const { return clu_reader_.is_open(); }
@@ -120,7 +121,7 @@ class Segment {
 
     /// Parse a raw block buffer into a ParsedCluster (pure CPU, no I/O).
     Status ParseClusterBlock(uint32_t cluster_id,
-                              std::unique_ptr<uint8_t[]> block_buf,
+                              query::AlignedBufPtr block_buf,
                               uint64_t block_size,
                               query::ParsedCluster& out) {
         return clu_reader_.ParseClusterBlock(

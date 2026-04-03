@@ -43,12 +43,15 @@ DataFileReader& DataFileReader::operator=(DataFileReader&& other) noexcept {
 
 Status DataFileReader::Open(const std::string& path,
                              Dim dim,
-                             const std::vector<ColumnSchema>& payload_schemas) {
+                             const std::vector<ColumnSchema>& payload_schemas,
+                             bool use_direct_io) {
     if (fd_ >= 0) {
         return Status::InvalidArgument("DataFileReader already open");
     }
 
-    fd_ = ::open(path.c_str(), O_RDONLY);
+    int flags = O_RDONLY;
+    if (use_direct_io) flags |= O_DIRECT;
+    fd_ = ::open(path.c_str(), flags);
     if (fd_ < 0) {
         return Status::IOError("Failed to open DataFile: " + path);
     }

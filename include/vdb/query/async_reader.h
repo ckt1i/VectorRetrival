@@ -85,10 +85,20 @@ class IoUringReader : public AsyncReader {
     /// @param queue_depth SQ depth
     /// @param cq_entries CQ capacity (via IORING_SETUP_CQSIZE)
     /// @return Status::OK or Status::NotSupported
-    Status Init(uint32_t queue_depth = 64, uint32_t cq_entries = 4096);
+    Status Init(uint32_t queue_depth = 64, uint32_t cq_entries = 4096,
+                bool use_iopoll = false);
+
+    /// Register file descriptors for IOSQE_FIXED_FILE optimization.
+    /// After registration, use PrepReadFixed with the fd index (0-based).
+    Status RegisterFiles(const int* fds, uint32_t count);
 
     Status PrepRead(int fd, uint8_t* buf,
                     uint32_t len, uint64_t offset) override;
+
+    /// PrepRead using a registered fd index (IOSQE_FIXED_FILE).
+    Status PrepReadFixed(int fd_index, uint8_t* buf,
+                         uint32_t len, uint64_t offset);
+
     uint32_t Submit() override;
     uint32_t Poll(IoCompletion* out, uint32_t max_count) override;
     uint32_t WaitAndPoll(IoCompletion* out, uint32_t max_count) override;

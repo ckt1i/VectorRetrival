@@ -24,7 +24,7 @@ IvfIndex::~IvfIndex() = default;
 // Open — load index from directory
 // ============================================================================
 
-Status IvfIndex::Open(const std::string& dir) {
+Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
     dir_ = dir;
 
     // --- 1. Read segment.meta (FlatBuffers) ---
@@ -117,7 +117,7 @@ Status IvfIndex::Open(const std::string& dir) {
     }
 
     // --- 7. Open segment (unified cluster.clu + data.dat) ---
-    auto seg_status = segment_.Open(dir, payload_schemas_);
+    auto seg_status = segment_.Open(dir, payload_schemas_, use_direct_io);
     if (!seg_status.ok()) {
         return seg_status;
     }

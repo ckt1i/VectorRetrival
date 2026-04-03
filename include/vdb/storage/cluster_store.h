@@ -193,8 +193,9 @@ class ClusterStoreReader {
     /// Reads global header and the full lookup table into memory.
     ///
     /// @param path  File path
+    /// @param use_direct_io  Open with O_DIRECT (requires v8 aligned .clu)
     /// @return Status
-    Status Open(const std::string& path);
+    Status Open(const std::string& path, bool use_direct_io = false);
 
     /// Close the file.
     void Close();
@@ -280,7 +281,7 @@ class ClusterStoreReader {
     /// Parse a raw block buffer (already read from disk) into a ParsedCluster.
     /// Pure CPU operation — no I/O.  block_buf ownership transfers to out.
     Status ParseClusterBlock(uint32_t cluster_id,
-                              std::unique_ptr<uint8_t[]> block_buf,
+                              query::AlignedBufPtr block_buf,
                               uint64_t block_size,
                               query::ParsedCluster& out);
 

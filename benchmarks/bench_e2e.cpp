@@ -20,10 +20,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <numeric>
 #include <string>
+#include <unistd.h>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -56,6 +58,13 @@ static std::string GetStringArg(int argc, char* argv[], const char* name,
         if (std::strcmp(argv[i], name) == 0) return argv[i + 1];
     }
     return default_val;
+}
+
+static bool HasFlag(int argc, char* argv[], const char* name) {
+    for (int i = 1; i < argc; ++i) {
+        if (std::strcmp(argv[i], name) == 0) return true;
+    }
+    return false;
 }
 
 static int GetIntArg(int argc, char* argv[], const char* name, int default_val) {
@@ -428,6 +437,10 @@ int main(int argc, char* argv[]) {
     int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
     int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
 
+    bool arg_cold = HasFlag(argc, argv, "--cold");
+    bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
+    bool arg_iopoll = HasFlag(argc, argv, "--iopoll");
+
     // Precomputed clustering (skip KMeans if both provided)
     std::string arg_centroids = GetStringArg(argc, argv, "--centroids", "");
     std::string arg_assignments = GetStringArg(argc, argv, "--assignments", "");
@@ -609,7 +622,7 @@ int main(int argc, char* argv[]) {
     // Phase C.5: Open Index + CRC Calibration (from disk)
     // ================================================================
     IvfIndex index;
-    s = index.Open(index_dir);
+    s = index.Open(index_dir, arg_direct_io);
     if (!s.ok()) {
         std::fprintf(stderr, "Open failed: %s\n", s.ToString().c_str());
         return 1;
@@ -743,10 +756,21 @@ int main(int argc, char* argv[]) {
     // Phase D: Query
     // ================================================================
     IoUringReader reader;
-    auto init_status = reader.Init(64, 4096);
+    auto init_status = reader.Init(64, 4096, arg_iopoll);
     if (!init_status.ok()) {
         std::fprintf(stderr, "IoUring init failed: %s\n", init_status.ToString().c_str());
         return 1;
+    }
+
+    // Register file descriptors for IOSQE_FIXED_FILE optimization
+    {
+        int fds[2] = {index.segment().clu_fd(),
+                      index.segment().data_reader().fd()};
+        auto reg_status = reader.RegisterFiles(fds, 2);
+        if (!reg_status.ok()) {
+            Log("  Warning: RegisterFiles failed: %s (continuing without)\n",
+                reg_status.ToString().c_str());
+        }
     }
 
     // Prepare query IDs as a flat vector for RunQueryRound
@@ -758,14 +782,75 @@ int main(int argc, char* argv[]) {
     search_cfg.top_k = GT_K;
     search_cfg.nprobe = static_cast<uint32_t>(arg_nprobe);
     search_cfg.early_stop = (arg_early_stop != 0);
-    search_cfg.prefetch_depth = 16;
+    search_cfg.prefetch_depth = static_cast<uint32_t>(
+        GetIntArg(argc, argv, "--prefetch-depth", 16));
     search_cfg.io_queue_depth = 64;
     search_cfg.crc_params = &calib_results;
-    search_cfg.initial_prefetch = 4;
+    search_cfg.initial_prefetch = static_cast<uint32_t>(
+        GetIntArg(argc, argv, "--initial-prefetch", 16));
+    search_cfg.refill_threshold = static_cast<uint32_t>(
+        GetIntArg(argc, argv, "--refill-threshold", 4));
+    search_cfg.refill_count = static_cast<uint32_t>(
+        GetIntArg(argc, argv, "--refill-count", 8));
 
     auto [qresults, metrics] = RunQueryRound(
-        "CRC", index, reader, search_cfg,
+        arg_cold ? "HOT" : "CRC", index, reader, search_cfg,
         qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
+
+    // ================================================================
+    // Phase D2: Cold-read round (optional)
+    // ================================================================
+    RoundMetrics cold_metrics{};
+    if (arg_cold) {
+        int clu_fd = index.segment().clu_fd();
+        int dat_fd = index.segment().data_reader().fd();
+
+        off_t clu_size = lseek(clu_fd, 0, SEEK_END);
+        off_t dat_size = lseek(dat_fd, 0, SEEK_END);
+
+        Log("\n[Cold] Evicting page cache via posix_fadvise(FADV_DONTNEED)...\n");
+        Log("  .clu fd=%d size=%ld bytes\n", clu_fd, static_cast<long>(clu_size));
+        Log("  .dat fd=%d size=%ld bytes\n", dat_fd, static_cast<long>(dat_size));
+
+        int r1 = posix_fadvise(clu_fd, 0, clu_size, POSIX_FADV_DONTNEED);
+        int r2 = posix_fadvise(dat_fd, 0, dat_size, POSIX_FADV_DONTNEED);
+        if (r1 != 0 || r2 != 0) {
+            Log("  WARNING: posix_fadvise returned non-zero (clu=%d, dat=%d)\n",
+                r1, r2);
+        } else {
+            Log("  Page cache eviction done.\n");
+        }
+
+        auto [cold_qresults, cm] = RunQueryRound(
+            "COLD", index, reader, search_cfg,
+            qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
+        cold_metrics = cm;
+
+        Log("\n╔══════════════════════════════════════════════════════════╗\n");
+        Log("║              HOT vs COLD Read Comparison                ║\n");
+        Log("╠══════════════════════════════════════════════════════════╣\n");
+        Log("║  Metric              │     HOT     │     COLD    │ Δ   ║\n");
+        Log("╟──────────────────────┼─────────────┼─────────────┼─────╢\n");
+        Log("║  avg_query (ms)      │ %11.3f │ %11.3f │%+.0f%%║\n",
+            metrics.avg_query_ms, cold_metrics.avg_query_ms,
+            (cold_metrics.avg_query_ms / metrics.avg_query_ms - 1.0) * 100);
+        Log("║  avg_io_wait (ms)    │ %11.3f │ %11.3f │%+.0f%%║\n",
+            metrics.avg_io_wait, cold_metrics.avg_io_wait,
+            cold_metrics.avg_io_wait > 0.001
+                ? (cold_metrics.avg_io_wait / std::max(metrics.avg_io_wait, 0.001) - 1.0) * 100
+                : 0.0);
+        Log("║  avg_probe (ms)      │ %11.3f │ %11.3f │%+.0f%%║\n",
+            metrics.avg_probe, cold_metrics.avg_probe,
+            (cold_metrics.avg_probe / std::max(metrics.avg_probe, 0.001) - 1.0) * 100);
+        Log("║  p99 (ms)            │ %11.3f │ %11.3f │%+.0f%%║\n",
+            metrics.p99, cold_metrics.p99,
+            (cold_metrics.p99 / std::max(metrics.p99, 0.001) - 1.0) * 100);
+        Log("║  overlap_ratio       │ %11.4f │ %11.4f │     ║\n",
+            metrics.overlap_ratio, cold_metrics.overlap_ratio);
+        Log("║  recall@10           │ %11.4f │ %11.4f │     ║\n",
+            metrics.recall_at[2], cold_metrics.recall_at[2]);
+        Log("╚══════════════════════════════════════════════════════════╝\n");
+    }
 
     // ================================================================
     // Phase E: Summary Output

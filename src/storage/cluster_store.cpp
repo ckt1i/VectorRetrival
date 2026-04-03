@@ -18,7 +18,9 @@ namespace storage {
 
 /// Global file header magic: "VCML" (0x4C4D4356 little-endian)
 static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
-static constexpr uint32_t kFileVersion = 7;
+static constexpr uint32_t kFileVersion = 8;
+static constexpr uint32_t kFileVersionV7 = 7;
+static constexpr uint32_t kAlignSize = 4096;
 
 /// Per-cluster block mini-trailer magic: "VCLB" (0x424C4356 little-endian)
 static constexpr uint32_t kBlockMagic = 0x424C4356;
@@ -47,6 +49,24 @@ inline bool PreadValue(int fd, off_t offset, T& out) {
 inline bool PreadBytes(int fd, off_t offset, void* out, size_t len) {
     ssize_t n = ::pread(fd, out, len, offset);
     return n == static_cast<ssize_t>(len);
+}
+
+inline uint64_t RoundUp4K(uint64_t v) {
+    return (v + kAlignSize - 1) & ~(static_cast<uint64_t>(kAlignSize) - 1);
+}
+
+inline void PadTo4K(std::fstream& f, uint64_t& offset) {
+    uint64_t aligned = RoundUp4K(offset);
+    if (aligned > offset) {
+        uint64_t pad = aligned - offset;
+        char zeros[kAlignSize] = {0};
+        while (pad > 0) {
+            uint64_t chunk = std::min(pad, static_cast<uint64_t>(kAlignSize));
+            f.write(zeros, static_cast<std::streamsize>(chunk));
+            pad -= chunk;
+        }
+        offset = aligned;
+    }
 }
 
 }  // anonymous namespace
@@ -142,6 +162,10 @@ Status ClusterStoreWriter::Open(const std::string& path,
     }
 
     current_offset_ = static_cast<uint64_t>(file_.tellp());
+
+    // Pad to 4KB boundary so first cluster block starts aligned
+    PadTo4K(file_, current_offset_);
+
     return Status::OK();
 }
 
@@ -346,7 +370,7 @@ Status ClusterStoreWriter::EndCluster() {
 
     current_offset_ = static_cast<uint64_t>(file_.tellp());
 
-    // --- Patch lookup table entry ---
+    // --- Patch lookup table entry (before padding) ---
     auto& entry = info_.lookup_table[current_cluster_index_];
     entry.block_offset = block_start_;
     entry.block_size = current_offset_ - block_start_;
@@ -372,8 +396,9 @@ Status ClusterStoreWriter::EndCluster() {
         return Status::IOError("Failed to patch lookup table entry");
     }
 
-    // Seek back to end for next cluster
+    // Seek back to end for next cluster, pad to 4KB boundary
     file_.seekp(static_cast<std::streamoff>(current_offset_));
+    PadTo4K(file_, current_offset_);
 
     current_cluster_index_++;
     in_cluster_ = false;
@@ -465,152 +490,123 @@ void ClusterStoreReader::Close() {
     cluster_index_.clear();
 }
 
-Status ClusterStoreReader::Open(const std::string& path) {
+Status ClusterStoreReader::Open(const std::string& path, bool use_direct_io) {
     if (fd_ >= 0) {
         return Status::InvalidArgument("ClusterStoreReader already open");
     }
 
-    fd_ = ::open(path.c_str(), O_RDONLY);
+    int flags = O_RDONLY;
+    if (use_direct_io) flags |= O_DIRECT;
+    fd_ = ::open(path.c_str(), flags);
     if (fd_ < 0) {
         return Status::IOError("Failed to open ClusterStore: " + path);
     }
 
-    // --- Read global header ---
-    off_t pos = 0;
-    uint32_t magic = 0, version = 0;
-    if (!PreadValue(fd_, pos, magic)) {
-        Close();
-        return Status::IOError("Failed to read magic");
-    }
-    pos += sizeof(uint32_t);
+    // --- Read global header (aligned for O_DIRECT compatibility) ---
+    // Header is < 4KB. Read first 4KB in one aligned read, parse from buffer.
+    {
+        uint8_t* hdr_buf = static_cast<uint8_t*>(
+            std::aligned_alloc(kAlignSize, kAlignSize));
+        if (!hdr_buf) { Close(); return Status::IOError("aligned_alloc failed for header"); }
+        ssize_t n = ::pread(fd_, hdr_buf, kAlignSize, 0);
+        if (n < 285) {  // minimum header size
+            std::free(hdr_buf);
+            Close();
+            return Status::IOError("Failed to read header");
+        }
 
-    if (magic != kGlobalMagic) {
-        Close();
-        return Status::Corruption("Invalid ClusterStore magic");
-    }
+        const uint8_t* p = hdr_buf;
+        uint32_t magic = 0, version = 0;
+        std::memcpy(&magic, p, 4); p += 4;
+        if (magic != kGlobalMagic) {
+            std::free(hdr_buf);
+            Close();
+            return Status::Corruption("Invalid ClusterStore magic");
+        }
+        std::memcpy(&version, p, 4); p += 4;
+        if (version != kFileVersion && version != kFileVersionV7) {
+            std::free(hdr_buf);
+            Close();
+            return Status::NotSupported(
+                "Unsupported ClusterStore version: " + std::to_string(version));
+        }
+        bool is_v8_local = (version == kFileVersion);
 
-    if (!PreadValue(fd_, pos, version)) {
-        Close();
-        return Status::IOError("Failed to read version");
-    }
-    pos += sizeof(uint32_t);
+        std::memcpy(&info_.num_clusters, p, 4); p += 4;
+        std::memcpy(&info_.dim, p, 4); p += 4;
+        std::memcpy(&info_.rabitq_config.bits, p, 1); p += 1;
+        std::memcpy(&info_.rabitq_config.block_size, p, 4); p += 4;
+        std::memcpy(&info_.rabitq_config.c_factor, p, 4); p += 4;
 
-    if (version != kFileVersion) {
-        Close();
-        return Status::NotSupported(
-            "Unsupported ClusterStore version: " + std::to_string(version));
-    }
+        uint32_t path_len = 0;
+        std::memcpy(&path_len, p, 4); p += 4;
+        if (path_len > kMaxPathLen) {
+            std::free(hdr_buf);
+            Close();
+            return Status::Corruption("data_file_path length exceeds max");
+        }
+        info_.data_file_path.assign(reinterpret_cast<const char*>(p), path_len);
+        p += kMaxPathLen;
 
-    if (!PreadValue(fd_, pos, info_.num_clusters)) {
-        Close();
-        return Status::IOError("Failed to read num_clusters");
-    }
-    pos += sizeof(uint32_t);
+        off_t pos = static_cast<off_t>(p - hdr_buf);
+        std::free(hdr_buf);
 
-    if (!PreadValue(fd_, pos, info_.dim)) {
-        Close();
-        return Status::IOError("Failed to read dim");
-    }
-    pos += sizeof(uint32_t);
-
-    if (!PreadValue(fd_, pos, info_.rabitq_config.bits)) {
-        Close();
-        return Status::IOError("Failed to read rabitq bits");
-    }
-    pos += sizeof(uint8_t);
-
-    if (!PreadValue(fd_, pos, info_.rabitq_config.block_size)) {
-        Close();
-        return Status::IOError("Failed to read rabitq block_size");
-    }
-    pos += sizeof(uint32_t);
-
-    if (!PreadValue(fd_, pos, info_.rabitq_config.c_factor)) {
-        Close();
-        return Status::IOError("Failed to read rabitq c_factor");
-    }
-    pos += sizeof(float);
-
-    // data_file_path: length + 256 bytes
-    uint32_t path_len = 0;
-    if (!PreadValue(fd_, pos, path_len)) {
-        Close();
-        return Status::IOError("Failed to read path length");
-    }
-    pos += sizeof(uint32_t);
-
-    if (path_len > kMaxPathLen) {
-        Close();
-        return Status::Corruption("data_file_path length exceeds max");
-    }
-
-    char path_buf[kMaxPathLen] = {0};
-    if (!PreadBytes(fd_, pos, path_buf, kMaxPathLen)) {
-        Close();
-        return Status::IOError("Failed to read data_file_path");
-    }
-    pos += kMaxPathLen;
-    info_.data_file_path.assign(path_buf, path_len);
-
-    // --- Read lookup table ---
+    // --- Read lookup table (bulk pread, aligned) ---
     info_.lookup_table.resize(info_.num_clusters);
     cluster_index_.clear();
 
+    const uint64_t entry_sz = 4 + 4 + 4 + static_cast<uint64_t>(info_.dim) * 4 + 8 + 8 + 4 + 4;
+    const uint64_t total_lookup_size = static_cast<uint64_t>(info_.num_clusters) * entry_sz;
+    // Aligned buffer and read length for O_DIRECT
+    uint64_t aligned_lookup_size = RoundUp4K(total_lookup_size);
+    uint8_t* lookup_raw = static_cast<uint8_t*>(
+        std::aligned_alloc(kAlignSize, aligned_lookup_size));
+    if (!lookup_raw) { Close(); return Status::IOError("aligned_alloc failed for lookup"); }
+    // pos may not be 4KB-aligned for v7 files, but O_DIRECT requires aligned offset.
+    // For v7 + O_DIRECT this would fail. We align the read offset down and adjust.
+    off_t aligned_pos = pos & ~(static_cast<off_t>(kAlignSize) - 1);
+    off_t pos_delta = pos - aligned_pos;
+    uint64_t aligned_read = RoundUp4K(total_lookup_size + static_cast<uint64_t>(pos_delta));
+    uint8_t* aligned_read_buf = static_cast<uint8_t*>(
+        std::aligned_alloc(kAlignSize, aligned_read));
+    if (!aligned_read_buf) { std::free(lookup_raw); Close(); return Status::IOError("aligned_alloc failed"); }
+    ssize_t nr = ::pread(fd_, aligned_read_buf, aligned_read, aligned_pos);
+    if (nr < static_cast<ssize_t>(total_lookup_size + pos_delta)) {
+        std::free(aligned_read_buf); std::free(lookup_raw);
+        Close();
+        return Status::IOError("Failed to bulk read lookup table");
+    }
+    std::memcpy(lookup_raw, aligned_read_buf + pos_delta, total_lookup_size);
+    std::free(aligned_read_buf);
+
+    const uint8_t* ptr = lookup_raw;
     for (uint32_t i = 0; i < info_.num_clusters; ++i) {
         auto& entry = info_.lookup_table[i];
 
-        if (!PreadValue(fd_, pos, entry.cluster_id)) {
-            Close();
-            return Status::IOError("Failed to read cluster_id");
-        }
-        pos += sizeof(uint32_t);
-
-        if (!PreadValue(fd_, pos, entry.num_records)) {
-            Close();
-            return Status::IOError("Failed to read num_records");
-        }
-        pos += sizeof(uint32_t);
-
-        if (!PreadValue(fd_, pos, entry.epsilon)) {
-            Close();
-            return Status::IOError("Failed to read epsilon");
-        }
-        pos += sizeof(float);
+        std::memcpy(&entry.cluster_id, ptr, 4); ptr += 4;
+        std::memcpy(&entry.num_records, ptr, 4); ptr += 4;
+        std::memcpy(&entry.epsilon, ptr, 4); ptr += 4;
 
         entry.centroid.resize(info_.dim);
-        if (!PreadBytes(fd_, pos, entry.centroid.data(),
-                        info_.dim * sizeof(float))) {
-            Close();
-            return Status::IOError("Failed to read centroid");
-        }
-        pos += info_.dim * sizeof(float);
+        std::memcpy(entry.centroid.data(), ptr, info_.dim * sizeof(float));
+        ptr += info_.dim * sizeof(float);
 
-        if (!PreadValue(fd_, pos, entry.block_offset)) {
-            Close();
-            return Status::IOError("Failed to read block_offset");
-        }
-        pos += sizeof(uint64_t);
-
-        if (!PreadValue(fd_, pos, entry.block_size)) {
-            Close();
-            return Status::IOError("Failed to read block_size");
-        }
-        pos += sizeof(uint64_t);
-
-        if (!PreadValue(fd_, pos, entry.num_fastscan_blocks)) {
-            Close();
-            return Status::IOError("Failed to read num_fastscan_blocks");
-        }
-        pos += sizeof(uint32_t);
-
-        if (!PreadValue(fd_, pos, entry.exrabitq_region_offset)) {
-            Close();
-            return Status::IOError("Failed to read exrabitq_region_offset");
-        }
-        pos += sizeof(uint32_t);
+        std::memcpy(&entry.block_offset, ptr, 8); ptr += 8;
+        std::memcpy(&entry.block_size, ptr, 8); ptr += 8;
+        std::memcpy(&entry.num_fastscan_blocks, ptr, 4); ptr += 4;
+        std::memcpy(&entry.exrabitq_region_offset, ptr, 4); ptr += 4;
 
         cluster_index_[entry.cluster_id] = i;
     }
+    std::free(lookup_raw);
+    pos += static_cast<off_t>(total_lookup_size);
+
+    // v8: skip padding after lookup table to 4KB boundary
+    if (is_v8_local) {
+        pos = static_cast<off_t>(RoundUp4K(static_cast<uint64_t>(pos)));
+    }
+
+    }  // end header reading scope
 
     return Status::OK();
 }
@@ -826,7 +822,7 @@ ClusterStoreReader::GetBlockLocation(uint32_t cluster_id) const {
 
 Status ClusterStoreReader::ParseClusterBlock(
     uint32_t cluster_id,
-    std::unique_ptr<uint8_t[]> block_buf,
+    query::AlignedBufPtr block_buf,
     uint64_t block_size,
     query::ParsedCluster& out) {
 

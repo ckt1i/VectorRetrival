@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -10,6 +11,12 @@
 
 namespace vdb {
 namespace query {
+
+/// Custom deleter for buffers allocated with aligned_alloc / std::aligned_alloc.
+struct FreeDeleter {
+    void operator()(uint8_t* p) const noexcept { std::free(p); }
+};
+using AlignedBufPtr = std::unique_ptr<uint8_t[], FreeDeleter>;
 
 /// Location of a cluster block within the .clu file.
 struct ClusterBlockLocation {
@@ -29,7 +36,7 @@ struct ClusterBlockLocation {
 /// decoded_addresses is separately materialized via SIMD decode.
 /// Move-only.
 struct ParsedCluster {
-    std::unique_ptr<uint8_t[]> block_buf;  // Owns entire raw block
+    AlignedBufPtr block_buf;  // Owns entire raw block (aligned_alloc, freed via free())
 
     // --- Region 1: FastScan ---
     const uint8_t* fastscan_blocks = nullptr;  // Pointer to first block
