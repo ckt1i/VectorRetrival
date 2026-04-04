@@ -83,6 +83,12 @@ struct IvfBuilderConfig {
     /// QueryScores for each calibration query using RaBitQ full-probe search
     /// and serialize them to crc_scores.bin in the output directory.
     uint32_t crc_top_k = 0;
+
+    /// Optional paths to save clustering results after automatic K-means.
+    /// If non-empty, centroids/assignments are written as .fvecs/.ivecs
+    /// for reuse in future builds. Ignored when loading precomputed files.
+    std::string save_centroids_path;
+    std::string save_assignments_path;
 };
 
 // ============================================================================

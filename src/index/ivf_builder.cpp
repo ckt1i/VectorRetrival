@@ -10,6 +10,7 @@
 #include <random>
 
 #include "superkmeans/superkmeans.h"
+#include "superkmeans/hierarchical_superkmeans.h"
 
 #include "vdb/index/conann.h"
 #include "vdb/index/crc_calibrator.h"
@@ -103,20 +104,65 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
         return Status::OK();
     }
 
-    // Path 2: SuperKMeans automatic clustering
-    skmeans::SuperKMeansConfig skm_cfg;
-    skm_cfg.iters = config_.max_iterations;
-    skm_cfg.seed = static_cast<uint32_t>(config_.seed);
-    skm_cfg.verbose = false;
-    skm_cfg.early_termination = true;
-    skm_cfg.tol = config_.tolerance;
+    // Path 2: Automatic clustering
+    // Use HierarchicalSuperKMeans for K >= 128 (better balance + recall),
+    // fallback to flat SuperKMeans for small K where hierarchy is unnecessary.
+    if (K >= 128) {
+        skmeans::HierarchicalSuperKMeansConfig hskm_cfg;
+        hskm_cfg.iters_mesoclustering = 5;
+        hskm_cfg.iters_fineclustering = config_.max_iterations;
+        hskm_cfg.iters_refinement = 3;
+        hskm_cfg.seed = static_cast<uint32_t>(config_.seed);
+        hskm_cfg.verbose = false;
+        hskm_cfg.tol = config_.tolerance;
 
-    auto skm = skmeans::SuperKMeans(K, dim, skm_cfg);
-    auto c = skm.Train(vectors, N);
-    auto a = skm.Assign(vectors, c.data(), N, K);
+        auto hskm = skmeans::HierarchicalSuperKMeans(K, dim, hskm_cfg);
+        auto c = hskm.Train(vectors, N);
+        auto a = hskm.Assign(vectors, c.data(), N, K);
 
-    centroids_.assign(c.begin(), c.end());
-    assignments_.assign(a.begin(), a.end());
+        centroids_.assign(c.begin(), c.end());
+        assignments_.assign(a.begin(), a.end());
+    } else {
+        skmeans::SuperKMeansConfig skm_cfg;
+        skm_cfg.iters = config_.max_iterations;
+        skm_cfg.seed = static_cast<uint32_t>(config_.seed);
+        skm_cfg.verbose = false;
+        skm_cfg.early_termination = true;
+        skm_cfg.tol = config_.tolerance;
+
+        auto skm = skmeans::SuperKMeans(K, dim, skm_cfg);
+        auto c = skm.Train(vectors, N);
+        auto a = skm.Assign(vectors, c.data(), N, K);
+
+        centroids_.assign(c.begin(), c.end());
+        assignments_.assign(a.begin(), a.end());
+    }
+
+    // Save clustering results if output paths are configured
+    if (!config_.save_centroids_path.empty()) {
+        std::ofstream f(config_.save_centroids_path, std::ios::binary);
+        if (!f.is_open()) {
+            return Status::IOError("Failed to create " + config_.save_centroids_path);
+        }
+        const uint32_t d32 = dim;
+        for (uint32_t i = 0; i < K; ++i) {
+            f.write(reinterpret_cast<const char*>(&d32), 4);
+            f.write(reinterpret_cast<const char*>(
+                centroids_.data() + static_cast<size_t>(i) * dim),
+                dim * sizeof(float));
+        }
+    }
+    if (!config_.save_assignments_path.empty()) {
+        std::ofstream f(config_.save_assignments_path, std::ios::binary);
+        if (!f.is_open()) {
+            return Status::IOError("Failed to create " + config_.save_assignments_path);
+        }
+        const uint32_t one = 1;
+        for (uint32_t i = 0; i < N; ++i) {
+            f.write(reinterpret_cast<const char*>(&one), 4);
+            f.write(reinterpret_cast<const char*>(&assignments_[i]), 4);
+        }
+    }
 
     return Status::OK();
 }
