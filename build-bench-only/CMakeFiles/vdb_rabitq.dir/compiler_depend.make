@@ -31,6 +31,7 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o: /home/zcq/VDB/VectorR
   /usr/include/c++/13/bits/cpp_type_traits.h \
   /usr/include/c++/13/bits/cxxabi_forced.h \
   /usr/include/c++/13/bits/cxxabi_init_exception.h \
+  /usr/include/c++/13/bits/deque.tcc \
   /usr/include/c++/13/bits/enable_special_members.h \
   /usr/include/c++/13/bits/erase_if.h \
   /usr/include/c++/13/bits/exception.h \
@@ -64,6 +65,7 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o: /home/zcq/VDB/VectorR
   /usr/include/c++/13/bits/stl_algobase.h \
   /usr/include/c++/13/bits/stl_bvector.h \
   /usr/include/c++/13/bits/stl_construct.h \
+  /usr/include/c++/13/bits/stl_deque.h \
   /usr/include/c++/13/bits/stl_function.h \
   /usr/include/c++/13/bits/stl_heap.h \
   /usr/include/c++/13/bits/stl_iterator.h \
@@ -72,6 +74,7 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o: /home/zcq/VDB/VectorR
   /usr/include/c++/13/bits/stl_map.h \
   /usr/include/c++/13/bits/stl_multimap.h \
   /usr/include/c++/13/bits/stl_pair.h \
+  /usr/include/c++/13/bits/stl_queue.h \
   /usr/include/c++/13/bits/stl_raw_storage_iter.h \
   /usr/include/c++/13/bits/stl_relops.h \
   /usr/include/c++/13/bits/stl_tempbuf.h \
@@ -99,6 +102,7 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o: /home/zcq/VDB/VectorR
   /usr/include/c++/13/cwchar \
   /usr/include/c++/13/debug/assertions.h \
   /usr/include/c++/13/debug/debug.h \
+  /usr/include/c++/13/deque \
   /usr/include/c++/13/exception \
   /usr/include/c++/13/ext/aligned_buffer.h \
   /usr/include/c++/13/ext/alloc_traits.h \
@@ -117,6 +121,7 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o: /home/zcq/VDB/VectorR
   /usr/include/c++/13/pstl/glue_algorithm_defs.h \
   /usr/include/c++/13/pstl/glue_memory_defs.h \
   /usr/include/c++/13/pstl/pstl_config.h \
+  /usr/include/c++/13/queue \
   /usr/include/c++/13/string \
   /usr/include/c++/13/string_view \
   /usr/include/c++/13/tr1/bessel_function.tcc \
@@ -261,6 +266,8 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o: /home/zcq/VDB/Vecto
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/simd/ip_exrabitq.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/simd/popcount.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
@@ -856,11 +863,19 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/bits/fstream.tcc:
 
-/usr/include/c++/13/tr1/legendre_function.tcc:
+/usr/include/c++/13/bits/basic_ios.tcc:
 
-/usr/include/c++/13/tr1/gamma.tcc:
+/usr/include/c++/13/bits/basic_ios.h:
 
-/usr/include/c++/13/cctype:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
+
+/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_rotation.cpp:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/simd/ip_exrabitq.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h:
 
 /usr/include/c++/13/tr1/exp_integral.tcc:
 
@@ -880,8 +895,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h:
 
-/usr/include/c++/13/bits/basic_ios.tcc:
-
 /usr/include/c++/13/bits/refwrap.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h:
@@ -890,11 +903,13 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/initializer_list:
 
-/usr/include/c++/13/ext/type_traits.h:
-
 /usr/include/c++/13/ext/string_conversions.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
+
+/usr/include/c++/13/cctype:
+
+/usr/include/c++/13/tr1/gamma.tcc:
 
 /usr/include/c++/13/debug/assertions.h:
 
@@ -917,6 +932,8 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 /usr/include/c++/13/bits/vector.tcc:
 
 /usr/include/c++/13/variant:
+
+/usr/include/c++/13/deque:
 
 /usr/include/c++/13/tr1/beta_function.tcc:
 
@@ -1010,6 +1027,12 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
 
+/usr/include/c++/13/bits/stl_queue.h:
+
+/usr/include/c++/13/limits:
+
+/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
+
 /usr/include/c++/13/bits/atomic_lockfree_defines.h:
 
 /usr/include/x86_64-linux-gnu/asm/errno.h:
@@ -1034,8 +1057,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/new:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h:
-
 /usr/include/c++/13/bits/alloc_traits.h:
 
 /usr/include/c++/13/bits/concept_check.h:
@@ -1058,7 +1079,11 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/backward/binders.h:
 
-/usr/include/c++/13/tr1/modified_bessel_func.tcc:
+/usr/include/c++/13/bits/stl_deque.h:
+
+/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
+
+/usr/include/c++/13/bits/requires_hosted.h:
 
 /home/zcq/VDB/VectorRetrival/include/vdb/common/macros.h:
 
@@ -1080,17 +1105,9 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
 
-/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
-
-/usr/include/c++/13/bits/exception_defines.h:
-
 /home/zcq/VDB/VectorRetrival/include/vdb/common/types.h:
 
 /usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
-
-/usr/include/c++/13/type_traits:
-
-/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
 
 /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h:
 
@@ -1098,11 +1115,23 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/bit:
 
+/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_estimator.cpp:
+
+/usr/include/c++/13/bits/basic_string.tcc:
+
 /usr/include/c++/13/bits/enable_special_members.h:
 
 /usr/include/c++/13/iosfwd:
 
 /usr/include/c++/13/bits/predefined_ops.h:
+
+/usr/include/c++/13/ext/type_traits.h:
+
+/usr/include/c++/13/bits/deque.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/endian.h:
+
+/usr/include/x86_64-linux-gnu/gnu/stubs.h:
 
 /usr/include/alloca.h:
 
@@ -1121,6 +1150,8 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 /usr/include/c++/13/algorithm:
 
 /usr/include/features-time64.h:
+
+/usr/include/c++/13/queue:
 
 /usr/include/c++/13/bits/stl_iterator_base_funcs.h:
 
@@ -1182,13 +1213,25 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/c++/13/bits/specfun.h:
 
-/usr/include/c++/13/tr1/hypergeometric.tcc:
-
-/usr/include/c++/13/bits/range_access.h:
-
 /usr/include/c++/13/bits/string_view.tcc:
 
 /usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
+
+/usr/include/c++/13/bits/range_access.h:
+
+/usr/include/c++/13/tr1/hypergeometric.tcc:
+
+/usr/include/c++/13/type_traits:
+
+/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
+
+/usr/include/c++/13/tr1/legendre_function.tcc:
+
+/usr/include/c++/13/tr1/modified_bessel_func.tcc:
+
+/usr/include/c++/13/bits/exception_defines.h:
+
+/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
 
 /usr/include/c++/13/tr1/riemann_zeta.tcc:
 
@@ -1210,6 +1253,10 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/ctype.h:
 
+/usr/include/stdint.h:
+
+/usr/include/endian.h:
+
 /usr/include/features.h:
 
 /usr/include/c++/13/debug/debug.h:
@@ -1223,10 +1270,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 /usr/include/wctype.h:
 
 /usr/include/sched.h:
-
-/usr/include/endian.h:
-
-/usr/include/stdint.h:
 
 /usr/include/c++/13/bits/stl_iterator_base_types.h:
 
@@ -1245,18 +1288,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h:
 
 /usr/include/x86_64-linux-gnu/bits/cpu-set.h:
-
-/usr/include/x86_64-linux-gnu/bits/endian.h:
-
-/usr/include/x86_64-linux-gnu/gnu/stubs.h:
-
-/usr/include/c++/13/bits/requires_hosted.h:
-
-/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
-
-/usr/include/c++/13/limits:
-
-/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
 
 /usr/include/x86_64-linux-gnu/bits/fp-fast.h:
 
@@ -1314,8 +1345,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/x86_64-linux-gnu/bits/time64.h:
 
-/usr/include/c++/13/bits/basic_ios.h:
-
 /usr/include/c++/13/bits/locale_classes.h:
 
 /usr/include/x86_64-linux-gnu/bits/timesize.h:
@@ -1344,10 +1373,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 
 /usr/include/x86_64-linux-gnu/bits/wchar.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
-
-/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_rotation.cpp:
-
 /usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
 
 /usr/include/asm-generic/errno.h:
@@ -1373,10 +1398,6 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o: /home/zcq/VDB/Vector
 /usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h:
-
-/usr/include/c++/13/bits/basic_string.tcc:
-
-/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_estimator.cpp:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
 

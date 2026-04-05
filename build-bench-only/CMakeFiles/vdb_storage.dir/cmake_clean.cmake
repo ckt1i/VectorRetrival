@@ -7,6 +7,8 @@ file(REMOVE_RECURSE
   "CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o.d"
   "CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o"
   "CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o.d"
+  "CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o"
+  "CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o.d"
   "CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o"
   "CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o.d"
   "libvdb_storage.a"

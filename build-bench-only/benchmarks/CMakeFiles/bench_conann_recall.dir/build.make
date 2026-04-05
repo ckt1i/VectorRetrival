@@ -98,6 +98,12 @@ benchmarks/bench_conann_recall: libvdb_storage.a
 benchmarks/bench_conann_recall: libvdb_columns.a
 benchmarks/bench_conann_recall: libvdb_codec.a
 benchmarks/bench_conann_recall: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_conann_recall: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libpthread.a
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libmkl_intel_lp64.so
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libmkl_intel_thread.so
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libmkl_core.so
+benchmarks/bench_conann_recall: /usr/lib/x86_64-linux-gnu/libiomp5.so
 benchmarks/bench_conann_recall: libvdb_crc.a
 benchmarks/bench_conann_recall: libvdb_rabitq.a
 benchmarks/bench_conann_recall: libvdb_simd.a

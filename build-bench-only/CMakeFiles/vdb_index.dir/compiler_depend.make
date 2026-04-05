@@ -248,22 +248,41 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /home/zcq/VDB/VectorRetrival/include/vdb/common/status.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/common/types.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/index/conann.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/index/crc_calibrator.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/index/crc_stopper.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/index/ivf_builder.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/io/npy_reader.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/io/vecs_reader.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/query/parsed_cluster.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/simd/distance_l2.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/simd/popcount.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/storage/address_column.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/storage/cluster_store.h \
   /home/zcq/VDB/VectorRetrival/include/vdb/storage/data_file_writer.h \
+  /home/zcq/VDB/VectorRetrival/include/vdb/storage/pack_codes.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/common.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/avx512_computers.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/base_computers.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/batch_computers.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/scalar_computers.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/adsampling.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/layout.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/pdx_ivf.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/pdxearch.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/utils.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/profiler.h \
+  /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/superkmeans.h \
   /usr/include/alloca.h \
   /usr/include/asm-generic/errno-base.h \
   /usr/include/asm-generic/errno.h \
   /usr/include/assert.h \
   /usr/include/c++/13/algorithm \
   /usr/include/c++/13/array \
+  /usr/include/c++/13/atomic \
   /usr/include/c++/13/backward/auto_ptr.h \
   /usr/include/c++/13/backward/binders.h \
   /usr/include/c++/13/bit \
@@ -337,6 +356,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/c++/13/bits/sstream.tcc \
   /usr/include/c++/13/bits/std_abs.h \
   /usr/include/c++/13/bits/std_function.h \
+  /usr/include/c++/13/bits/std_mutex.h \
   /usr/include/c++/13/bits/stl_algo.h \
   /usr/include/c++/13/bits/stl_algobase.h \
   /usr/include/c++/13/bits/stl_bvector.h \
@@ -364,6 +384,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/c++/13/bits/string_view.tcc \
   /usr/include/c++/13/bits/stringfwd.h \
   /usr/include/c++/13/bits/uniform_int_dist.h \
+  /usr/include/c++/13/bits/unique_lock.h \
   /usr/include/c++/13/bits/unique_ptr.h \
   /usr/include/c++/13/bits/unordered_map.h \
   /usr/include/c++/13/bits/uses_allocator.h \
@@ -373,10 +394,14 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/c++/13/cassert \
   /usr/include/c++/13/cctype \
   /usr/include/c++/13/cerrno \
+  /usr/include/c++/13/chrono \
+  /usr/include/c++/13/cinttypes \
+  /usr/include/c++/13/climits \
   /usr/include/c++/13/clocale \
   /usr/include/c++/13/cmath \
   /usr/include/c++/13/codecvt \
   /usr/include/c++/13/compare \
+  /usr/include/c++/13/complex \
   /usr/include/c++/13/cstddef \
   /usr/include/c++/13/cstdint \
   /usr/include/c++/13/cstdio \
@@ -402,12 +427,14 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/c++/13/iomanip \
   /usr/include/c++/13/ios \
   /usr/include/c++/13/iosfwd \
+  /usr/include/c++/13/iostream \
   /usr/include/c++/13/istream \
   /usr/include/c++/13/iterator \
   /usr/include/c++/13/limits \
   /usr/include/c++/13/locale \
   /usr/include/c++/13/map \
   /usr/include/c++/13/memory \
+  /usr/include/c++/13/mutex \
   /usr/include/c++/13/new \
   /usr/include/c++/13/numeric \
   /usr/include/c++/13/optional \
@@ -447,13 +474,207 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/c++/13/variant \
   /usr/include/c++/13/vector \
   /usr/include/ctype.h \
+  /usr/include/eigen3/Eigen/Cholesky \
+  /usr/include/eigen3/Eigen/Core \
+  /usr/include/eigen3/Eigen/Dense \
+  /usr/include/eigen3/Eigen/Eigenvalues \
+  /usr/include/eigen3/Eigen/Geometry \
+  /usr/include/eigen3/Eigen/Householder \
+  /usr/include/eigen3/Eigen/Jacobi \
+  /usr/include/eigen3/Eigen/LU \
+  /usr/include/eigen3/Eigen/QR \
+  /usr/include/eigen3/Eigen/SVD \
+  /usr/include/eigen3/Eigen/src/Cholesky/LDLT.h \
+  /usr/include/eigen3/Eigen/src/Cholesky/LLT.h \
+  /usr/include/eigen3/Eigen/src/Core/ArithmeticSequence.h \
+  /usr/include/eigen3/Eigen/src/Core/Array.h \
+  /usr/include/eigen3/Eigen/src/Core/ArrayBase.h \
+  /usr/include/eigen3/Eigen/src/Core/ArrayWrapper.h \
+  /usr/include/eigen3/Eigen/src/Core/Assign.h \
+  /usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h \
+  /usr/include/eigen3/Eigen/src/Core/BandMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/Block.h \
+  /usr/include/eigen3/Eigen/src/Core/BooleanRedux.h \
+  /usr/include/eigen3/Eigen/src/Core/CommaInitializer.h \
+  /usr/include/eigen3/Eigen/src/Core/ConditionEstimator.h \
+  /usr/include/eigen3/Eigen/src/Core/CoreEvaluators.h \
+  /usr/include/eigen3/Eigen/src/Core/CoreIterators.h \
+  /usr/include/eigen3/Eigen/src/Core/CwiseBinaryOp.h \
+  /usr/include/eigen3/Eigen/src/Core/CwiseNullaryOp.h \
+  /usr/include/eigen3/Eigen/src/Core/CwiseTernaryOp.h \
+  /usr/include/eigen3/Eigen/src/Core/CwiseUnaryOp.h \
+  /usr/include/eigen3/Eigen/src/Core/CwiseUnaryView.h \
+  /usr/include/eigen3/Eigen/src/Core/DenseBase.h \
+  /usr/include/eigen3/Eigen/src/Core/DenseCoeffsBase.h \
+  /usr/include/eigen3/Eigen/src/Core/DenseStorage.h \
+  /usr/include/eigen3/Eigen/src/Core/Diagonal.h \
+  /usr/include/eigen3/Eigen/src/Core/DiagonalMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/DiagonalProduct.h \
+  /usr/include/eigen3/Eigen/src/Core/Dot.h \
+  /usr/include/eigen3/Eigen/src/Core/EigenBase.h \
+  /usr/include/eigen3/Eigen/src/Core/Fuzzy.h \
+  /usr/include/eigen3/Eigen/src/Core/GeneralProduct.h \
+  /usr/include/eigen3/Eigen/src/Core/GenericPacketMath.h \
+  /usr/include/eigen3/Eigen/src/Core/GlobalFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/IO.h \
+  /usr/include/eigen3/Eigen/src/Core/IndexedView.h \
+  /usr/include/eigen3/Eigen/src/Core/Inverse.h \
+  /usr/include/eigen3/Eigen/src/Core/Map.h \
+  /usr/include/eigen3/Eigen/src/Core/MapBase.h \
+  /usr/include/eigen3/Eigen/src/Core/MathFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/MathFunctionsImpl.h \
+  /usr/include/eigen3/Eigen/src/Core/Matrix.h \
+  /usr/include/eigen3/Eigen/src/Core/MatrixBase.h \
+  /usr/include/eigen3/Eigen/src/Core/NestByValue.h \
+  /usr/include/eigen3/Eigen/src/Core/NoAlias.h \
+  /usr/include/eigen3/Eigen/src/Core/NumTraits.h \
+  /usr/include/eigen3/Eigen/src/Core/PartialReduxEvaluator.h \
+  /usr/include/eigen3/Eigen/src/Core/PermutationMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h \
+  /usr/include/eigen3/Eigen/src/Core/Product.h \
+  /usr/include/eigen3/Eigen/src/Core/ProductEvaluators.h \
+  /usr/include/eigen3/Eigen/src/Core/Random.h \
+  /usr/include/eigen3/Eigen/src/Core/Redux.h \
+  /usr/include/eigen3/Eigen/src/Core/Ref.h \
+  /usr/include/eigen3/Eigen/src/Core/Replicate.h \
+  /usr/include/eigen3/Eigen/src/Core/Reshaped.h \
+  /usr/include/eigen3/Eigen/src/Core/ReturnByValue.h \
+  /usr/include/eigen3/Eigen/src/Core/Reverse.h \
+  /usr/include/eigen3/Eigen/src/Core/Select.h \
+  /usr/include/eigen3/Eigen/src/Core/SelfAdjointView.h \
+  /usr/include/eigen3/Eigen/src/Core/SelfCwiseBinaryOp.h \
+  /usr/include/eigen3/Eigen/src/Core/Solve.h \
+  /usr/include/eigen3/Eigen/src/Core/SolveTriangular.h \
+  /usr/include/eigen3/Eigen/src/Core/SolverBase.h \
+  /usr/include/eigen3/Eigen/src/Core/StableNorm.h \
+  /usr/include/eigen3/Eigen/src/Core/StlIterators.h \
+  /usr/include/eigen3/Eigen/src/Core/Stride.h \
+  /usr/include/eigen3/Eigen/src/Core/Swap.h \
+  /usr/include/eigen3/Eigen/src/Core/Transpose.h \
+  /usr/include/eigen3/Eigen/src/Core/Transpositions.h \
+  /usr/include/eigen3/Eigen/src/Core/TriangularMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/VectorBlock.h \
+  /usr/include/eigen3/Eigen/src/Core/VectorwiseOp.h \
+  /usr/include/eigen3/Eigen/src/Core/Visitor.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX/Complex.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX/MathFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX/PacketMath.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX/TypeCasting.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX512/Complex.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX512/MathFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX512/PacketMath.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/AVX512/TypeCasting.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/BFloat16.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/ConjHelper.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/GenericPacketMathFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/GenericPacketMathFunctionsFwd.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/Half.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/Settings.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/Default/TypeCasting.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/SSE/Complex.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/SSE/MathFunctions.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/SSE/PacketMath.h \
+  /usr/include/eigen3/Eigen/src/Core/arch/SSE/TypeCasting.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/AssignmentFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/BinaryFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/NullaryFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/StlFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/TernaryFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/functors/UnaryFunctors.h \
+  /usr/include/eigen3/Eigen/src/Core/products/GeneralBlockPanelKernel.h \
+  /usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrixTriangular.h \
+  /usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixVector.h \
+  /usr/include/eigen3/Eigen/src/Core/products/Parallelizer.h \
+  /usr/include/eigen3/Eigen/src/Core/products/SelfadjointMatrixMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/products/SelfadjointMatrixVector.h \
+  /usr/include/eigen3/Eigen/src/Core/products/SelfadjointProduct.h \
+  /usr/include/eigen3/Eigen/src/Core/products/SelfadjointRank2Update.h \
+  /usr/include/eigen3/Eigen/src/Core/products/TriangularMatrixMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/products/TriangularMatrixVector.h \
+  /usr/include/eigen3/Eigen/src/Core/products/TriangularSolverMatrix.h \
+  /usr/include/eigen3/Eigen/src/Core/products/TriangularSolverVector.h \
+  /usr/include/eigen3/Eigen/src/Core/util/BlasUtil.h \
+  /usr/include/eigen3/Eigen/src/Core/util/ConfigureVectorization.h \
+  /usr/include/eigen3/Eigen/src/Core/util/Constants.h \
+  /usr/include/eigen3/Eigen/src/Core/util/DisableStupidWarnings.h \
+  /usr/include/eigen3/Eigen/src/Core/util/ForwardDeclarations.h \
+  /usr/include/eigen3/Eigen/src/Core/util/IndexedViewHelper.h \
+  /usr/include/eigen3/Eigen/src/Core/util/IntegralConstant.h \
+  /usr/include/eigen3/Eigen/src/Core/util/MKL_support.h \
+  /usr/include/eigen3/Eigen/src/Core/util/Macros.h \
+  /usr/include/eigen3/Eigen/src/Core/util/Memory.h \
+  /usr/include/eigen3/Eigen/src/Core/util/Meta.h \
+  /usr/include/eigen3/Eigen/src/Core/util/ReenableStupidWarnings.h \
+  /usr/include/eigen3/Eigen/src/Core/util/ReshapedHelper.h \
+  /usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h \
+  /usr/include/eigen3/Eigen/src/Core/util/SymbolicIndex.h \
+  /usr/include/eigen3/Eigen/src/Core/util/XprHelper.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/ComplexEigenSolver.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/ComplexSchur.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/EigenSolver.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/GeneralizedEigenSolver.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/GeneralizedSelfAdjointEigenSolver.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/HessenbergDecomposition.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/MatrixBaseEigenvalues.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/RealQZ.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/RealSchur.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/SelfAdjointEigenSolver.h \
+  /usr/include/eigen3/Eigen/src/Eigenvalues/Tridiagonalization.h \
+  /usr/include/eigen3/Eigen/src/Geometry/AlignedBox.h \
+  /usr/include/eigen3/Eigen/src/Geometry/AngleAxis.h \
+  /usr/include/eigen3/Eigen/src/Geometry/EulerAngles.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Homogeneous.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Hyperplane.h \
+  /usr/include/eigen3/Eigen/src/Geometry/OrthoMethods.h \
+  /usr/include/eigen3/Eigen/src/Geometry/ParametrizedLine.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Quaternion.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Rotation2D.h \
+  /usr/include/eigen3/Eigen/src/Geometry/RotationBase.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Scaling.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Transform.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Translation.h \
+  /usr/include/eigen3/Eigen/src/Geometry/Umeyama.h \
+  /usr/include/eigen3/Eigen/src/Geometry/arch/Geometry_SIMD.h \
+  /usr/include/eigen3/Eigen/src/Householder/BlockHouseholder.h \
+  /usr/include/eigen3/Eigen/src/Householder/Householder.h \
+  /usr/include/eigen3/Eigen/src/Householder/HouseholderSequence.h \
+  /usr/include/eigen3/Eigen/src/Jacobi/Jacobi.h \
+  /usr/include/eigen3/Eigen/src/LU/Determinant.h \
+  /usr/include/eigen3/Eigen/src/LU/FullPivLU.h \
+  /usr/include/eigen3/Eigen/src/LU/InverseImpl.h \
+  /usr/include/eigen3/Eigen/src/LU/PartialPivLU.h \
+  /usr/include/eigen3/Eigen/src/LU/arch/InverseSize4.h \
+  /usr/include/eigen3/Eigen/src/QR/ColPivHouseholderQR.h \
+  /usr/include/eigen3/Eigen/src/QR/CompleteOrthogonalDecomposition.h \
+  /usr/include/eigen3/Eigen/src/QR/FullPivHouseholderQR.h \
+  /usr/include/eigen3/Eigen/src/QR/HouseholderQR.h \
+  /usr/include/eigen3/Eigen/src/SVD/BDCSVD.h \
+  /usr/include/eigen3/Eigen/src/SVD/JacobiSVD.h \
+  /usr/include/eigen3/Eigen/src/SVD/SVDBase.h \
+  /usr/include/eigen3/Eigen/src/SVD/UpperBidiagonalization.h \
+  /usr/include/eigen3/Eigen/src/misc/Image.h \
+  /usr/include/eigen3/Eigen/src/misc/Kernel.h \
+  /usr/include/eigen3/Eigen/src/misc/RealSvd2x2.h \
+  /usr/include/eigen3/Eigen/src/plugins/ArrayCwiseBinaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/ArrayCwiseUnaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/BlockMethods.h \
+  /usr/include/eigen3/Eigen/src/plugins/CommonCwiseBinaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/CommonCwiseUnaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/IndexedViewMethods.h \
+  /usr/include/eigen3/Eigen/src/plugins/MatrixCwiseBinaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/MatrixCwiseUnaryOps.h \
+  /usr/include/eigen3/Eigen/src/plugins/ReshapedMethods.h \
   /usr/include/endian.h \
   /usr/include/errno.h \
   /usr/include/features-time64.h \
   /usr/include/features.h \
+  /usr/include/inttypes.h \
   /usr/include/libintl.h \
+  /usr/include/limits.h \
   /usr/include/linux/close_range.h \
   /usr/include/linux/errno.h \
+  /usr/include/linux/limits.h \
   /usr/include/locale.h \
   /usr/include/math.h \
   /usr/include/pthread.h \
@@ -487,12 +708,15 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/x86_64-linux-gnu/bits/iscanonical.h \
   /usr/include/x86_64-linux-gnu/bits/libc-header-start.h \
   /usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h \
+  /usr/include/x86_64-linux-gnu/bits/local_lim.h \
   /usr/include/x86_64-linux-gnu/bits/locale.h \
   /usr/include/x86_64-linux-gnu/bits/long-double.h \
   /usr/include/x86_64-linux-gnu/bits/math-vector.h \
   /usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h \
   /usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h \
   /usr/include/x86_64-linux-gnu/bits/mathcalls.h \
+  /usr/include/x86_64-linux-gnu/bits/posix1_lim.h \
+  /usr/include/x86_64-linux-gnu/bits/posix2_lim.h \
   /usr/include/x86_64-linux-gnu/bits/posix_opt.h \
   /usr/include/x86_64-linux-gnu/bits/pthread_stack_min-dynamic.h \
   /usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h \
@@ -548,6 +772,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/x86_64-linux-gnu/bits/types/wint_t.h \
   /usr/include/x86_64-linux-gnu/bits/typesizes.h \
   /usr/include/x86_64-linux-gnu/bits/uintn-identity.h \
+  /usr/include/x86_64-linux-gnu/bits/uio_lim.h \
   /usr/include/x86_64-linux-gnu/bits/unistd-decl.h \
   /usr/include/x86_64-linux-gnu/bits/unistd.h \
   /usr/include/x86_64-linux-gnu/bits/unistd_ext.h \
@@ -558,6 +783,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/x86_64-linux-gnu/bits/wchar2.h \
   /usr/include/x86_64-linux-gnu/bits/wctype-wchar.h \
   /usr/include/x86_64-linux-gnu/bits/wordsize.h \
+  /usr/include/x86_64-linux-gnu/bits/xopen_lim.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h \
   /usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h \
@@ -580,15 +806,107 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetriv
   /usr/include/x86_64-linux-gnu/sys/select.h \
   /usr/include/x86_64-linux-gnu/sys/single_threaded.h \
   /usr/include/x86_64-linux-gnu/sys/types.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/adxintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxbf16intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxcomplexintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxfp16intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxint8intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/amxtileintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx2intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx5124fmapsintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx5124vnniwintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bf16intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bf16vlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bitalgintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bwintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512cdintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512dqintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512erintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fp16intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fp16vlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512ifmaintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512ifmavlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512pfintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmi2intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmi2vlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmiintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmivlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vlbwintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vldqintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnniintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnnivlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vp2intersectintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vp2intersectvlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqvlintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avxifmaintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avxintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avxneconvertintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avxvnniint8intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/avxvnniintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/bmi2intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/bmiintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/cetintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/cldemoteintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/clflushoptintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/clwbintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/clzerointrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/cmpccxaddintrin.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/emmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/enqcmdintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/f16cintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/fmaintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/fxsrintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/gfniintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/hresetintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/ia32intrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/immintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/keylockerintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/lwpintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/lzcntintrin.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/mm_malloc.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/mmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/movdirintrin.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitxintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/nmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/pconfigintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/pkuintrin.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/pmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/popcntintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/prfchiintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/prfchwintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/raointintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/rdseedintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/rtmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/serializeintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/sgxintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/shaintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/smmintrin.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h \
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h \
-  /usr/lib/gcc/x86_64-linux-gnu/13/include/xmmintrin.h
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/tbmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/tmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/tsxldtrkintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/uintrintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/vaesintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/vpclmulqdqintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/waitpkgintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/wbnoinvdintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/wmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/x86gprintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xmmintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xsavecintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xsaveintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xsaveoptintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xsavesintrin.h \
+  /usr/lib/gcc/x86_64-linux-gnu/13/include/xtestintrin.h
 
 CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp \
   _deps/flatbuffers-src/include/flatbuffers/allocator.h \
@@ -899,23 +1217,117 @@ CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival
   /usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h
 
 
-/home/zcq/VDB/VectorRetrival/include/vdb/storage/segment.h:
+/home/zcq/VDB/VectorRetrival/include/vdb/index/ivf_index.h:
 
-/home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xsaveoptintrin.h:
 
-/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xsaveintrin.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/x86gprintrin.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/wmmintrin.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/wbnoinvdintrin.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/vpclmulqdqintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/vaesintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/tsxldtrkintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/tmmintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/syslimits.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/smmintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/shaintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/serializeintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/raointintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/prfchwintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/prfchiintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/pconfigintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitxintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/movdirintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/lwpintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/limits.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/keylockerintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/immintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/ia32intrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/hresetintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/fxsrintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/fmaintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/enqcmdintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/clwbintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/cldemoteintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/cetintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/bmiintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avxvnniint8intrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avxneconvertintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqvlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnniintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vlbwintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmivlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmi2intrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512ifmavlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512ifmaintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fp16vlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fp16intrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512dqintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bitalgintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx5124vnniwintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx5124fmapsintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/clflushoptintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx2intrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/amxtileintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/amxfp16intrin.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h:
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/basic_file.h:
 
-/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:
+/usr/include/x86_64-linux-gnu/bits/xopen_lim.h:
 
 /usr/include/x86_64-linux-gnu/bits/unistd_ext.h:
 
@@ -923,7 +1335,15 @@ CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival
 
 /usr/include/x86_64-linux-gnu/bits/unistd-decl.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avxifmaintrin.h:
+
+/usr/include/x86_64-linux-gnu/bits/uio_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
+
+/usr/include/x86_64-linux-gnu/bits/time.h:
 
 /usr/include/x86_64-linux-gnu/bits/sched.h:
 
@@ -931,17 +1351,23 @@ CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival
 
 /usr/include/x86_64-linux-gnu/bits/posix_opt.h:
 
-/usr/include/x86_64-linux-gnu/bits/getopt_core.h:
+/usr/include/x86_64-linux-gnu/bits/posix2_lim.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bwintrin.h:
+
+/usr/include/x86_64-linux-gnu/bits/local_lim.h:
+
+/usr/include/x86_64-linux-gnu/bits/confname.h:
+
+/usr/include/wctype.h:
 
 /usr/include/unistd.h:
 
-/usr/include/x86_64-linux-gnu/bits/setjmp.h:
-
-/usr/include/x86_64-linux-gnu/bits/getopt_posix.h:
-
 /usr/include/time.h:
 
-/usr/include/wctype.h:
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/segment.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xtestintrin.h:
 
 /usr/include/sched.h:
 
@@ -949,688 +1375,1216 @@ CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival
 
 /usr/include/linux/close_range.h:
 
-/usr/include/libintl.h:
+/usr/include/inttypes.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/c++io.h:
+/usr/include/eigen3/Eigen/src/plugins/ReshapedMethods.h:
 
-/usr/include/c++/13/typeinfo:
+/usr/include/eigen3/Eigen/src/plugins/MatrixCwiseUnaryOps.h:
 
-/usr/include/c++/13/ratio:
+/usr/include/eigen3/Eigen/src/plugins/IndexedViewMethods.h:
 
-/usr/include/c++/13/memory:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512fintrin.h:
 
-/usr/include/c++/13/istream:
+/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h:
 
-/usr/include/c++/13/ios:
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/adsampling.h:
 
-/usr/include/c++/13/functional:
+/home/zcq/VDB/VectorRetrival/include/vdb/query/parsed_cluster.h:
 
-/usr/include/c++/13/filesystem:
+/usr/include/c++/13/new:
 
-/usr/include/c++/13/ext/concurrence.h:
+/home/zcq/VDB/VectorRetrival/include/vdb/index/crc_calibrator.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct_tm.h:
+/home/zcq/VDB/VectorRetrival/include/vdb/common/status.h:
 
-/usr/include/c++/13/ext/atomicity.h:
+/usr/include/eigen3/Eigen/src/Core/ArithmeticSequence.h:
 
-/usr/include/c++/13/pstl/glue_memory_defs.h:
+/usr/include/eigen3/Eigen/src/Core/GlobalFunctions.h:
 
-/usr/include/c++/13/exception:
+_deps/flatbuffers-src/include/flatbuffers/vector_downward.h:
 
-/usr/include/c++/13/ctime:
+/usr/include/c++/13/bits/unique_lock.h:
 
-/usr/include/c++/13/system_error:
+_deps/flatbuffers-src/include/flatbuffers/table.h:
 
-/usr/include/c++/13/compare:
+/usr/include/c++/13/bits/algorithmfwd.h:
 
-/usr/include/c++/13/codecvt:
+/usr/include/x86_64-linux-gnu/bits/long-double.h:
 
-/usr/include/c++/13/bits/unordered_map.h:
+_deps/flatbuffers-src/include/flatbuffers/default_allocator.h:
 
-/usr/include/c++/13/bits/stream_iterator.h:
+/home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp:
 
-/usr/include/c++/13/bits/stl_raw_storage_iter.h:
+_deps/flatbuffers-src/include/flatbuffers/verifier.h:
 
-/usr/include/c++/13/bits/stl_multiset.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h:
 
-/usr/include/c++/13/bits/sstream.tcc:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
 
-/usr/include/c++/13/set:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/tbmintrin.h:
 
-/usr/include/c++/13/bits/shared_ptr_atomic.h:
-
-/usr/include/c++/13/bits/shared_ptr.h:
-
-/usr/include/c++/13/bits/ostream.tcc:
-
-/usr/include/c++/13/bits/locale_facets_nonio.tcc:
-
-/usr/include/x86_64-linux-gnu/bits/confname.h:
-
-/usr/include/c++/13/bits/locale_facets_nonio.h:
-
-/usr/include/c++/13/bits/locale_facets.tcc:
-
-/usr/include/c++/13/bits/locale_facets.h:
-
-/usr/include/c++/13/bits/locale_conv.h:
-
-/usr/include/c++/13/bits/istream.tcc:
-
-/usr/include/c++/13/iterator:
-
-/usr/include/c++/13/bits/ios_base.h:
-
-/usr/include/c++/13/bits/hashtable_policy.h:
-
-/usr/include/c++/13/bits/fstream.tcc:
-
-/usr/include/c++/13/bits/fs_path.h:
-
-/usr/include/c++/13/bits/fs_ops.h:
-
-/usr/include/c++/13/bits/fs_fwd.h:
-
-/usr/include/c++/13/bits/fs_dir.h:
-
-/usr/include/c++/13/bits/exception_ptr.h:
-
-/usr/include/c++/13/bits/cxxabi_init_exception.h:
-
-/usr/include/c++/13/bits/basic_ios.tcc:
-
-/usr/include/c++/13/bits/basic_ios.h:
-
-/usr/include/c++/13/bits/atomic_lockfree_defines.h:
-
-/usr/include/c++/13/bits/atomic_base.h:
-
-/usr/include/features-time64.h:
-
-/usr/include/ctype.h:
-
-/usr/include/c++/13/variant:
-
-/usr/include/c++/13/optional:
-
-/usr/include/c++/13/bits/vector.tcc:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/emmintrin.h:
-
-/usr/include/c++/13/tr1/riemann_zeta.tcc:
-
-/usr/include/c++/13/tr1/legendre_function.tcc:
-
-/usr/include/c++/13/type_traits:
-
-/usr/include/c++/13/tr1/gamma.tcc:
-
-/usr/include/c++/13/cctype:
-
-/usr/include/c++/13/tr1/exp_integral.tcc:
-
-/usr/include/c++/13/pstl/pstl_config.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
-
-/usr/include/x86_64-linux-gnu/bits/wordsize.h:
-
-/usr/include/c++/13/pstl/glue_algorithm_defs.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/storage/cluster_store.h:
-
-/usr/include/c++/13/pstl/execution_defs.h:
-
-/usr/include/c++/13/bits/refwrap.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h:
-
-/usr/include/c++/13/tr1/bessel_function.tcc:
-
-/usr/include/c++/13/initializer_list:
-
-/usr/include/c++/13/ext/type_traits.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
-
-/usr/include/c++/13/ext/aligned_buffer.h:
-
-/usr/include/locale.h:
-
-/usr/include/errno.h:
-
-/usr/include/c++/13/bits/functional_hash.h:
-
-/usr/include/c++/13/bits/nested_exception.h:
-
-/usr/include/c++/13/tuple:
-
-/usr/include/c++/13/debug/assertions.h:
-
-/usr/include/x86_64-linux-gnu/bits/select-decl.h:
-
-/usr/include/c++/13/tr1/beta_function.tcc:
-
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
-
-/usr/include/c++/13/bits/utility.h:
-
-/usr/include/c++/13/bits/stl_function.h:
-
-/usr/include/c++/13/cstdlib:
-
-/usr/include/c++/13/cstdint:
-
-/usr/include/c++/13/clocale:
-
-/usr/include/c++/13/cerrno:
-
-/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
-
-/usr/include/x86_64-linux-gnu/bits/strings_fortified.h:
-
-/usr/include/c++/13/bits/unique_ptr.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
-
-/usr/include/c++/13/fstream:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/xmmintrin.h:
-
-/usr/include/c++/13/stdlib.h:
-
-/usr/include/c++/13/bits/uses_allocator_args.h:
-
-_deps/flatbuffers-src/include/flatbuffers/allocator.h:
-
-/usr/include/c++/13/cstring:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/storage/data_file_writer.h:
-
-/usr/include/c++/13/bits/uses_allocator.h:
-
-/usr/include/c++/13/bits/postypes.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
-
-/usr/include/c++/13/tr1/poly_hermite.tcc:
-
-/usr/include/c++/13/bits/locale_classes.tcc:
-
-/usr/include/c++/13/bits/uniform_int_dist.h:
-
-/usr/include/c++/13/bits/stringfwd.h:
-
-_deps/flatbuffers-src/include/flatbuffers/vector.h:
-
-/usr/include/c++/13/bits/new_allocator.h:
-
-/usr/include/c++/13/bits/stl_uninitialized.h:
-
-/usr/include/c++/13/bits/stl_map.h:
-
-/usr/include/c++/13/cwctype:
-
-_deps/flatbuffers-src/include/flatbuffers/string.h:
-
-/usr/include/c++/13/bits/codecvt.h:
-
-/usr/include/c++/13/bits/stl_tree.h:
-
-/usr/include/c++/13/ext/alloc_traits.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h:
-
-/usr/include/c++/13/bits/alloc_traits.h:
-
-/usr/include/c++/13/bits/concept_check.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/simd/popcount.h:
-
-/usr/include/c++/13/pstl/glue_numeric_defs.h:
-
-/usr/include/c++/13/ext/string_conversions.h:
-
-_deps/flatbuffers-src/include/flatbuffers/struct.h:
-
-/usr/include/c++/13/bits/exception.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
-
-/usr/include/x86_64-linux-gnu/bits/uintn-identity.h:
-
-/usr/include/c++/13/vector:
-
-/usr/include/c++/13/cstddef:
-
-/usr/include/c++/13/bits/stl_algo.h:
-
-/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h:
-
-/usr/include/c++/13/bits/erase_if.h:
-
-/usr/include/c++/13/bits/cxxabi_forced.h:
-
-/usr/include/c++/13/bits/localefwd.h:
-
-/usr/include/c++/13/bits/streambuf_iterator.h:
-
-/usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
-
-/usr/include/c++/13/bits/std_function.h:
-
-/usr/include/c++/13/bits/char_traits.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
-
-/usr/include/c++/13/cassert:
-
-/usr/include/c++/13/bits/cpp_type_traits.h:
-
-/usr/include/x86_64-linux-gnu/bits/types.h:
-
-/usr/include/c++/13/tr1/ell_integral.tcc:
-
-/usr/include/c++/13/bits/allocated_ptr.h:
-
-_deps/flatbuffers-src/include/flatbuffers/base.h:
-
-/usr/include/c++/13/bit:
-
-/usr/include/c++/13/bits/basic_string.tcc:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/storage/address_column.h:
-
-/usr/include/c++/13/bits/move.h:
-
-/usr/include/c++/13/bits/functexcept.h:
-
-/usr/include/x86_64-linux-gnu/bits/libc-header-start.h:
-
-/usr/include/c++/13/bits/enable_special_members.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/index/conann.h:
-
-/usr/include/c++/13/bits/stl_vector.h:
-
-/usr/include/c++/13/bits/stl_numeric.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/time_t.h:
-
-/usr/include/c++/13/backward/binders.h:
-
-/usr/include/features.h:
-
-/usr/include/c++/13/tr1/modified_bessel_func.tcc:
-
-/usr/include/c++/13/bits/exception_defines.h:
-
-/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
-
-/usr/include/c++/13/bits/hash_bytes.h:
-
-/usr/include/x86_64-linux-gnu/bits/math-vector.h:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/pmmintrin.h:
-
-/usr/include/c++/13/algorithm:
-
-/usr/lib/gcc/x86_64-linux-gnu/13/include/mmintrin.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/pkuintrin.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/struct_sched_param.h:
 
-/usr/include/asm-generic/errno.h:
+/usr/include/c++/13/numeric:
 
-/usr/include/asm-generic/errno-base.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/gfniintrin.h:
 
-/usr/include/c++/13/bits/stl_iterator_base_funcs.h:
+/usr/include/eigen3/Eigen/src/Core/Redux.h:
 
-/usr/include/c++/13/iosfwd:
+/usr/include/eigen3/Eigen/src/Core/arch/AVX512/MathFunctions.h:
 
-/usr/include/c++/13/bits/predefined_ops.h:
+/usr/include/x86_64-linux-gnu/sys/cdefs.h:
 
-/usr/include/alloca.h:
+/usr/include/eigen3/Eigen/src/Core/DiagonalProduct.h:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/common/macros.h:
+/usr/include/c++/13/bits/node_handle.h:
 
-/home/zcq/VDB/VectorRetrival/src/index/conann.cpp:
+/usr/include/c++/13/ostream:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/c++locale.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/storage/data_file_reader.h:
+/usr/include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmiintrin.h:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/common/types.h:
+/usr/include/x86_64-linux-gnu/bits/wchar2.h:
 
-/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
+/usr/include/x86_64-linux-gnu/bits/waitflags.h:
 
-/usr/include/c++/13/random:
+/usr/include/eigen3/Eigen/src/Core/arch/AVX512/TypeCasting.h:
 
-/usr/include/c++/13/bits/random.tcc:
+/usr/include/x86_64-linux-gnu/bits/typesizes.h:
 
-/usr/include/c++/13/iomanip:
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h:
 
-/usr/include/strings.h:
+/usr/include/x86_64-linux-gnu/bits/wchar.h:
 
-/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
+/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h:
 
-/usr/include/c++/13/bits/stl_algobase.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vldqintrin.h:
 
-/usr/include/c++/13/bits/invoke.h:
+/usr/include/eigen3/Eigen/src/Core/util/BlasUtil.h:
 
-/usr/include/c++/13/streambuf:
+/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
 
-/usr/include/c++/13/bits/memory_resource.h:
+/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
 
-/usr/include/c++/13/bits/shared_ptr_base.h:
+/usr/include/c++/13/bits/stl_multimap.h:
 
-/usr/include/wchar.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/cmpccxaddintrin.h:
 
-/usr/include/c++/13/utility:
+_deps/flatbuffers-src/include/flatbuffers/detached_buffer.h:
 
-/usr/include/c++/13/bits/stl_heap.h:
+/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
 
-/usr/include/c++/13/bits/std_abs.h:
+/usr/include/x86_64-linux-gnu/bits/types/__FILE.h:
 
-/usr/include/c++/13/bits/parse_numbers.h:
+/usr/include/x86_64-linux-gnu/bits/timesize.h:
 
-/usr/include/c++/13/bits/stl_set.h:
+/usr/include/eigen3/Eigen/src/Core/Solve.h:
 
-/usr/include/c++/13/bits/ostream_insert.h:
+/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
 
-/usr/include/stdc-predef.h:
+/usr/include/x86_64-linux-gnu/bits/stdio2.h:
 
-/usr/include/c++/13/tr1/special_function_util.h:
+/usr/include/c++/13/bits/quoted_string.h:
 
-/usr/include/c++/13/bits/basic_string.h:
+/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h:
 
-/usr/include/c++/13/tr1/poly_laguerre.tcc:
+/usr/include/c++/13/bits/ptr_traits.h:
 
-/usr/include/c++/13/bits/chrono.h:
+/usr/include/x86_64-linux-gnu/c++/13/bits/messages_members.h:
 
-/usr/include/x86_64-linux-gnu/bits/endianness.h:
+/usr/include/x86_64-linux-gnu/sys/select.h:
 
-/usr/include/c++/13/cstdio:
+/usr/include/c++/13/cwchar:
 
-_deps/flatbuffers-src/include/flatbuffers/buffer.h:
-
-/usr/include/c++/13/bits/streambuf.tcc:
-
-/usr/include/c++/13/bits/specfun.h:
-
-/usr/include/c++/13/bits/stl_tempbuf.h:
-
-/usr/include/c++/13/bits/random.h:
-
-/usr/include/x86_64-linux-gnu/sys/types.h:
-
-/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h:
-
-/usr/include/linux/errno.h:
-
-/usr/include/c++/13/debug/debug.h:
-
-/usr/include/c++/13/tr1/hypergeometric.tcc:
-
-/usr/include/c++/13/bits/range_access.h:
-
-/usr/include/c++/13/bits/string_view.tcc:
-
-/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
-
-/usr/include/c++/13/bits/memoryfwd.h:
-
-_deps/flatbuffers-src/include/flatbuffers/flatbuffer_builder.h:
-
-/usr/include/c++/13/bits/stl_bvector.h:
-
-/usr/include/c++/13/unordered_map:
-
-/usr/include/c++/13/bits/allocator.h:
-
-/usr/include/c++/13/bits/stl_construct.h:
-
-/usr/include/endian.h:
-
-/usr/include/stdint.h:
-
-/usr/include/c++/13/bits/stl_iterator_base_types.h:
-
-/usr/include/stdio.h:
-
-/usr/include/stdlib.h:
-
-/usr/include/string.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdio.h:
-
-/usr/include/x86_64-linux-gnu/asm/errno.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/simd/distance_l2.h:
-
-/usr/include/x86_64-linux-gnu/bits/stdlib.h:
-
-/usr/include/c++/13/ext/numeric_traits.h:
-
-/usr/include/c++/13/bits/stl_iterator.h:
-
-generated/segment_meta_generated.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
-
-_deps/flatbuffers-src/include/flatbuffers/array.h:
-
-/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
-
-/usr/include/x86_64-linux-gnu/bits/byteswap.h:
-
-/usr/include/x86_64-linux-gnu/bits/endian.h:
-
-/usr/include/x86_64-linux-gnu/gnu/stubs.h:
-
-/usr/include/c++/13/bits/stl_pair.h:
-
-/usr/include/x86_64-linux-gnu/bits/errno.h:
-
-/usr/include/c++/13/bits/requires_hosted.h:
-
-/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
-
-/usr/include/c++/13/limits:
-
-_deps/flatbuffers-src/include/flatbuffers/flatbuffers.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
-
-/usr/include/x86_64-linux-gnu/bits/floatn.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/index/ivf_index.h:
-
-/usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h:
-
-/usr/include/x86_64-linux-gnu/bits/fp-fast.h:
-
-/usr/include/c++/13/string_view:
-
-/usr/include/c++/13/map:
-
-/usr/include/x86_64-linux-gnu/bits/iscanonical.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
-
-/usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
-
-/usr/include/x86_64-linux-gnu/bits/locale.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
-
-/usr/include/c++/13/bits/hashtable.h:
-
-/usr/include/x86_64-linux-gnu/bits/types/error_t.h:
-
-/usr/include/c++/13/bits/stl_relops.h:
-
-/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
-
-/usr/include/x86_64-linux-gnu/bits/time.h:
-
-/usr/include/x86_64-linux-gnu/bits/select.h:
-
-/usr/include/c++/13/cmath:
+/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
 
 /usr/include/x86_64-linux-gnu/bits/select2.h:
 
 /usr/include/x86_64-linux-gnu/c++/13/bits/gthr-default.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
+/usr/include/x86_64-linux-gnu/bits/select.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdint-uintn.h:
+/usr/include/eigen3/Eigen/src/Core/util/IntegralConstant.h:
 
-/usr/include/c++/13/cwchar:
+/usr/include/c++/13/bits/stl_relops.h:
 
-/usr/include/x86_64-linux-gnu/sys/select.h:
+/usr/include/x86_64-linux-gnu/bits/types/error_t.h:
 
-/usr/include/c++/13/bits/ptr_traits.h:
+/usr/include/c++/13/bits/hashtable.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdio2-decl.h:
+/usr/include/eigen3/Eigen/Eigenvalues:
 
-/usr/include/c++/13/bits/quoted_string.h:
+/usr/include/x86_64-linux-gnu/bits/mathcalls-helper-functions.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdio2.h:
+/usr/include/x86_64-linux-gnu/bits/posix1_lim.h:
 
-/usr/include/x86_64-linux-gnu/bits/timex.h:
+/usr/include/x86_64-linux-gnu/bits/locale.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
+/usr/include/eigen3/Eigen/src/LU/Determinant.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/FILE.h:
+/usr/include/x86_64-linux-gnu/bits/iscanonical.h:
 
-/usr/include/x86_64-linux-gnu/bits/string_fortified.h:
+/usr/include/c++/13/map:
 
-/usr/include/x86_64-linux-gnu/bits/struct_mutex.h:
+/usr/include/c++/13/string_view:
 
-/usr/include/x86_64-linux-gnu/bits/time64.h:
+/usr/include/x86_64-linux-gnu/bits/fp-fast.h:
 
-/usr/include/c++/13/bits/locale_classes.h:
+/usr/include/x86_64-linux-gnu/bits/floatn.h:
 
-/usr/include/x86_64-linux-gnu/bits/timesize.h:
+_deps/flatbuffers-src/include/flatbuffers/flatbuffers.h:
 
-/usr/include/math.h:
+/usr/include/x86_64-linux-gnu/bits/floatn-common.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/__FILE.h:
+/usr/include/c++/13/bits/requires_hosted.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/__fpos64_t.h:
+/usr/include/eigen3/Eigen/src/Core/Product.h:
 
-_deps/flatbuffers-src/include/flatbuffers/detached_buffer.h:
+/home/zcq/VDB/VectorRetrival/include/vdb/io/vecs_reader.h:
 
-/usr/include/c++/13/bits/stl_multimap.h:
+/usr/include/x86_64-linux-gnu/bits/stdint-least.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/__locale_t.h:
+/usr/include/x86_64-linux-gnu/bits/errno.h:
+
+/usr/include/c++/13/bits/stl_pair.h:
+
+/usr/include/eigen3/Eigen/LU:
+
+/usr/include/eigen3/Eigen/src/Core/Transpositions.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls.h:
+
+/usr/include/x86_64-linux-gnu/bits/endian.h:
+
+/usr/include/x86_64-linux-gnu/bits/byteswap.h:
+
+/usr/include/x86_64-linux-gnu/bits/atomic_wide_counter.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_timeval.h:
+
+/usr/include/c++/13/bits/stl_iterator.h:
+
+/usr/include/c++/13/ext/numeric_traits.h:
+
+/usr/include/x86_64-linux-gnu/asm/errno.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdio.h:
+
+/usr/include/string.h:
+
+/usr/include/stdlib.h:
+
+/usr/include/stdio.h:
+
+/usr/include/c++/13/bits/stl_iterator_base_types.h:
+
+/usr/include/stdint.h:
+
+/usr/include/endian.h:
+
+/usr/include/c++/13/bits/stl_construct.h:
+
+/usr/include/eigen3/Eigen/src/Core/EigenBase.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/sgxintrin.h:
+
+/usr/include/eigen3/Eigen/src/LU/FullPivLU.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/SSE/Complex.h:
+
+/usr/include/c++/13/bits/stl_bvector.h:
+
+_deps/flatbuffers-src/include/flatbuffers/flatbuffer_builder.h:
+
+/usr/include/libintl.h:
+
+/usr/include/x86_64-linux-gnu/bits/thread-shared-types.h:
+
+/usr/include/c++/13/bits/string_view.tcc:
+
+/usr/include/eigen3/Eigen/src/Cholesky/LDLT.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/wint_t.h:
+
+/usr/include/c++/13/tr1/hypergeometric.tcc:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vp2intersectintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/MKL_support.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/clzerointrin.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h:
+
+/usr/include/x86_64-linux-gnu/sys/types.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/bmi2intrin.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/common.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/profiler.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/lzcntintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/ConfigureVectorization.h:
+
+/usr/include/c++/13/bits/stl_tempbuf.h:
+
+/usr/include/c++/13/bits/specfun.h:
+
+/usr/include/c++/13/bits/streambuf.tcc:
+
+_deps/flatbuffers-src/include/flatbuffers/buffer.h:
 
 /usr/include/x86_64-linux-gnu/bits/types/__mbstate_t.h:
 
-/usr/include/c++/13/bits/charconv.h:
+/usr/include/math.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/__sigset_t.h:
+/usr/include/c++/13/cstdio:
 
-/usr/include/x86_64-linux-gnu/bits/types/struct___jmp_buf_tag.h:
+/usr/include/eigen3/Eigen/src/Core/VectorwiseOp.h:
 
-/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h:
+/usr/include/x86_64-linux-gnu/bits/endianness.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/clockid_t.h:
+/usr/include/c++/13/bits/chrono.h:
 
-/usr/include/c++/13/sstream:
+/usr/include/eigen3/Eigen/src/Eigenvalues/SelfAdjointEigenSolver.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h:
+/usr/include/eigen3/Eigen/src/Core/products/TriangularMatrixMatrix.h:
 
-/usr/include/x86_64-linux-gnu/bits/wchar.h:
+/usr/include/c++/13/bits/basic_string.h:
 
-/usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
+/usr/include/c++/13/tr1/poly_laguerre.tcc:
 
-/usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
+/usr/include/c++/13/tr1/special_function_util.h:
 
-/usr/include/x86_64-linux-gnu/bits/typesizes.h:
+/usr/include/c++/13/bits/stl_set.h:
 
-/usr/include/x86_64-linux-gnu/bits/waitflags.h:
+/usr/include/c++/13/cinttypes:
 
-/usr/include/c++/13/bits/align.h:
+/usr/include/c++/13/bits/parse_numbers.h:
 
-/usr/include/x86_64-linux-gnu/bits/fp-logb.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/uintrintrin.h:
 
-/usr/include/x86_64-linux-gnu/bits/wchar2.h:
+/usr/include/c++/13/utility:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/c++config.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bf16intrin.h:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/cpu_defines.h:
+/usr/include/c++/13/bits/shared_ptr_base.h:
 
-/usr/include/c++/13/ostream:
+/usr/include/c++/13/unordered_map:
 
-/usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h:
+/usr/include/eigen3/Eigen/src/Core/PlainObjectBase.h:
 
-/usr/include/c++/13/bits/node_handle.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xsavecintrin.h:
 
-/usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
+/usr/include/c++/13/streambuf:
 
-/usr/include/x86_64-linux-gnu/sys/cdefs.h:
+/usr/include/eigen3/Eigen/src/Core/arch/AVX/PacketMath.h:
+
+/usr/include/c++/13/bits/stl_algobase.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/io/npy_reader.h:
+
+/usr/include/x86_64-linux-gnu/bits/struct_rwlock.h:
+
+/usr/include/strings.h:
+
+/usr/include/c++/13/iomanip:
+
+/usr/include/c++/13/random:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/index/crc_stopper.h:
+
+/usr/include/c++/13/bits/allocator.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/common/types.h:
+
+/home/zcq/VDB/VectorRetrival/src/index/conann.cpp:
+
+/usr/include/eigen3/Eigen/src/plugins/MatrixCwiseBinaryOps.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/common/macros.h:
+
+/usr/include/alloca.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/error_constants.h:
+
+/usr/include/c++/13/bits/predefined_ops.h:
+
+/usr/include/c++/13/iosfwd:
+
+/usr/include/c++/13/bits/stl_iterator_base_funcs.h:
+
+/usr/include/eigen3/Eigen/src/Core/BandMatrix.h:
 
 /usr/lib/gcc/x86_64-linux-gnu/13/include/mm_malloc.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
+/usr/include/c++/13/algorithm:
 
 /usr/include/x86_64-linux-gnu/bits/stdint-intn.h:
 
-/usr/include/c++/13/string:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/pmmintrin.h:
 
-_deps/flatbuffers-src/include/flatbuffers/stl_emulation.h:
+/usr/lib/gcc/x86_64-linux-gnu/13/include/waitpkgintrin.h:
 
-/usr/include/c++/13/numeric:
+/usr/include/x86_64-linux-gnu/bits/math-vector.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/stdarg.h:
+/usr/include/eigen3/Eigen/src/Core/Inverse.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/stdint.h:
+/usr/include/c++/13/bits/hash_bytes.h:
 
-/usr/include/x86_64-linux-gnu/bits/environments.h:
+/usr/include/eigen3/Eigen/src/plugins/BlockMethods.h:
 
-/usr/lib/gcc/x86_64-linux-gnu/13/include/stddef.h:
+/usr/include/eigen3/Eigen/src/Core/AssignEvaluator.h:
 
-_deps/flatbuffers-src/include/flatbuffers/verifier.h:
+/usr/include/c++/13/bits/exception_defines.h:
 
-/home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp:
-
-/usr/include/c++/13/locale:
-
-_deps/flatbuffers-src/include/flatbuffers/buffer_ref.h:
-
-/usr/include/c++/13/stdexcept:
-
-_deps/flatbuffers-src/include/flatbuffers/default_allocator.h:
-
-/usr/include/x86_64-linux-gnu/bits/long-double.h:
-
-/usr/include/c++/13/bits/algorithmfwd.h:
-
-_deps/flatbuffers-src/include/flatbuffers/table.h:
-
-_deps/flatbuffers-src/include/flatbuffers/vector_downward.h:
-
-/home/zcq/VDB/VectorRetrival/include/vdb/common/status.h:
-
-/usr/include/c++/13/new:
+/usr/include/c++/13/tr1/modified_bessel_func.tcc:
 
 /home/zcq/VDB/VectorRetrival/include/vdb/index/ivf_builder.h:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/query/parsed_cluster.h:
+/usr/include/x86_64-linux-gnu/bits/types/FILE.h:
 
-/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h:
+/usr/include/x86_64-linux-gnu/c++/13/bits/os_defines.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/time_t.h:
+
+/usr/include/c++/13/bits/stl_numeric.h:
+
+/usr/include/x86_64-linux-gnu/bits/getopt_core.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdlib.h:
+
+/usr/include/c++/13/bits/stl_vector.h:
+
+/usr/include/eigen3/Eigen/src/Core/Transpose.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/index/conann.h:
+
+/usr/include/c++/13/bits/enable_special_members.h:
+
+/usr/include/x86_64-linux-gnu/bits/libc-header-start.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/EulerAngles.h:
+
+/usr/include/c++/13/bits/move.h:
+
+/usr/include/c++/13/bits/locale_classes.h:
+
+/usr/include/eigen3/Eigen/src/Core/Matrix.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_timespec.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h:
+
+/usr/include/c++/13/bit:
+
+_deps/flatbuffers-src/include/flatbuffers/base.h:
+
+/usr/include/c++/13/bits/allocated_ptr.h:
+
+/usr/include/c++/13/tr1/ell_integral.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/types.h:
+
+/usr/include/c++/13/bits/cpp_type_traits.h:
+
+/usr/include/c++/13/cassert:
+
+/usr/include/x86_64-linux-gnu/bits/types/clock_t.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/rdseedintrin.h:
+
+_deps/flatbuffers-src/include/flatbuffers/buffer_ref.h:
+
+/usr/include/c++/13/bits/char_traits.h:
+
+/usr/include/c++/13/bits/std_function.h:
+
+/usr/include/x86_64-linux-gnu/bits/flt-eval-method.h:
+
+/usr/include/c++/13/bits/streambuf_iterator.h:
+
+/usr/include/c++/13/bits/localefwd.h:
+
+/usr/include/c++/13/bits/cxxabi_forced.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/AngleAxis.h:
+
+/usr/include/linux/errno.h:
+
+/usr/include/c++/13/bits/std_abs.h:
+
+/usr/include/x86_64-linux-gnu/bits/wchar2-decl.h:
+
+/usr/include/asm-generic/errno-base.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/DisableStupidWarnings.h:
+
+/usr/include/c++/13/bits/stl_algo.h:
+
+/usr/include/c++/13/cstddef:
+
+/usr/include/eigen3/Eigen/src/Core/util/Macros.h:
+
+/usr/include/c++/13/vector:
+
+/usr/include/x86_64-linux-gnu/bits/uintn-identity.h:
+
+/usr/include/eigen3/Eigen/src/plugins/CommonCwiseBinaryOps.h:
+
+/usr/include/wchar.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdlib-float.h:
+
+_deps/flatbuffers-src/include/flatbuffers/struct.h:
+
+/usr/include/c++/13/ext/string_conversions.h:
+
+/usr/include/c++/13/pstl/glue_numeric_defs.h:
+
+/usr/include/eigen3/Eigen/src/Householder/HouseholderSequence.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/simd/popcount.h:
+
+/usr/include/c++/13/bits/concept_check.h:
+
+/usr/include/c++/13/sstream:
+
+/usr/include/eigen3/Eigen/src/Core/SelfCwiseBinaryOp.h:
+
+/usr/include/eigen3/Eigen/src/Core/IndexedView.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/GenericPacketMathFunctionsFwd.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/f16cintrin.h:
+
+/usr/include/c++/13/bits/memoryfwd.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_estimator.h:
+
+/usr/include/eigen3/Eigen/src/Cholesky/LLT.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/HessenbergDecomposition.h:
+
+/usr/include/x86_64-linux-gnu/bits/libm-simd-decl-stubs.h:
+
+/usr/include/c++/13/bits/random.h:
+
+/usr/include/c++/13/ext/alloc_traits.h:
+
+/usr/include/c++/13/bits/stl_tree.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vpopcntdqintrin.h:
+
+/usr/include/c++/13/bits/codecvt.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/time_members.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/TriangularMatrixVector.h:
+
+/usr/include/eigen3/Eigen/src/misc/RealSvd2x2.h:
+
+/usr/include/c++/13/cwctype:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/popcntintrin.h:
+
+/usr/include/x86_64-linux-gnu/bits/getopt_posix.h:
+
+/usr/include/c++/13/locale:
+
+/usr/include/c++/13/bits/stl_map.h:
+
+/usr/include/c++/13/bits/stl_uninitialized.h:
+
+/usr/include/c++/13/bits/new_allocator.h:
+
+_deps/flatbuffers-src/include/flatbuffers/vector.h:
+
+/usr/include/eigen3/Eigen/src/Core/BooleanRedux.h:
+
+/usr/include/eigen3/Eigen/src/Core/NestByValue.h:
+
+/usr/include/c++/13/bits/uniform_int_dist.h:
+
+/usr/include/c++/13/bits/locale_classes.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/stdlib-bsearch.h:
+
+/usr/include/x86_64-linux-gnu/bits/mathcalls-narrow.h:
+
+/usr/include/c++/13/bits/postypes.h:
+
+/usr/include/c++/13/bits/uses_allocator.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/data_file_writer.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/gthr.h:
+
+/usr/include/c++/13/cstring:
+
+_deps/flatbuffers-src/include/flatbuffers/allocator.h:
+
+/usr/include/c++/13/bits/uses_allocator_args.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/amxbf16intrin.h:
+
+/usr/include/c++/13/stdlib.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xmmintrin.h:
+
+/usr/include/c++/13/fstream:
+
+/usr/include/eigen3/Eigen/src/Core/Array.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/mbstate_t.h:
+
+/usr/include/c++/13/bits/unique_ptr.h:
+
+/usr/include/x86_64-linux-gnu/bits/strings_fortified.h:
+
+/usr/include/c++/13/bits/stringfwd.h:
+
+/usr/include/c++/13/cerrno:
+
+/usr/include/eigen3/Eigen/src/Core/CoreEvaluators.h:
+
+/usr/include/c++/13/stdexcept:
+
+/usr/include/eigen3/Eigen/src/Core/products/SelfadjointRank2Update.h:
+
+/usr/include/c++/13/clocale:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/scalar_computers.h:
+
+_deps/flatbuffers-src/include/flatbuffers/array.h:
+
+/usr/include/c++/13/cstdint:
+
+/usr/include/limits.h:
+
+/usr/include/c++/13/cstdlib:
+
+/usr/include/eigen3/Eigen/src/Core/PermutationMatrix.h:
+
+/usr/include/c++/13/bits/stl_function.h:
+
+/usr/include/c++/13/bits/utility.h:
+
+/usr/include/x86_64-linux-gnu/bits/setjmp.h:
+
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes-arch.h:
+
+/usr/include/c++/13/tr1/beta_function.tcc:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_inline.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/GeneralizedEigenSolver.h:
+
+/usr/include/x86_64-linux-gnu/bits/select-decl.h:
+
+/usr/include/eigen3/Eigen/src/Core/CwiseUnaryOp.h:
+
+/usr/include/c++/13/debug/assertions.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/cookie_io_functions_t.h:
+
+/usr/include/c++/13/bits/nested_exception.h:
+
+/usr/include/eigen3/Eigen/src/Core/DiagonalMatrix.h:
+
+/usr/include/c++/13/bits/functional_hash.h:
+
+/usr/include/errno.h:
+
+/usr/include/locale.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++allocator.h:
+
+/usr/include/c++/13/ext/aligned_buffer.h:
+
+/usr/include/x86_64-linux-gnu/bits/time64.h:
+
+/usr/include/c++/13/ext/type_traits.h:
+
+/usr/include/x86_64-linux-gnu/bits/string_fortified.h:
+
+/usr/include/c++/13/initializer_list:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/mmintrin.h:
+
+/usr/include/c++/13/tr1/bessel_function.tcc:
+
+/usr/include/eigen3/Eigen/src/QR/CompleteOrthogonalDecomposition.h:
+
+/usr/include/c++/13/bits/basic_string.tcc:
+
+/usr/include/x86_64-linux-gnu/bits/types/__fpos_t.h:
+
+/usr/include/c++/13/bits/refwrap.h:
+
+/usr/include/c++/13/pstl/execution_defs.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/cluster_store.h:
+
+/usr/include/eigen3/Eigen/src/Core/TriangularMatrix.h:
+
+/usr/include/c++/13/pstl/glue_algorithm_defs.h:
+
+generated/segment_meta_generated.h:
+
+/usr/include/eigen3/Eigen/src/Core/Visitor.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/SSE/MathFunctions.h:
+
+/usr/include/x86_64-linux-gnu/bits/wordsize.h:
+
+/usr/include/eigen3/Eigen/Jacobi:
+
+/usr/include/c++/13/tr1/exp_integral.tcc:
+
+/usr/include/c++/13/cctype:
+
+/usr/include/eigen3/Eigen/src/Core/Select.h:
+
+/usr/include/c++/13/tr1/gamma.tcc:
+
+/usr/include/c++/13/tr1/legendre_function.tcc:
+
+/usr/include/c++/13/tr1/riemann_zeta.tcc:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avxintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/XprHelper.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/emmintrin.h:
+
+/usr/include/eigen3/Eigen/src/QR/ColPivHouseholderQR.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vnnivlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/mwaitintrin.h:
+
+/usr/include/c++/13/bits/vector.tcc:
+
+/usr/include/c++/13/optional:
+
+/usr/include/ctype.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/locale_t.h:
+
+/usr/include/c++/13/type_traits:
+
+/usr/include/features-time64.h:
+
+/usr/include/c++/13/bits/invoke.h:
+
+/usr/include/eigen3/Eigen/src/Core/GenericPacketMath.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/pack_codes.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/avx512_computers.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/base_computers.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/distance_computers/batch_computers.h:
+
+/usr/include/eigen3/Eigen/src/Core/Replicate.h:
+
+/usr/include/c++/13/pstl/pstl_config.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/layout.h:
+
+/usr/include/eigen3/Eigen/src/Core/NumTraits.h:
+
+/home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/pdx_ivf.h:
+
+/usr/include/eigen3/Eigen/Geometry:
+
+/usr/include/eigen3/Eigen/src/Core/MathFunctionsImpl.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/pdxearch.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/pdx/utils.h:
+
+/usr/include/c++/13/bits/shared_ptr.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/omp.h:
 
 /usr/include/assert.h:
 
+/usr/include/eigen3/Eigen/Householder:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/opt_random.h:
+
+/usr/include/eigen3/Eigen/src/SVD/SVDBase.h:
+
+/usr/include/eigen3/Eigen/src/Core/DenseBase.h:
+
+/usr/include/eigen3/Eigen/src/QR/FullPivHouseholderQR.h:
+
 /usr/include/c++/13/array:
 
+/usr/include/c++/13/atomic:
+
 /usr/include/c++/13/backward/auto_ptr.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/Constants.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Translation.h:
+
+/usr/include/c++/13/bits/align.h:
+
+/usr/include/eigen3/Eigen/src/Core/StableNorm.h:
+
+/usr/include/c++/13/bits/stl_heap.h:
+
+/home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include/superkmeans/superkmeans.h:
+
+/usr/include/c++/13/bits/atomic_lockfree_defines.h:
+
+/usr/include/c++/13/bits/basic_ios.h:
+
+/usr/include/c++/13/bits/basic_ios.tcc:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/atomic_word.h:
+
+/usr/include/c++/13/bits/charconv.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/NullaryFunctors.h:
+
+/usr/include/c++/13/bits/cxxabi_init_exception.h:
+
+/usr/include/x86_64-linux-gnu/bits/waitstatus.h:
+
+/usr/include/c++/13/bits/exception_ptr.h:
+
+/usr/include/c++/13/bits/fs_dir.h:
+
+/usr/include/c++/13/bits/fs_fwd.h:
+
+/usr/include/c++/13/bits/fs_ops.h:
+
+/usr/include/c++/13/bits/fs_path.h:
+
+/usr/include/c++/13/bits/fstream.tcc:
+
+_deps/flatbuffers-src/include/flatbuffers/stl_emulation.h:
+
+/usr/include/c++/13/bits/hashtable_policy.h:
+
+/usr/include/c++/13/bits/ios_base.h:
+
+/usr/include/c++/13/iterator:
+
+/usr/include/c++/13/bits/istream.tcc:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avxvnniintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512bf16vlintrin.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/adxintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/VectorBlock.h:
+
+/usr/include/c++/13/bits/locale_facets.h:
+
+/usr/include/c++/13/bits/locale_facets.tcc:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/simd/distance_l2.h:
+
+/usr/include/c++/13/bits/locale_facets_nonio.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512cdintrin.h:
+
+/usr/include/c++/13/bits/locale_facets_nonio.tcc:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/rtmintrin.h:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/c++locale.h:
+
+/usr/include/c++/13/bits/ostream.tcc:
+
+/usr/include/eigen3/Eigen/src/Geometry/Homogeneous.h:
+
+/usr/include/c++/13/bits/shared_ptr_atomic.h:
+
+/usr/include/c++/13/set:
+
+/usr/include/c++/13/bits/sstream.tcc:
+
+/usr/include/eigen3/Eigen/src/Core/util/Meta.h:
+
+/usr/include/c++/13/bits/std_mutex.h:
+
+/usr/include/c++/13/bits/stl_multiset.h:
+
+/usr/include/eigen3/Eigen/src/Core/Swap.h:
+
+/usr/include/c++/13/bits/stl_raw_storage_iter.h:
+
+/usr/include/c++/13/bits/stream_iterator.h:
+
+/usr/include/c++/13/chrono:
+
+/usr/include/eigen3/Eigen/src/Geometry/RotationBase.h:
+
+/usr/include/c++/13/climits:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/ComplexEigenSolver.h:
+
+/usr/include/x86_64-linux-gnu/gnu/stubs-64.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/EigenSolver.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/nmmintrin.h:
+
+/usr/include/c++/13/codecvt:
+
+/usr/include/c++/13/compare:
+
+/usr/include/c++/13/bits/ostream_insert.h:
+
+/usr/include/c++/13/system_error:
+
+/usr/include/eigen3/Eigen/Dense:
+
+/usr/include/c++/13/complex:
+
+/usr/include/c++/13/ctime:
+
+/usr/include/eigen3/Eigen/src/Core/arch/SSE/TypeCasting.h:
+
+/usr/include/eigen3/Eigen/src/Core/SolveTriangular.h:
+
+/usr/include/c++/13/exception:
+
+/usr/include/eigen3/Eigen/src/Geometry/Scaling.h:
+
+/usr/include/c++/13/ext/atomicity.h:
+
+/usr/include/c++/13/ext/concurrence.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/Parallelizer.h:
+
+/usr/include/eigen3/Eigen/src/LU/InverseImpl.h:
+
+/usr/include/c++/13/filesystem:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/data_file_reader.h:
+
+/usr/include/c++/13/functional:
+
+/usr/include/x86_64-linux-gnu/c++/13/bits/ctype_base.h:
+
+/usr/include/eigen3/Eigen/src/Core/DenseCoeffsBase.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_itimerspec.h:
+
+/usr/include/c++/13/ios:
+
+/usr/include/asm-generic/errno.h:
+
+/usr/include/c++/13/iostream:
+
+/usr/include/eigen3/Eigen/src/Geometry/AlignedBox.h:
+
+/usr/include/c++/13/istream:
+
+/usr/include/c++/13/memory:
+
+/usr/include/x86_64-linux-gnu/sys/single_threaded.h:
+
+/usr/include/eigen3/Eigen/src/Core/Ref.h:
+
+/usr/include/c++/13/mutex:
+
+/usr/include/c++/13/ratio:
+
+/usr/include/c++/13/typeinfo:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/amxcomplexintrin.h:
+
+/usr/include/eigen3/Eigen/Cholesky:
+
+/usr/include/c++/13/bits/functexcept.h:
+
+/usr/include/eigen3/Eigen/Core:
+
+/usr/include/eigen3/Eigen/src/Core/ReturnByValue.h:
+
+/usr/include/eigen3/Eigen/QR:
+
+/usr/include/eigen3/Eigen/src/Core/arch/AVX512/PacketMath.h:
+
+/usr/include/eigen3/Eigen/SVD:
+
+/usr/include/eigen3/Eigen/src/Core/ArrayBase.h:
+
+/usr/include/x86_64-linux-gnu/bits/wctype-wchar.h:
+
+/usr/include/eigen3/Eigen/src/Core/ArrayWrapper.h:
+
+/usr/include/x86_64-linux-gnu/bits/pthreadtypes.h:
+
+/usr/include/eigen3/Eigen/src/Core/Assign.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vbmi2vlintrin.h:
+
+/usr/include/c++/13/bits/random.tcc:
+
+/usr/include/eigen3/Eigen/src/Core/Block.h:
+
+/usr/include/x86_64-linux-gnu/gnu/stubs.h:
+
+/usr/include/c++/13/bits/erase_if.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Transform.h:
+
+/usr/include/eigen3/Eigen/src/Core/CommaInitializer.h:
+
+/usr/include/c++/13/cmath:
+
+/usr/include/eigen3/Eigen/src/Core/ConditionEstimator.h:
+
+/usr/include/eigen3/Eigen/src/Core/Map.h:
+
+/usr/include/eigen3/Eigen/src/Core/CoreIterators.h:
+
+/usr/include/eigen3/Eigen/src/Core/CwiseBinaryOp.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/sigset_t.h:
+
+/usr/include/eigen3/Eigen/src/Core/CwiseNullaryOp.h:
+
+/usr/include/c++/13/limits:
+
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixVector.h:
+
+/usr/include/eigen3/Eigen/src/Core/CwiseTernaryOp.h:
+
+/usr/include/eigen3/Eigen/src/Core/CwiseUnaryView.h:
+
+/usr/include/eigen3/Eigen/src/Core/DenseStorage.h:
+
+/usr/include/eigen3/Eigen/src/Core/Diagonal.h:
+
+/usr/include/x86_64-linux-gnu/bits/cpu-set.h:
+
+/usr/include/eigen3/Eigen/src/Core/Dot.h:
+
+/usr/include/x86_64-linux-gnu/bits/stdio_lim.h:
+
+/usr/include/c++/13/bits/locale_conv.h:
+
+/usr/include/eigen3/Eigen/src/Core/Fuzzy.h:
+
+/usr/include/eigen3/Eigen/src/Core/GeneralProduct.h:
+
+/usr/include/eigen3/Eigen/src/Core/IO.h:
+
+/usr/include/c++/13/variant:
+
+/usr/include/c++/13/bits/atomic_base.h:
+
+/usr/include/eigen3/Eigen/src/Core/MapBase.h:
+
+/usr/include/linux/limits.h:
+
+/usr/include/eigen3/Eigen/src/Core/MathFunctions.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/AVX/TypeCasting.h:
+
+/usr/include/eigen3/Eigen/src/Core/MatrixBase.h:
+
+/usr/include/eigen3/Eigen/src/Core/NoAlias.h:
+
+/home/zcq/VDB/VectorRetrival/include/vdb/storage/address_column.h:
+
+/usr/include/eigen3/Eigen/src/Core/ProductEvaluators.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/timer_t.h:
+
+/usr/include/c++/13/tr1/poly_hermite.tcc:
+
+/usr/include/eigen3/Eigen/src/SVD/JacobiSVD.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512erintrin.h:
+
+/usr/include/eigen3/Eigen/src/SVD/UpperBidiagonalization.h:
+
+/usr/include/eigen3/Eigen/src/Core/Random.h:
+
+/usr/include/eigen3/Eigen/src/Core/Reshaped.h:
+
+/usr/include/eigen3/Eigen/src/Core/Reverse.h:
+
+/usr/include/c++/13/debug/debug.h:
+
+/usr/include/eigen3/Eigen/src/Core/SelfAdjointView.h:
+
+/usr/include/eigen3/Eigen/src/Core/SolverBase.h:
+
+/usr/include/x86_64-linux-gnu/bits/environments.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/SymbolicIndex.h:
+
+/usr/include/eigen3/Eigen/src/Core/StlIterators.h:
+
+/usr/include/eigen3/Eigen/src/misc/Image.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/AVX/Complex.h:
+
+/usr/include/c++/13/bits/alloc_traits.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Umeyama.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/AVX/MathFunctions.h:
+
+/usr/include/x86_64-linux-gnu/bits/fp-logb.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/AVX512/Complex.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/BFloat16.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/TriangularSolverMatrix.h:
+
+/usr/include/x86_64-linux-gnu/bits/timex.h:
+
+/usr/include/eigen3/Eigen/src/Core/PartialReduxEvaluator.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/ConjHelper.h:
+
+/usr/include/c++/13/bits/exception.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/Half.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/Settings.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/TypeCasting.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/Default/GenericPacketMathFunctions.h:
+
+/usr/include/eigen3/Eigen/src/Core/arch/SSE/PacketMath.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/GeneralBlockPanelKernel.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/AssignmentFunctors.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/StlFunctors.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/UnaryFunctors.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrix.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/GeneralMatrixMatrixTriangular.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/SelfadjointMatrixVector.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/SelfadjointProduct.h:
+
+/usr/include/stdc-predef.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/TriangularSolverVector.h:
+
+/usr/include/c++/13/backward/binders.h:
+
+_deps/flatbuffers-src/include/flatbuffers/string.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Rotation2D.h:
+
+/usr/include/c++/13/bits/unordered_map.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/ForwardDeclarations.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/IndexedViewHelper.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/Memory.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/ComplexSchur.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/ReenableStupidWarnings.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512pfintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/ReshapedHelper.h:
+
+/usr/include/eigen3/Eigen/src/Core/util/StaticAssert.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/amxint8intrin.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/GeneralizedSelfAdjointEigenSolver.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/MatrixBaseEigenvalues.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/avx512vp2intersectvlintrin.h:
+
+/usr/include/eigen3/Eigen/src/Core/products/SelfadjointMatrixMatrix.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/RealQZ.h:
+
+/usr/include/c++/13/string:
+
+/usr/include/features.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Hyperplane.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/OrthoMethods.h:
+
+/usr/include/c++/13/bits/range_access.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/ParametrizedLine.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/Quaternion.h:
+
+/usr/include/eigen3/Eigen/src/Geometry/arch/Geometry_SIMD.h:
+
+/usr/include/c++/13/bits/memory_resource.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/TernaryFunctors.h:
+
+/usr/include/c++/13/pstl/glue_memory_defs.h:
+
+/usr/include/eigen3/Eigen/src/Householder/BlockHouseholder.h:
+
+/usr/include/eigen3/Eigen/src/Householder/Householder.h:
+
+/usr/include/x86_64-linux-gnu/bits/types/struct_FILE.h:
+
+/usr/include/eigen3/Eigen/src/LU/PartialPivLU.h:
+
+/usr/include/c++/13/tuple:
+
+/usr/include/eigen3/Eigen/src/Jacobi/Jacobi.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/Tridiagonalization.h:
+
+/usr/include/eigen3/Eigen/src/LU/arch/InverseSize4.h:
+
+/usr/include/eigen3/Eigen/src/Core/Stride.h:
+
+/usr/include/eigen3/Eigen/src/QR/HouseholderQR.h:
+
+/usr/lib/gcc/x86_64-linux-gnu/13/include/xsavesintrin.h:
+
+/usr/include/eigen3/Eigen/src/misc/Kernel.h:
+
+/usr/include/eigen3/Eigen/src/SVD/BDCSVD.h:
+
+/usr/include/eigen3/Eigen/src/plugins/ArrayCwiseBinaryOps.h:
+
+/usr/include/eigen3/Eigen/src/Eigenvalues/RealSchur.h:
+
+/usr/include/eigen3/Eigen/src/plugins/ArrayCwiseUnaryOps.h:
+
+/usr/include/eigen3/Eigen/src/Core/functors/BinaryFunctors.h:
+
+/usr/include/eigen3/Eigen/src/plugins/CommonCwiseUnaryOps.h:

@@ -260,4 +260,6 @@ CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o: \
  /home/zcq/VDB/VectorRetrival/include/vdb/common/macros.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_encoder.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/rabitq/rabitq_rotation.h \
- /home/zcq/VDB/VectorRetrival/include/vdb/simd/distance_l2.h
+ /home/zcq/VDB/VectorRetrival/include/vdb/simd/distance_l2.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/storage/pack_codes.h

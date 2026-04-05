@@ -73,7 +73,6 @@ class OverlapScheduler {
     uint32_t inflight_clusters_ = 0;
 
     uint32_t vec_bytes_;
-    uint32_t num_words_;
 
     // CRC early stop state (reset per Search() call)
     index::CrcStopper crc_stopper_;

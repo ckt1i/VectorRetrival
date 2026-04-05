@@ -182,6 +182,8 @@ CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o: \
  /home/zcq/VDB/VectorRetrival/include/vdb/common/status.h \
  /usr/include/c++/13/utility /usr/include/c++/13/bits/stl_relops.h \
  /usr/include/c++/13/cassert /usr/include/assert.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/simd/fastscan.h \
+ /home/zcq/VDB/VectorRetrival/include/vdb/simd/ip_exrabitq.h \
  /home/zcq/VDB/VectorRetrival/include/vdb/simd/popcount.h \
  /usr/include/c++/13/algorithm /usr/include/c++/13/bits/stl_algo.h \
  /usr/include/c++/13/bits/algorithmfwd.h \

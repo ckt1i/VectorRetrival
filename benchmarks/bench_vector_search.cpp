@@ -37,7 +37,9 @@
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
+#include "vdb/simd/fastscan.h"
 #include "vdb/simd/popcount.h"
+#include "vdb/storage/pack_codes.h"
 
 using namespace vdb;
 using namespace vdb::rabitq;
@@ -105,7 +107,7 @@ int main(int argc, char* argv[]) {
     uint32_t nlist   = static_cast<uint32_t>(GetIntArg(argc, argv, "--nlist", 256));
     uint32_t nprobe  = static_cast<uint32_t>(GetIntArg(argc, argv, "--nprobe", 32));
     uint32_t top_k   = static_cast<uint32_t>(GetIntArg(argc, argv, "--topk", 10));
-    bool use_crc     = GetIntArg(argc, argv, "--crc", 0) != 0;
+    bool use_crc     = GetIntArg(argc, argv, "--crc", 1) != 0;
     float crc_alpha  = GetFloatArg(argc, argv, "--crc-alpha", 0.1f);
     float crc_calib  = GetFloatArg(argc, argv, "--crc-calib", 0.5f);
     float crc_tune   = GetFloatArg(argc, argv, "--crc-tune", 0.1f);
@@ -118,6 +120,7 @@ int main(int argc, char* argv[]) {
     uint8_t bits = static_cast<uint8_t>(GetIntArg(argc, argv, "--bits", 1));
     std::string centroids_path = GetArg(argc, argv, "--centroids", "");
     std::string assignments_path = GetArg(argc, argv, "--assignments", "");
+    bool use_fastscan_classify = GetIntArg(argc, argv, "--use-fastscan", 1) != 0;
 
     if (base_path.empty() || query_path.empty()) {
         std::fprintf(stderr,
@@ -281,6 +284,24 @@ int main(int argc, char* argv[]) {
         }
     }
 
+    // Diagnostic: check centroid quality
+    {
+        float c0_norm = 0;
+        for (uint32_t d = 0; d < dim; ++d) c0_norm += centroids[d] * centroids[d];
+        c0_norm = std::sqrt(c0_norm);
+        float v0_norm = 0;
+        for (uint32_t d = 0; d < dim; ++d) v0_norm += base.data[d] * base.data[d];
+        v0_norm = std::sqrt(v0_norm);
+        float dist_v0_c0 = 0;
+        uint32_t a0 = assignments[0];
+        for (uint32_t d = 0; d < dim; ++d) {
+            float diff = base.data[d] - centroids[static_cast<size_t>(a0)*dim + d];
+            dist_v0_c0 += diff * diff;
+        }
+        Log("  [DIAG] centroid[0] norm=%.4f, vec[0] norm=%.4f, ||vec[0]-centroid[a[0]]||=%.4f\n",
+            c0_norm, v0_norm, std::sqrt(dist_v0_c0));
+    }
+
     RotationMatrix rotation(dim);
     rotation.GenerateRandom(seed);
     RaBitQEncoder encoder(dim, rotation, bits);
@@ -313,6 +334,7 @@ int main(int argc, char* argv[]) {
     const uint32_t num_words = (dim + 63) / 64;
     uint32_t samples_for_eps = 100;
 
+    // Popcount IP-error calibration
     std::vector<float> ip_errors;
     for (uint32_t k = 0; k < nlist; ++k) {
         const auto& members = cluster_members[k];
@@ -358,12 +380,116 @@ int main(int argc, char* argv[]) {
     }
     Log("  eps_ip = %.6f (P%u)\n", eps_ip, p_for_eps);
 
-    // d_k calibration
+    // ---- FastScan block packing (needed for --use-fastscan) ----
+    // Pack each cluster's sign bits into FastScan batch-32 blocks.
+    const uint32_t fastscan_packed_sz = storage::FastScanPackedSize(dim);
+    const uint32_t fastscan_block_bytes = fastscan_packed_sz + 32 * sizeof(float);  // codes + norms
+
+    // Per-cluster: vector of packed blocks (each block = 32 vectors)
+    struct FsBlock {
+        std::vector<uint8_t> packed;  // fastscan_packed_sz bytes
+        std::vector<float> norms;     // 32 floats
+        uint32_t count;               // actual vectors in this block (≤32)
+    };
+    std::vector<std::vector<FsBlock>> cluster_fs_blocks(nlist);
+
+    {
+        for (uint32_t cid = 0; cid < nlist; ++cid) {
+            const auto& members = cluster_members[cid];
+            uint32_t n_blocks = (static_cast<uint32_t>(members.size()) + 31) / 32;
+            cluster_fs_blocks[cid].resize(n_blocks);
+
+            for (uint32_t b = 0; b < n_blocks; ++b) {
+                uint32_t base_idx = b * 32;
+                uint32_t cnt = std::min(32u, static_cast<uint32_t>(members.size()) - base_idx);
+
+                auto& fb = cluster_fs_blocks[cid][b];
+                fb.packed.resize(fastscan_packed_sz, 0);
+                fb.norms.resize(32, 0.0f);
+                fb.count = cnt;
+
+                // Collect codes for this block
+                std::vector<RaBitQCode> block_codes(cnt);
+                for (uint32_t j = 0; j < cnt; ++j) {
+                    block_codes[j] = codes[members[base_idx + j]];
+                    fb.norms[j] = codes[members[base_idx + j]].norm;
+                }
+                storage::PackSignBitsForFastScan(
+                    block_codes.data(), cnt, dim, fb.packed.data());
+            }
+        }
+        Log("  FastScan blocks packed (%u clusters).\n", nlist);
+    }
+
+    // d_k calibration (must be before eps_ip_fs for truncation)
     float p_dk_f = static_cast<float>(p_for_dk) / 100.0f;
     float d_k = ConANN::CalibrateDistanceThreshold(
         qry.data.data(), Q, base.data.data(), N,
         dim, 100, top_k, p_dk_f, seed);
     Log("  d_k = %.4f (P%u)\n", d_k, p_for_dk);
+
+    // ---- FastScan distance-error calibration (normalized, d_k truncated) ----
+    float eps_ip_fs = 0.0f;
+    {
+        const float trunc_lo = 0.1f * d_k;
+        const float trunc_hi = 10.0f * d_k;
+        std::vector<float> fs_normalized_errors;
+        for (uint32_t k = 0; k < nlist; ++k) {
+            const auto& members = cluster_members[k];
+            if (members.size() < 2) continue;
+
+            uint32_t n_queries_fs = std::min(samples_for_eps,
+                                              static_cast<uint32_t>(members.size()));
+            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
+            std::vector<uint32_t> indices(members.size());
+            std::iota(indices.begin(), indices.end(), 0u);
+            std::mt19937 rng(seed + k + nlist);
+            std::shuffle(indices.begin(), indices.end(), rng);
+
+            for (uint32_t q = 0; q < n_queries_fs; ++q) {
+                uint32_t q_global = members[indices[q]];
+                const float* q_vec = base.data.data() +
+                    static_cast<size_t>(q_global) * dim;
+                auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+
+                for (uint32_t b = 0; b < cluster_fs_blocks[k].size(); ++b) {
+                    const auto& fb = cluster_fs_blocks[k][b];
+                    alignas(64) float fs_dists[32];
+                    estimator.EstimateDistanceFastScan(
+                        pq, fb.packed.data(), fb.norms.data(), fb.count, fs_dists);
+
+                    for (uint32_t j = 0; j < fb.count; ++j) {
+                        uint32_t local_idx = b * 32 + j;
+                        if (local_idx == indices[q]) continue;
+
+                        uint32_t t_global = members[local_idx];
+                        float norm_oc = fb.norms[j];
+
+                        float true_dist = simd::L2Sqr(q_vec,
+                            base.data.data() + static_cast<size_t>(t_global) * dim, dim);
+
+                        // Truncate: only sample near decision boundary
+                        if (true_dist < trunc_lo || true_dist > trunc_hi) continue;
+
+                        float dist_err = std::abs(fs_dists[j] - true_dist);
+                        float denom = 2.0f * norm_oc * pq.norm_qc;
+                        if (denom > 1e-10f) {
+                            fs_normalized_errors.push_back(dist_err / denom);
+                        }
+                    }
+                }
+            }
+        }
+        if (!fs_normalized_errors.empty()) {
+            std::sort(fs_normalized_errors.begin(), fs_normalized_errors.end());
+            float p = static_cast<float>(p_for_eps) / 100.0f;
+            auto idx = static_cast<size_t>(
+                p * static_cast<float>(fs_normalized_errors.size() - 1));
+            eps_ip_fs = fs_normalized_errors[idx];
+        }
+        Log("  eps_ip_fs = %.6f (P%u, %zu samples, trunc=[%.4f,%.4f])  [vs eps_ip_pop = %.6f]\n",
+            eps_ip_fs, p_for_eps, fs_normalized_errors.size(), trunc_lo, trunc_hi, eps_ip);
+    }
 
     double build_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_build).count();
@@ -444,10 +570,14 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase D: Vector Search
     // ================================================================
-    Log("\n[Phase D] Searching (%u queries, nprobe=%u)...\n", Q, nprobe);
+    Log("\n[Phase D] Searching (%u queries, nprobe=%u, fastscan_classify=%d)...\n",
+        Q, nprobe, use_fastscan_classify ? 1 : 0);
     auto t_search = std::chrono::steady_clock::now();
 
-    ConANN conann(eps_ip, d_k);
+    float active_eps_ip = use_fastscan_classify ? eps_ip_fs : eps_ip;
+    ConANN conann(active_eps_ip, d_k);
+    Log("  Using eps_ip = %.6f (%s)\n", active_eps_ip,
+        use_fastscan_classify ? "FastScan" : "Popcount");
 
     // Results: per-query top-K IDs
     std::vector<std::vector<uint32_t>> results(Q);
@@ -501,10 +631,89 @@ int main(int argc, char* argv[]) {
             const float* centroid = centroids.data() +
                 static_cast<size_t>(cid) * dim;
             auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
-            float margin_s1 = 2.0f * per_cluster_r_max[cid] * pq.norm_qc * eps_ip;
+            float margin_factor = 2.0f * pq.norm_qc * active_eps_ip;
 
+            // --- FastScan classify path: batch-32 blocks ---
+            if (use_fastscan_classify) {
+                const auto& blocks = cluster_fs_blocks[cid];
+                const auto& members = cluster_members[cid];
+
+                for (uint32_t b = 0; b < blocks.size(); ++b) {
+                    const auto& fb = blocks[b];
+                    alignas(64) float fs_dists[32];
+                    estimator.EstimateDistanceFastScan(
+                        pq, fb.packed.data(), fb.norms.data(), fb.count, fs_dists);
+
+                    for (uint32_t j = 0; j < fb.count; ++j) {
+                        uint32_t local_idx = b * 32 + j;
+                        uint32_t vid = members[local_idx];
+                        float est_dist_s1 = fs_dists[j];
+                        float margin_s1 = margin_factor * fb.norms[j];  // per-vector
+
+                        float est_kth = (est_heap.size() >= top_k)
+                            ? est_heap.front().first
+                            : std::numeric_limits<float>::infinity();
+                        ResultClass rc_s1 = conann.ClassifyAdaptive(est_dist_s1, margin_s1, est_kth);
+
+                        bool in_gt = gt_set.count(vid) > 0;
+
+                        if (rc_s1 == ResultClass::SafeIn) s1_safein++;
+                        else if (rc_s1 == ResultClass::SafeOut) s1_safeout++;
+                        else s1_uncertain++;
+
+                        ResultClass rc_final = rc_s1;
+
+                        // Stage 2: for S1-Uncertain when bits > 1
+                        if (rc_s1 == ResultClass::Uncertain && bits > 1) {
+                            float est_dist_s2 = estimator.EstimateDistanceMultiBit(pq, codes[vid]);
+                            float margin_s2 = margin_s1 / margin_s2_divisor;
+                            ResultClass rc_s2 = conann.ClassifyAdaptive(est_dist_s2, margin_s2, est_kth);
+
+                            if (rc_s2 == ResultClass::SafeIn) s2_safein++;
+                            else if (rc_s2 == ResultClass::SafeOut) s2_safeout++;
+                            else s2_uncertain++;
+
+                            rc_final = rc_s2;
+                        }
+
+                        if (rc_final == ResultClass::SafeIn) {
+                            final_safein++;
+                            if (!in_gt) final_false_safein++;
+                        } else if (rc_final == ResultClass::SafeOut) {
+                            final_safeout++;
+                            if (in_gt) final_false_safeout++;
+                        } else {
+                            final_uncertain++;
+                        }
+
+                        if (rc_final == ResultClass::SafeOut) continue;
+
+                        if (est_heap.size() < top_k) {
+                            est_heap.push_back({est_dist_s1, vid});
+                            std::push_heap(est_heap.begin(), est_heap.end());
+                        } else if (est_dist_s1 < est_heap.front().first) {
+                            std::pop_heap(est_heap.begin(), est_heap.end());
+                            est_heap.back() = {est_dist_s1, vid};
+                            std::push_heap(est_heap.begin(), est_heap.end());
+                        }
+
+                        float exact_dist = simd::L2Sqr(q_vec,
+                            base.data.data() + static_cast<size_t>(vid) * dim, dim);
+                        if (exact_heap.size() < top_k) {
+                            exact_heap.push_back({exact_dist, vid});
+                            std::push_heap(exact_heap.begin(), exact_heap.end());
+                        } else if (exact_dist < exact_heap.front().first) {
+                            std::pop_heap(exact_heap.begin(), exact_heap.end());
+                            exact_heap.back() = {exact_dist, vid};
+                            std::push_heap(exact_heap.begin(), exact_heap.end());
+                        }
+                    }
+                }
+            } else {
+            // --- Original popcount classify path ---
             for (uint32_t vid : cluster_members[cid]) {
                 float est_dist_s1 = estimator.EstimateDistance(pq, codes[vid]);
+                float margin_s1 = margin_factor * codes[vid].norm;  // per-vector
 
                 // Stage 1 classification
                 float est_kth = (est_heap.size() >= top_k)
@@ -525,6 +734,15 @@ int main(int argc, char* argv[]) {
                     float est_dist_s2 = estimator.EstimateDistanceMultiBit(pq, codes[vid]);
                     float margin_s2 = margin_s1 / margin_s2_divisor;
                     ResultClass rc_s2 = conann.ClassifyAdaptive(est_dist_s2, margin_s2, est_kth);
+
+                    // Diagnostic: print first few S2 values
+                    static uint64_t s2_diag_count = 0;
+                    if (s2_diag_count < 10) {
+                        Log("  [S2 diag] dist_s2=%.4f margin_s1=%.4f margin_s2=%.4f norm_oc=%.4f norm_qc=%.4f eps_ip=%.6f est_kth=%.4f\n",
+                            est_dist_s2, margin_s1, margin_s2,
+                            codes[vid].norm, pq.norm_qc, active_eps_ip, est_kth);
+                        s2_diag_count++;
+                    }
 
                     if (rc_s2 == ResultClass::SafeIn) s2_safein++;
                     else if (rc_s2 == ResultClass::SafeOut) s2_safeout++;
@@ -569,6 +787,7 @@ int main(int argc, char* argv[]) {
                     std::push_heap(exact_heap.begin(), exact_heap.end());
                 }
             }
+            } // end popcount path
 
             probed++;
 

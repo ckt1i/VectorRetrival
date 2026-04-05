@@ -1,511 +1,529 @@
 [
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_chunk_writer.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_chunk_writer.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/columns/column_chunk_writer.cpp",
   "output": "CMakeFiles/vdb_columns.dir/src/columns/column_chunk_writer.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_chunk_reader.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_chunk_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/columns/column_chunk_reader.cpp",
   "output": "CMakeFiles/vdb_columns.dir/src/columns/column_chunk_reader.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_store.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_store.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_columns.dir/src/columns/column_store.cpp.o -c /home/zcq/VDB/VectorRetrival/src/columns/column_store.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/columns/column_store.cpp",
   "output": "CMakeFiles/vdb_columns.dir/src/columns/column_store.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/distance_l2.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/distance_l2.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/simd/distance_l2.cpp",
   "output": "CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/bit_unpack.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/bit_unpack.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/simd/bit_unpack.cpp",
   "output": "CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/prefix_sum.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/prefix_sum.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/simd/prefix_sum.cpp",
   "output": "CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/popcount.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/popcount.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/simd/popcount.cpp",
   "output": "CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/transpose.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/transpose.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/simd/transpose.cpp",
   "output": "CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_codec.dir/src/codec/bitpack_codec.cpp.o -c /home/zcq/VDB/VectorRetrival/src/codec/bitpack_codec.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/ip_exrabitq.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/simd/ip_exrabitq.cpp",
+  "output": "CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/fastscan.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/simd/fastscan.cpp",
+  "output": "CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_codec.dir/src/codec/bitpack_codec.cpp.o -c /home/zcq/VDB/VectorRetrival/src/codec/bitpack_codec.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/codec/bitpack_codec.cpp",
   "output": "CMakeFiles/vdb_codec.dir/src/codec/bitpack_codec.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_codec.dir/src/codec/dict_codec.cpp.o -c /home/zcq/VDB/VectorRetrival/src/codec/dict_codec.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_codec.dir/src/codec/dict_codec.cpp.o -c /home/zcq/VDB/VectorRetrival/src/codec/dict_codec.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/codec/dict_codec.cpp",
   "output": "CMakeFiles/vdb_codec.dir/src/codec/dict_codec.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_rotation.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_rotation.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_rotation.cpp",
   "output": "CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_encoder.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_encoder.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_encoder.cpp",
   "output": "CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_estimator.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o -c /home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_estimator.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/rabitq/rabitq_estimator.cpp",
   "output": "CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/address_column.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/address_column.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/address_column.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/address_column.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/storage/address_column.cpp",
   "output": "CMakeFiles/vdb_storage.dir/src/storage/address_column.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/data_file_writer.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/data_file_writer.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/storage/data_file_writer.cpp",
   "output": "CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/data_file_reader.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/data_file_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/storage/data_file_reader.cpp",
   "output": "CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/cluster_store.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/cluster_store.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/storage/cluster_store.cpp",
   "output": "CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/segment.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp",
+  "output": "CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/segment.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/storage/segment.cpp",
   "output": "CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/crc_calibrator.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/crc_calibrator.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/index/crc_calibrator.cpp",
   "output": "CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_index.dir/src/index/conann.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
-  "output": "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp",
-  "output": "CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp",
-  "output": "CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/common/distance.cpp.o -c /home/zcq/VDB/VectorRetrival/src/common/distance.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/common/distance.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/common/distance.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/pread_fallback_reader.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/pread_fallback_reader.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/io_uring_reader.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/io_uring_reader.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/result_collector.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/result_collector.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/rerank_consumer.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/rerank_consumer.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/overlap_scheduler.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/overlap_scheduler.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/buffer_pool.cpp",
-  "file": "/home/zcq/VDB/VectorRetrival/src/query/buffer_pool.cpp",
-  "output": "CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o"
-},
-{
-  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/npy_reader.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/npy_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/io/npy_reader.cpp",
   "output": "CMakeFiles/vdb_io.dir/src/io/npy_reader.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/io/jsonl_reader.cpp",
   "output": "CMakeFiles/vdb_io.dir/src/io/jsonl_reader.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/src/io/vecs_reader.cpp",
   "output": "CMakeFiles/vdb_io.dir/src/io/vecs_reader.cpp.o"
 },
 {
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_index.dir/src/index/conann.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/index/conann.cpp",
+  "output": "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp",
+  "output": "CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp",
+  "output": "CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/common/distance.cpp.o -c /home/zcq/VDB/VectorRetrival/src/common/distance.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/common/distance.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/common/distance.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/pread_fallback_reader.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/pread_fallback_reader.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/io_uring_reader.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/io_uring_reader.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/result_collector.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/result_collector.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/rerank_consumer.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/rerank_consumer.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/overlap_scheduler.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/overlap_scheduler.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o"
+},
+{
+  "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o -c /home/zcq/VDB/VectorRetrival/src/query/buffer_pool.cpp",
+  "file": "/home/zcq/VDB/VectorRetrival/src/query/buffer_pool.cpp",
+  "output": "CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o"
+},
+{
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_parser.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_parser.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_parser.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_text.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_text.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_text.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/reflection.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/reflection.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/reflection.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/util.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/util.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/util.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_binary.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_binary.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_binary.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_binary.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_binary.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_binary.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_cpp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_cpp.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_cpp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_cpp.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_cpp.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_cpp.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_csharp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_csharp.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_csharp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_csharp.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_csharp.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_csharp.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_dart.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_dart.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_dart.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_dart.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_dart.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_dart.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_kotlin.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_kotlin.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_kotlin.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_kotlin_kmp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin_kmp.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_kotlin_kmp.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin_kmp.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_kotlin_kmp.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_kotlin_kmp.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_go.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_go.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_go.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_go.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_go.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_go.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_java.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_java.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_java.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_java.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_java.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_java.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_ts.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_ts.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_ts.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_ts.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_ts.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_ts.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_php.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_php.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_php.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_php.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_php.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_php.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_python.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_python.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_python.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_python.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_python.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_python.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_lobster.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_lobster.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_lobster.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_lobster.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_lobster.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_lobster.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_rust.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_rust.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_rust.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_rust.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_rust.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_rust.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_fbs.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_fbs.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_fbs.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_fbs.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_fbs.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_fbs.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_grpc.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_grpc.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_grpc.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_grpc.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_grpc.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_grpc.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_json_schema.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_json_schema.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_json_schema.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_json_schema.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_json_schema.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_json_schema.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_swift.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_swift.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/idl_gen_swift.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_swift.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_swift.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/idl_gen_swift.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_name_saving_file_manager.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_name_saving_file_manager.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_name_saving_file_manager.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_name_saving_file_manager.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_name_saving_file_manager.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/file_name_saving_file_manager.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_binary_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_binary_writer.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_binary_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_binary_writer.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_binary_writer.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/file_binary_writer.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_writer.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/file_writer.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_writer.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/file_writer.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/file_writer.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/flatc.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/flatc.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/flatc.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/flatc_main.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc_main.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/flatc_main.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc_main.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/flatc_main.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/flatc_main.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/binary_annotator.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/binary_annotator.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/binary_annotator.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/binary_annotator.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/binary_annotator.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/binary_annotator.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/annotated_binary_text_gen.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/annotated_binary_text_gen.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/annotated_binary_text_gen.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/annotated_binary_text_gen.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/annotated_binary_text_gen.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/annotated_binary_text_gen.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/bfbs_gen_lua.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_lua.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/bfbs_gen_lua.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_lua.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_lua.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/bfbs_gen_lua.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/bfbs_gen_nim.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_nim.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/bfbs_gen_nim.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_nim.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/bfbs_gen_nim.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/bfbs_gen_nim.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/code_generators.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/code_generators.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/src/code_generators.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/code_generators.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/code_generators.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/src/code_generators.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/cpp_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/cpp_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/cpp_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/cpp_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/cpp_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/cpp_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/go_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/go_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/go_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/go_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/go_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/go_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/java_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/java_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/java_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/java_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/java_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/java_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/python_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/python_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/python_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/python_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/python_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/python_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/swift_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/swift_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/swift_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/swift_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/swift_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/swift_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/ts_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/ts_generator.cc",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatc.dir/grpc/src/compiler/ts_generator.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/ts_generator.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc/src/compiler/ts_generator.cc",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatc.dir/grpc/src/compiler/ts_generator.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/idl_parser.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/idl_parser.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_parser.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/src/idl_parser.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/idl_gen_text.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/idl_gen_text.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/idl_gen_text.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/src/idl_gen_text.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/reflection.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/reflection.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/reflection.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/src/reflection.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-build",
-  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/util.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
+  "command": "/usr/bin/c++ -DFLATBUFFERS_LOCALE_INDEPENDENT=1 -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/grpc  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -pedantic -Wextra -Wno-unused-parameter -Wold-style-cast -fsigned-char -Wnon-virtual-dtor -Wunused-result -Wunused-parameter -Werror=unused-parameter -Wmissing-declarations -Wzero-as-null-pointer-constant -faligned-new -Wextra-semi -o CMakeFiles/flatbuffers.dir/src/util.cpp.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/src/util.cpp",
   "output": "_deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/src/util.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googlemock",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock.dir/src/gmock-all.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock-all.cc",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock.dir/src/gmock-all.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock-all.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock-all.cc",
   "output": "_deps/googletest-build/googlemock/CMakeFiles/gmock.dir/src/gmock-all.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googlemock",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock_main.dir/src/gmock_main.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock_main.cc",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gmock_main.dir/src/gmock_main.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock_main.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googlemock/src/gmock_main.cc",
   "output": "_deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/src/gmock_main.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googletest",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest.dir/src/gtest-all.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest-all.cc",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest.dir/src/gtest-all.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest-all.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest-all.cc",
   "output": "_deps/googletest-build/googletest/CMakeFiles/gtest.dir/src/gtest-all.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googletest",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest_main.dir/src/gtest_main.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest_main.cc",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/include -isystem /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=c++17 -Wall -Wshadow -Wundef -Wno-error=dangling-else -DGTEST_HAS_PTHREAD=1 -fexceptions -Wextra -Wno-unused-parameter -Wno-missing-field-initializers -o CMakeFiles/gtest_main.dir/src/gtest_main.cc.o -c /home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest_main.cc",
   "file": "/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-src/googletest/src/gtest_main.cc",
   "output": "_deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/src/gtest_main.cc.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_ivf_quality.dir/bench_ivf_quality.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_ivf_quality.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_ivf_quality.dir/bench_ivf_quality.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_ivf_quality.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_ivf_quality.cpp",
   "output": "benchmarks/CMakeFiles/bench_ivf_quality.dir/bench_ivf_quality.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_e2e.dir/bench_e2e.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_e2e.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_e2e.dir/bench_e2e.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_e2e.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_e2e.cpp",
   "output": "benchmarks/CMakeFiles/bench_e2e.dir/bench_e2e.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_rabitq_accuracy.dir/bench_rabitq_accuracy.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_accuracy.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_rabitq_accuracy.dir/bench_rabitq_accuracy.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_accuracy.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_accuracy.cpp",
   "output": "benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/bench_rabitq_accuracy.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_recall.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_recall.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_recall.cpp",
   "output": "benchmarks/CMakeFiles/bench_conann_recall.dir/bench_conann_recall.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_crc.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_crc.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_conann_crc.cpp",
   "output": "benchmarks/CMakeFiles/bench_conann_crc.dir/bench_conann_crc.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_crc_overlap.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_crc_overlap.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_crc_overlap.cpp",
   "output": "benchmarks/CMakeFiles/bench_crc_overlap.dir/bench_crc_overlap.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_diagnostic.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_diagnostic.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_rabitq_diagnostic.cpp",
   "output": "benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/bench_rabitq_diagnostic.cpp.o"
 },
 {
   "directory": "/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks",
-  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include  -Wall -Wextra -Wpedantic -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -o CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_vector_search.cpp",
+  "command": "/usr/bin/c++ -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1 -I/home/zcq/VDB/VectorRetrival/include -I/home/zcq/VDB/VectorRetrival/build-bench-only/generated -I/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/flatbuffers-src/include -isystem /home/zcq/VDB/VectorRetrival/thrid-party/SuperKMeans/include -isystem /usr/include/eigen3  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17 -O3 -march=native -fopenmp -o CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o -c /home/zcq/VDB/VectorRetrival/benchmarks/bench_vector_search.cpp",
   "file": "/home/zcq/VDB/VectorRetrival/benchmarks/bench_vector_search.cpp",
   "output": "benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.o"
 }

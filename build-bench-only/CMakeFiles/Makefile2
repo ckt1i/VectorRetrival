@@ -72,12 +72,14 @@ all: CMakeFiles/vdb_index.dir/all
 all: CMakeFiles/vdb_crc.dir/all
 all: CMakeFiles/vdb_query.dir/all
 all: CMakeFiles/vdb_io.dir/all
+all: thrid-party/SuperKMeans/all
 all: _deps/flatbuffers-build/all
 all: _deps/googletest-build/all
 all: benchmarks/all
 .PHONY : all
 
 # The main recursive "preinstall" target.
+preinstall: thrid-party/SuperKMeans/preinstall
 preinstall: _deps/flatbuffers-build/preinstall
 preinstall: _deps/googletest-build/preinstall
 preinstall: benchmarks/preinstall
@@ -94,6 +96,7 @@ clean: CMakeFiles/vdb_index.dir/clean
 clean: CMakeFiles/vdb_crc.dir/clean
 clean: CMakeFiles/vdb_query.dir/clean
 clean: CMakeFiles/vdb_io.dir/clean
+clean: thrid-party/SuperKMeans/clean
 clean: _deps/flatbuffers-build/clean
 clean: _deps/googletest-build/clean
 clean: benchmarks/clean
@@ -197,6 +200,48 @@ benchmarks/clean: benchmarks/CMakeFiles/bench_vector_search.dir/clean
 .PHONY : benchmarks/clean
 
 #=============================================================================
+# Directory level rules for directory thrid-party/SuperKMeans
+
+# Recursive "all" directory target.
+thrid-party/SuperKMeans/all:
+.PHONY : thrid-party/SuperKMeans/all
+
+# Recursive "preinstall" directory target.
+thrid-party/SuperKMeans/preinstall:
+.PHONY : thrid-party/SuperKMeans/preinstall
+
+# Recursive "clean" directory target.
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/clean
+thrid-party/SuperKMeans/clean: thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/clean
+.PHONY : thrid-party/SuperKMeans/clean
+
+#=============================================================================
 # Target rules for target CMakeFiles/flatbuffers_generated.dir
 
 # All Build rule for target.
@@ -208,7 +253,7 @@ CMakeFiles/flatbuffers_generated.dir/all: _deps/flatbuffers-build/CMakeFiles/fla
 
 # Build rule for subdir invocation for target.
 CMakeFiles/flatbuffers_generated.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 37
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 36
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/flatbuffers_generated.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/flatbuffers_generated.dir/rule
@@ -229,12 +274,12 @@ CMakeFiles/flatbuffers_generated.dir/clean:
 CMakeFiles/vdb_columns.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_columns.dir/build.make CMakeFiles/vdb_columns.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_columns.dir/build.make CMakeFiles/vdb_columns.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=66,67,68,69 "Built target vdb_columns"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=65,66,67 "Built target vdb_columns"
 .PHONY : CMakeFiles/vdb_columns.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_columns.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 3
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_columns.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_columns.dir/rule
@@ -255,12 +300,12 @@ CMakeFiles/vdb_columns.dir/clean:
 CMakeFiles/vdb_simd.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=90,91,92,93,94 "Built target vdb_simd"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=87,88,89,90,91,92,93 "Built target vdb_simd"
 .PHONY : CMakeFiles/vdb_simd.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_simd.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 5
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 7
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_simd.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_simd.dir/rule
@@ -281,12 +326,12 @@ CMakeFiles/vdb_simd.dir/clean:
 CMakeFiles/vdb_codec.dir/all: CMakeFiles/vdb_simd.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_codec.dir/build.make CMakeFiles/vdb_codec.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_codec.dir/build.make CMakeFiles/vdb_codec.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=64,65 "Built target vdb_codec"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=62,63,64 "Built target vdb_codec"
 .PHONY : CMakeFiles/vdb_codec.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_codec.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 7
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 10
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_codec.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_codec.dir/rule
@@ -307,12 +352,12 @@ CMakeFiles/vdb_codec.dir/clean:
 CMakeFiles/vdb_rabitq.dir/all: CMakeFiles/vdb_simd.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_rabitq.dir/build.make CMakeFiles/vdb_rabitq.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_rabitq.dir/build.make CMakeFiles/vdb_rabitq.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=86,87,88,89 "Built target vdb_rabitq"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=84,85,86 "Built target vdb_rabitq"
 .PHONY : CMakeFiles/vdb_rabitq.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_rabitq.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 9
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 10
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_rabitq.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_rabitq.dir/rule
@@ -330,18 +375,18 @@ CMakeFiles/vdb_rabitq.dir/clean:
 # Target rules for target CMakeFiles/vdb_storage.dir
 
 # All Build rule for target.
+CMakeFiles/vdb_storage.dir/all: CMakeFiles/vdb_columns.dir/all
 CMakeFiles/vdb_storage.dir/all: CMakeFiles/vdb_simd.dir/all
 CMakeFiles/vdb_storage.dir/all: CMakeFiles/vdb_codec.dir/all
 CMakeFiles/vdb_storage.dir/all: CMakeFiles/vdb_rabitq.dir/all
-CMakeFiles/vdb_storage.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_storage.dir/build.make CMakeFiles/vdb_storage.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_storage.dir/build.make CMakeFiles/vdb_storage.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=95,96,97,98,99,100 "Built target vdb_storage"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=94,95,96,97,98,99,100 "Built target vdb_storage"
 .PHONY : CMakeFiles/vdb_storage.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_storage.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 21
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 23
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_storage.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_storage.dir/rule
@@ -359,22 +404,23 @@ CMakeFiles/vdb_storage.dir/clean:
 # Target rules for target CMakeFiles/vdb_index.dir
 
 # All Build rule for target.
+CMakeFiles/vdb_index.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_columns.dir/all
 CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_simd.dir/all
 CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_codec.dir/all
 CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_rabitq.dir/all
 CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_storage.dir/all
 CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_crc.dir/all
+CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_io.dir/all
 CMakeFiles/vdb_index.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-CMakeFiles/vdb_index.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-CMakeFiles/vdb_index.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=72,73,74 "Built target vdb_index"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=70,71,72 "Built target vdb_index"
 .PHONY : CMakeFiles/vdb_index.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_index.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 67
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 72
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_index.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_index.dir/rule
@@ -396,12 +442,12 @@ CMakeFiles/vdb_crc.dir/all: CMakeFiles/vdb_simd.dir/all
 CMakeFiles/vdb_crc.dir/all: CMakeFiles/vdb_rabitq.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_crc.dir/build.make CMakeFiles/vdb_crc.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=70,71 "Built target vdb_crc"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=68,69 "Built target vdb_crc"
 .PHONY : CMakeFiles/vdb_crc.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_crc.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 11
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 12
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_crc.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_crc.dir/rule
@@ -419,23 +465,24 @@ CMakeFiles/vdb_crc.dir/clean:
 # Target rules for target CMakeFiles/vdb_query.dir
 
 # All Build rule for target.
+CMakeFiles/vdb_query.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_columns.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_simd.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_codec.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_rabitq.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_storage.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_index.dir/all
 CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_crc.dir/all
+CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_io.dir/all
 CMakeFiles/vdb_query.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-CMakeFiles/vdb_query.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-CMakeFiles/vdb_query.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_query.dir/build.make CMakeFiles/vdb_query.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_query.dir/build.make CMakeFiles/vdb_query.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=79,80,81,82,83,84,85 "Built target vdb_query"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=77,78,79,80,81,82,83 "Built target vdb_query"
 .PHONY : CMakeFiles/vdb_query.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/vdb_query.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 79
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 CMakeFiles/vdb_query.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : CMakeFiles/vdb_query.dir/rule
@@ -456,7 +503,7 @@ CMakeFiles/vdb_query.dir/clean:
 CMakeFiles/vdb_io.dir/all:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/depend
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=75,76,77,78 "Built target vdb_io"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=73,74,75,76 "Built target vdb_io"
 .PHONY : CMakeFiles/vdb_io.dir/all
 
 # Build rule for subdir invocation for target.
@@ -474,6 +521,734 @@ vdb_io: CMakeFiles/vdb_io.dir/rule
 CMakeFiles/vdb_io.dir/clean:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_io.dir/build.make CMakeFiles/vdb_io.dir/clean
 .PHONY : CMakeFiles/vdb_io.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/Experimental.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target Experimental"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/rule
+
+# Convenience name for target.
+Experimental: thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/rule
+.PHONY : Experimental
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Experimental.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/Nightly.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target Nightly"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/rule
+
+# Convenience name for target.
+Nightly: thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/rule
+.PHONY : Nightly
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Nightly.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/Continuous.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target Continuous"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/rule
+
+# Convenience name for target.
+Continuous: thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/rule
+.PHONY : Continuous
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/build.make thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/Continuous.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyMemoryCheck"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/rule
+
+# Convenience name for target.
+NightlyMemoryCheck: thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/rule
+.PHONY : NightlyMemoryCheck
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemoryCheck.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyStart"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/rule
+
+# Convenience name for target.
+NightlyStart: thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/rule
+.PHONY : NightlyStart
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyStart.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyUpdate"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/rule
+
+# Convenience name for target.
+NightlyUpdate: thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/rule
+.PHONY : NightlyUpdate
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyUpdate.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyConfigure"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/rule
+
+# Convenience name for target.
+NightlyConfigure: thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/rule
+.PHONY : NightlyConfigure
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyConfigure.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyBuild"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/rule
+
+# Convenience name for target.
+NightlyBuild: thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/rule
+.PHONY : NightlyBuild
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyBuild.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyTest"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/rule
+
+# Convenience name for target.
+NightlyTest: thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/rule
+.PHONY : NightlyTest
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyTest.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyCoverage"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/rule
+
+# Convenience name for target.
+NightlyCoverage: thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/rule
+.PHONY : NightlyCoverage
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyCoverage.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlyMemCheck"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/rule
+
+# Convenience name for target.
+NightlyMemCheck: thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/rule
+.PHONY : NightlyMemCheck
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlyMemCheck.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target NightlySubmit"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/rule
+
+# Convenience name for target.
+NightlySubmit: thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/rule
+.PHONY : NightlySubmit
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/NightlySubmit.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalStart"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/rule
+
+# Convenience name for target.
+ExperimentalStart: thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/rule
+.PHONY : ExperimentalStart
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalStart.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalUpdate"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/rule
+
+# Convenience name for target.
+ExperimentalUpdate: thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/rule
+.PHONY : ExperimentalUpdate
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalUpdate.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalConfigure"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/rule
+
+# Convenience name for target.
+ExperimentalConfigure: thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/rule
+.PHONY : ExperimentalConfigure
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalConfigure.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalBuild"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/rule
+
+# Convenience name for target.
+ExperimentalBuild: thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/rule
+.PHONY : ExperimentalBuild
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalBuild.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalTest"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/rule
+
+# Convenience name for target.
+ExperimentalTest: thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/rule
+.PHONY : ExperimentalTest
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalTest.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalCoverage"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/rule
+
+# Convenience name for target.
+ExperimentalCoverage: thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/rule
+.PHONY : ExperimentalCoverage
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalCoverage.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalMemCheck"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/rule
+
+# Convenience name for target.
+ExperimentalMemCheck: thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/rule
+.PHONY : ExperimentalMemCheck
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalMemCheck.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ExperimentalSubmit"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/rule
+
+# Convenience name for target.
+ExperimentalSubmit: thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/rule
+.PHONY : ExperimentalSubmit
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ExperimentalSubmit.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousStart"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/rule
+
+# Convenience name for target.
+ContinuousStart: thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/rule
+.PHONY : ContinuousStart
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousStart.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousUpdate"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/rule
+
+# Convenience name for target.
+ContinuousUpdate: thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/rule
+.PHONY : ContinuousUpdate
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousUpdate.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousConfigure"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/rule
+
+# Convenience name for target.
+ContinuousConfigure: thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/rule
+.PHONY : ContinuousConfigure
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousConfigure.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousBuild"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/rule
+
+# Convenience name for target.
+ContinuousBuild: thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/rule
+.PHONY : ContinuousBuild
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousBuild.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousTest"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/rule
+
+# Convenience name for target.
+ContinuousTest: thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/rule
+.PHONY : ContinuousTest
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousTest.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousCoverage"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/rule
+
+# Convenience name for target.
+ContinuousCoverage: thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/rule
+.PHONY : ContinuousCoverage
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousCoverage.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousMemCheck"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/rule
+
+# Convenience name for target.
+ContinuousMemCheck: thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/rule
+.PHONY : ContinuousMemCheck
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousMemCheck.dir/clean
+
+#=============================================================================
+# Target rules for target thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir
+
+# All Build rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/all:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/depend
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/build
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num= "Built target ContinuousSubmit"
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/all
+
+# Build rule for subdir invocation for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/rule: cmake_check_build_system
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/all
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/rule
+
+# Convenience name for target.
+ContinuousSubmit: thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/rule
+.PHONY : ContinuousSubmit
+
+# clean rule for target.
+thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/clean:
+	$(MAKE) $(MAKESILENT) -f thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/build.make thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/clean
+.PHONY : thrid-party/SuperKMeans/CMakeFiles/ContinuousSubmit.dir/clean
 
 #=============================================================================
 # Target rules for target _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir
@@ -508,12 +1283,12 @@ _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/clean:
 _deps/flatbuffers-build/CMakeFiles/flatc.dir/all:
 	$(MAKE) $(MAKESILENT) -f _deps/flatbuffers-build/CMakeFiles/flatc.dir/build.make _deps/flatbuffers-build/CMakeFiles/flatc.dir/depend
 	$(MAKE) $(MAKESILENT) -f _deps/flatbuffers-build/CMakeFiles/flatc.dir/build.make _deps/flatbuffers-build/CMakeFiles/flatc.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55 "Built target flatc"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54 "Built target flatc"
 .PHONY : _deps/flatbuffers-build/CMakeFiles/flatc.dir/all
 
 # Build rule for subdir invocation for target.
 _deps/flatbuffers-build/CMakeFiles/flatc.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 34
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 33
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 _deps/flatbuffers-build/CMakeFiles/flatc.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : _deps/flatbuffers-build/CMakeFiles/flatc.dir/rule
@@ -534,7 +1309,7 @@ _deps/flatbuffers-build/CMakeFiles/flatc.dir/clean:
 _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/depend
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=56,57 "Built target gmock"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=55,56 "Built target gmock"
 .PHONY : _deps/googletest-build/googlemock/CMakeFiles/gmock.dir/all
 
 # Build rule for subdir invocation for target.
@@ -561,12 +1336,12 @@ _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/all: _deps/googletes
 _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/depend
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/build.make _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=58,59 "Built target gmock_main"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=57 "Built target gmock_main"
 .PHONY : _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/all
 
 # Build rule for subdir invocation for target.
 _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 6
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 5
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/rule
@@ -587,7 +1362,7 @@ _deps/googletest-build/googlemock/CMakeFiles/gmock_main.dir/clean:
 _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all:
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest.dir/depend
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=60,61 "Built target gtest"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=58,59 "Built target gtest"
 .PHONY : _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all
 
 # Build rule for subdir invocation for target.
@@ -613,7 +1388,7 @@ _deps/googletest-build/googletest/CMakeFiles/gtest.dir/clean:
 _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/all: _deps/googletest-build/googletest/CMakeFiles/gtest.dir/all
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/depend
 	$(MAKE) $(MAKESILENT) -f _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/build.make _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=62,63 "Built target gtest_main"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=60,61 "Built target gtest_main"
 .PHONY : _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/all
 
 # Build rule for subdir invocation for target.
@@ -636,23 +1411,24 @@ _deps/googletest-build/googletest/CMakeFiles/gtest_main.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_ivf_quality.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_rabitq.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_storage.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_index.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_crc.dir/all
+benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_ivf_quality.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_ivf_quality.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_ivf_quality.dir/build.make benchmarks/CMakeFiles/bench_ivf_quality.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_ivf_quality.dir/build.make benchmarks/CMakeFiles/bench_ivf_quality.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=8,9 "Built target bench_ivf_quality"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=8 "Built target bench_ivf_quality"
 .PHONY : benchmarks/CMakeFiles/bench_ivf_quality.dir/all
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_ivf_quality.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 69
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_ivf_quality.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_ivf_quality.dir/rule
@@ -670,6 +1446,8 @@ benchmarks/CMakeFiles/bench_ivf_quality.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_e2e.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -679,8 +1457,6 @@ benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_query.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_e2e.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_e2e.dir/build.make benchmarks/CMakeFiles/bench_e2e.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_e2e.dir/build.make benchmarks/CMakeFiles/bench_e2e.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=6,7 "Built target bench_e2e"
@@ -688,7 +1464,7 @@ benchmarks/CMakeFiles/bench_e2e.dir/all: CMakeFiles/vdb_columns.dir/all
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_e2e.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 80
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 81
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_e2e.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_e2e.dir/rule
@@ -706,6 +1482,8 @@ benchmarks/CMakeFiles/bench_e2e.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_rabitq_accuracy.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -714,16 +1492,14 @@ benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_index.dir/al
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/build.make benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/build.make benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=10 "Built target bench_rabitq_accuracy"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=9,10 "Built target bench_rabitq_accuracy"
 .PHONY : benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 72
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/rule
@@ -741,6 +1517,8 @@ benchmarks/CMakeFiles/bench_rabitq_accuracy.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_conann_recall.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -749,8 +1527,6 @@ benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_index.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_conann_recall.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_recall.dir/build.make benchmarks/CMakeFiles/bench_conann_recall.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_recall.dir/build.make benchmarks/CMakeFiles/bench_conann_recall.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=2,3 "Built target bench_conann_recall"
@@ -758,7 +1534,7 @@ benchmarks/CMakeFiles/bench_conann_recall.dir/all: CMakeFiles/vdb_columns.dir/al
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_conann_recall.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_conann_recall.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_conann_recall.dir/rule
@@ -776,6 +1552,8 @@ benchmarks/CMakeFiles/bench_conann_recall.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_conann_crc.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -784,8 +1562,6 @@ benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_index.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_conann_crc.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_conann_crc.dir/build.make benchmarks/CMakeFiles/bench_conann_crc.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=1 "Built target bench_conann_crc"
@@ -793,7 +1569,7 @@ benchmarks/CMakeFiles/bench_conann_crc.dir/all: CMakeFiles/vdb_columns.dir/all
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_conann_crc.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 72
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_conann_crc.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_conann_crc.dir/rule
@@ -811,6 +1587,8 @@ benchmarks/CMakeFiles/bench_conann_crc.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_crc_overlap.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -819,8 +1597,6 @@ benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_index.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_crc_overlap.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_crc_overlap.dir/build.make benchmarks/CMakeFiles/bench_crc_overlap.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=4,5 "Built target bench_crc_overlap"
@@ -828,7 +1604,7 @@ benchmarks/CMakeFiles/bench_crc_overlap.dir/all: CMakeFiles/vdb_columns.dir/all
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_crc_overlap.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_crc_overlap.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_crc_overlap.dir/rule
@@ -846,6 +1622,8 @@ benchmarks/CMakeFiles/bench_crc_overlap.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -854,8 +1632,6 @@ benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_index.dir/
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build.make benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=11,12 "Built target bench_rabitq_diagnostic"
@@ -863,7 +1639,7 @@ benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all: CMakeFiles/vdb_columns.di
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/rule
@@ -881,6 +1657,8 @@ benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/clean:
 # Target rules for target benchmarks/CMakeFiles/bench_vector_search.dir
 
 # All Build rule for target.
+benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/flatbuffers_generated.dir/all
+benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_columns.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_simd.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_codec.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_rabitq.dir/all
@@ -889,8 +1667,6 @@ benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_index.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_crc.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_io.dir/all
 benchmarks/CMakeFiles/bench_vector_search.dir/all: _deps/flatbuffers-build/CMakeFiles/flatbuffers.dir/all
-benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/flatbuffers_generated.dir/all
-benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_columns.dir/all
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/depend
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/build
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=13,14 "Built target bench_vector_search"
@@ -898,7 +1674,7 @@ benchmarks/CMakeFiles/bench_vector_search.dir/all: CMakeFiles/vdb_columns.dir/al
 
 # Build rule for subdir invocation for target.
 benchmarks/CMakeFiles/bench_vector_search.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 73
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 74
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_vector_search.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles 0
 .PHONY : benchmarks/CMakeFiles/bench_vector_search.dir/rule

@@ -12,7 +12,6 @@
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/simd/fastscan.h"
 #include "vdb/simd/ip_exrabitq.h"
-#include "vdb/simd/popcount.h"
 #include "vdb/storage/pack_codes.h"
 
 namespace vdb {
@@ -35,7 +34,6 @@ OverlapScheduler::OverlapScheduler(index::IvfIndex& index,
       reader_(reader),
       config_(config),
       vec_bytes_(index.dim() * sizeof(float)),
-      num_words_((index.dim() + 63) / 64),
       est_top_k_(config.top_k),
       use_crc_(config.crc_params != nullptr) {
     if (use_crc_) {
@@ -187,10 +185,11 @@ void OverlapScheduler::ProbeCluster(
     auto pq = estimator.PrepareQuery(
         ctx.query_vec(), centroid, index_.rotation());
 
-    // Dynamic margin: margin = 2 · r_max · r_q · ε_ip
-    float r_max = pc.epsilon;  // .clu lookup field stores r_max
+    // Per-vector margin: margin_j = 2 · ‖o_j-c‖ · ‖q-c‖ · ε_ip
+    // Uses each vector's actual norm_oc instead of cluster-wide r_max,
+    // preserving the theoretical error bound while tightening the margin.
     float eps_ip = index_.conann().epsilon();
-    float margin = 2.0f * r_max * pq.norm_qc * eps_ip;
+    float margin_factor = 2.0f * pq.norm_qc * eps_ip;  // per-vector: multiply by norm_oc
 
     // v7: Iterate by FastScan blocks of 32 vectors
     const uint32_t packed_sz = storage::FastScanPackedSize(dim);
@@ -200,9 +199,6 @@ void OverlapScheduler::ProbeCluster(
         const uint32_t base = b * 32;
         const uint32_t count = std::min(32u, pc.num_records - base);
 
-        // Refresh dynamic_d_k every block (tracks est_heap changes).
-        // bench_vector_search updates est_kth per-vector; per-block is
-        // close enough while keeping the FastScan batch-32 structure.
         float dynamic_d_k = (use_crc_ && est_heap_.size() >= est_top_k_)
             ? est_heap_.front().first
             : index_.conann().d_k();
@@ -216,47 +212,21 @@ void OverlapScheduler::ProbeCluster(
         estimator.EstimateDistanceFastScan(
             pq, block_ptr, block_norms, count, dists);
 
-        // Compute popcount distances for S1 classification and CRC heap.
-        // FastScan distances (dists[]) are NOT used for classification because
-        // the margin/d_k are calibrated for popcount error distribution.
-        // Using FastScan dists with popcount-calibrated thresholds causes
-        // systematic false SafeOuts on large datasets.
-        alignas(64) float pop_dists[32];
-        {
-            const float inv_dim = 1.0f / static_cast<float>(dim);
-            uint64_t code_words[16];  // max dim=1024 → 16 words
-            for (uint32_t j = 0; j < count; ++j) {
-                storage::UnpackSignBitsFromFastScan(
-                    block_ptr, j, dim, code_words);
-                uint32_t hamming = simd::PopcountXor(
-                    pq.sign_code.data(), code_words, num_words_);
-                float ip_pop = 1.0f - 2.0f * static_cast<float>(hamming)
-                                             * inv_dim;
-                float norm_oc = block_norms[j];
-                pop_dists[j] = norm_oc * norm_oc + pq.norm_qc_sq
-                    - 2.0f * norm_oc * pq.norm_qc * ip_pop;
-                pop_dists[j] = std::max(pop_dists[j], 0.0f);
-            }
-        }
-
-        // est_heap_ is updated AFTER classification (only non-SafeOut vectors),
-        // matching bench_vector_search behavior.  This prevents SafeOut vectors
-        // (large distances) from entering the heap during the initial fill phase.
-
         for (uint32_t j = 0; j < count; ++j) {
             uint32_t global_idx = base + j;
+            float margin = margin_factor * block_norms[j];  // per-vector norm_oc
             ResultClass rc = use_crc_
-                ? index_.conann().ClassifyAdaptive(pop_dists[j], margin, dynamic_d_k)
-                : index_.conann().Classify(pop_dists[j], margin);
+                ? index_.conann().ClassifyAdaptive(dists[j], margin, dynamic_d_k)
+                : index_.conann().Classify(dists[j], margin);
 
-            // Update est_heap_ with non-SafeOut popcount distances
+            // Update est_heap_ with non-SafeOut FastScan distances
             if (use_crc_ && rc != ResultClass::SafeOut) {
                 if (est_heap_.size() < est_top_k_) {
-                    est_heap_.push_back({pop_dists[j], global_idx});
+                    est_heap_.push_back({dists[j], global_idx});
                     std::push_heap(est_heap_.begin(), est_heap_.end());
-                } else if (pop_dists[j] < est_heap_.front().first) {
+                } else if (dists[j] < est_heap_.front().first) {
                     std::pop_heap(est_heap_.begin(), est_heap_.end());
-                    est_heap_.back() = {pop_dists[j], global_idx};
+                    est_heap_.back() = {dists[j], global_idx};
                     std::push_heap(est_heap_.begin(), est_heap_.end());
                 }
             }

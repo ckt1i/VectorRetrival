@@ -125,10 +125,24 @@ CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/storage/cluster_store.cpp -o CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.s
 
+CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o: CMakeFiles/vdb_storage.dir/flags.make
+CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o: /home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp
+CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o: CMakeFiles/vdb_storage.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o -MF CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o.d -o CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp
+
+CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp > CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.i
+
+CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/storage/pack_codes.cpp -o CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.s
+
 CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o: CMakeFiles/vdb_storage.dir/flags.make
 CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o: /home/zcq/VDB/VectorRetrival/src/storage/segment.cpp
 CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o: CMakeFiles/vdb_storage.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o -MF CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o.d -o CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o -c /home/zcq/VDB/VectorRetrival/src/storage/segment.cpp
 
 CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.i: cmake_force
@@ -145,6 +159,7 @@ vdb_storage_OBJECTS = \
 "CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o" \
 "CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o" \
 "CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o" \
+"CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o" \
 "CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o"
 
 # External object files for target vdb_storage
@@ -154,10 +169,11 @@ libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/address_column.cpp.o
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o
+libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/build.make
 libvdb_storage.a: CMakeFiles/vdb_storage.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Linking CXX static library libvdb_storage.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Linking CXX static library libvdb_storage.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/vdb_storage.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/vdb_storage.dir/link.txt --verbose=$(VERBOSE)
 

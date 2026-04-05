@@ -97,6 +97,13 @@ benchmarks/bench_ivf_quality: libvdb_storage.a
 benchmarks/bench_ivf_quality: libvdb_columns.a
 benchmarks/bench_ivf_quality: libvdb_codec.a
 benchmarks/bench_ivf_quality: _deps/flatbuffers-build/libflatbuffers.a
+benchmarks/bench_ivf_quality: libvdb_io.a
+benchmarks/bench_ivf_quality: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libpthread.a
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_intel_lp64.so
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_intel_thread.so
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_core.so
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libiomp5.so
 benchmarks/bench_ivf_quality: libvdb_crc.a
 benchmarks/bench_ivf_quality: libvdb_rabitq.a
 benchmarks/bench_ivf_quality: libvdb_simd.a

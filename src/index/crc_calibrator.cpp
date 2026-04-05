@@ -17,6 +17,8 @@
 #include "vdb/rabitq/rabitq_estimator.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
+#include "vdb/simd/fastscan.h"
+#include "vdb/storage/pack_codes.h"
 
 namespace vdb {
 namespace index {
@@ -98,6 +100,7 @@ static QueryScores ComputeScoresForQueryRaBitQ(
     rabitq::RaBitQEstimator estimator(dim);
     uint32_t num_words = (dim + 63) / 64;
     uint32_t norm_byte_offset = num_words * sizeof(uint64_t);
+    const uint32_t packed_sz = storage::FastScanPackedSize(dim);
 
     QueryScores result;
     result.raw_scores.resize(nlist);
@@ -111,8 +114,9 @@ static QueryScores ComputeScoresForQueryRaBitQ(
     }
     std::sort(centroid_dists.begin(), centroid_dists.end());
 
-    // 2. Incremental probe with max-heap using RaBitQ estimates.
+    // 2. Incremental probe with max-heap using FastScan estimates.
     std::vector<std::pair<float, uint32_t>> heap;
+    std::vector<uint8_t> packed_block(packed_sz, 0);
 
     for (uint32_t p = 0; p < nlist; ++p) {
         uint32_t cid = centroid_dists[p].second;
@@ -122,23 +126,42 @@ static QueryScores ComputeScoresForQueryRaBitQ(
         auto pq = estimator.PrepareQuery(
             query, centroids + static_cast<size_t>(cid) * dim, rotation);
 
-        for (uint32_t vi = 0; vi < cluster.count; ++vi) {
-            // Read code_words + norm_oc from codes_block
-            const auto* entry = cluster.codes_block +
-                                static_cast<size_t>(vi) * cluster.code_entry_size;
-            const auto* words = reinterpret_cast<const uint64_t*>(entry);
-            float norm_oc;
-            std::memcpy(&norm_oc, entry + norm_byte_offset, sizeof(float));
+        // Process in blocks of 32 for FastScan
+        for (uint32_t vi_base = 0; vi_base < cluster.count; vi_base += 32) {
+            uint32_t block_count = std::min(32u, cluster.count - vi_base);
 
-            float dist = estimator.EstimateDistanceRaw(pq, words, num_words, norm_oc);
+            // Build temporary RaBitQCode array + norms from flat codes_block
+            std::vector<rabitq::RaBitQCode> temp_codes(block_count);
+            float block_norms[32] = {};
+            for (uint32_t j = 0; j < block_count; ++j) {
+                const auto* entry = cluster.codes_block +
+                    static_cast<size_t>(vi_base + j) * cluster.code_entry_size;
+                const auto* words = reinterpret_cast<const uint64_t*>(entry);
+                temp_codes[j].code.assign(words, words + num_words);
+                std::memcpy(&block_norms[j], entry + norm_byte_offset, sizeof(float));
+            }
 
-            if (heap.size() < top_k) {
-                heap.push_back({dist, cluster.ids[vi]});
-                std::push_heap(heap.begin(), heap.end());
-            } else if (dist < heap.front().first) {
-                std::pop_heap(heap.begin(), heap.end());
-                heap.back() = {dist, cluster.ids[vi]};
-                std::push_heap(heap.begin(), heap.end());
+            // Pack sign bits into FastScan layout
+            storage::PackSignBitsForFastScan(
+                temp_codes.data(), block_count, dim, packed_block.data());
+
+            // FastScan batch-32 distance estimation
+            alignas(64) float fs_dists[32];
+            estimator.EstimateDistanceFastScan(
+                pq, packed_block.data(), block_norms, block_count, fs_dists);
+
+            for (uint32_t j = 0; j < block_count; ++j) {
+                uint32_t vi = vi_base + j;
+                float dist = fs_dists[j];
+
+                if (heap.size() < top_k) {
+                    heap.push_back({dist, cluster.ids[vi]});
+                    std::push_heap(heap.begin(), heap.end());
+                } else if (dist < heap.front().first) {
+                    std::pop_heap(heap.begin(), heap.end());
+                    heap.back() = {dist, cluster.ids[vi]};
+                    std::push_heap(heap.begin(), heap.end());
+                }
             }
         }
 
