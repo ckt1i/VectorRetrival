@@ -84,6 +84,15 @@ class RaBitQEstimator {
                                const float* centroid,
                                const RotationMatrix& rotation) const;
 
+    /// Prepare a query into an existing PreparedQuery, reusing allocated buffers.
+    ///
+    /// Same as PrepareQuery but avoids heap allocations after the first call
+    /// by reusing the vectors' existing capacity via resize().
+    void PrepareQueryInto(const float* query,
+                          const float* centroid,
+                          const RotationMatrix& rotation,
+                          PreparedQuery* pq) const;
+
     /// Stage 1: Estimate distance using fast XOR+popcount on MSB plane.
     ///
     /// Uses only the first words_per_plane words of the code (MSB plane).

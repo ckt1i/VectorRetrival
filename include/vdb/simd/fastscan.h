@@ -55,5 +55,63 @@ float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
                           int16_t* VDB_RESTRICT quant_out,
                           Dim dim);
 
+/// Compute a 16-bit (or 32-bit) SafeOut bitmask for a batch of FastScan dists.
+///
+/// For each lane v in [0, count):
+///   margin_v   = margin_factor * block_norms[v]
+///   so_thresh  = est_kth + 2 * margin_v
+///   bit_v      = 1 if dists[v] > so_thresh else 0
+///
+/// Lanes beyond `count` (up to ceiling of 32) are forced to 0 in the mask.
+///
+/// AVX-512 path uses `_mm512_cmp_ps_mask` (16 lanes per call); the function
+/// processes 32 lanes total in two iterations and returns a uint32_t mask
+/// where bit v corresponds to lane v.
+///
+/// @param dists         Input: estimated L2² distances, length >= count
+/// @param block_norms   Input: per-vector ||o-c||, length >= count
+/// @param count         Number of valid lanes (1..32)
+/// @param est_kth       Current k-th distance threshold
+/// @param margin_factor Per-cluster constant: 2 * ||q-c|| * eps_ip
+/// @return              SafeOut bitmask: bit v = 1 if lane v is SafeOut
+uint32_t FastScanSafeOutMask(const float* VDB_RESTRICT dists,
+                              const float* VDB_RESTRICT block_norms,
+                              uint32_t count,
+                              float est_kth,
+                              float margin_factor);
+
+/// De-quantize FastScan raw_accu into final L2² distances for `count` vectors.
+///
+/// For each lane v in [0, count):
+///   ip_raw  = (raw_accu[v] + fs_shift) * fs_width
+///   ip_est  = (2 * ip_raw - sum_q) * inv_sqrt_dim
+///   dist_sq = block_norms[v]² + norm_qc_sq
+///             - 2 * block_norms[v] * norm_qc * ip_est
+///   out_dist[v] = max(dist_sq, 0)
+///
+/// AVX-512 path processes 16 lanes per iteration; scalar tail handles the rest.
+/// Typical use: count = 32 (one FastScan block).
+///
+/// @param raw_accu      Input: raw VPSHUFB accumulator output (uint32, length >= count)
+/// @param block_norms   Input: per-vector ||o-c|| (float, length >= count)
+/// @param count         Number of valid lanes (1..32)
+/// @param fs_shift      Accumulated v_min shift from BuildFastScanLUT
+/// @param fs_width      Quantization step width
+/// @param sum_q         Σ rotated query components
+/// @param inv_sqrt_dim  1 / √dim (precomputed)
+/// @param norm_qc       ||q-c||
+/// @param norm_qc_sq    ||q-c||²
+/// @param out_dist      Output: estimated L2² distances (caller owns, >= count entries)
+void FastScanDequantize(const uint32_t* VDB_RESTRICT raw_accu,
+                        const float* VDB_RESTRICT block_norms,
+                        uint32_t count,
+                        int32_t fs_shift,
+                        float fs_width,
+                        float sum_q,
+                        float inv_sqrt_dim,
+                        float norm_qc,
+                        float norm_qc_sq,
+                        float* VDB_RESTRICT out_dist);
+
 }  // namespace simd
 }  // namespace vdb

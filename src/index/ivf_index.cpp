@@ -7,6 +7,10 @@
 
 #include "vdb/simd/distance_l2.h"
 
+#ifdef VDB_USE_MKL
+#include <mkl.h>
+#endif
+
 // FlatBuffers generated header
 #include "segment_meta_generated.h"
 
@@ -135,6 +139,15 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
     // Sort cluster_ids for consistent ordering
     std::sort(cluster_ids_.begin(), cluster_ids_.end());
 
+#ifdef VDB_USE_MKL
+    // Precompute ||c||² for each centroid (used by MKL-accelerated distance)
+    centroid_norms_.resize(nlist_);
+    for (uint32_t i = 0; i < nlist_; ++i) {
+        const float* c = centroid(i);
+        centroid_norms_[i] = cblas_sdot(dim_, c, 1, c, 1);
+    }
+#endif
+
     return Status::OK();
 }
 
@@ -153,10 +166,30 @@ std::vector<ClusterID> IvfIndex::FindNearestClusters(
 
     // Compute distances to all centroids
     std::vector<std::pair<float, uint32_t>> dists(nlist_);
+
+#ifdef VDB_USE_MKL
+    // MKL path: ||q-c||² = ||q||² + ||c||² - 2·(q·c)
+    // Compute q·c for all centroids in one sgemv call.
+    //   centroids_ is row-major [nlist × dim], so
+    //   dot_products = centroids_ × query  (sgemv: A × x)
+    std::vector<float> qc(nlist_);
+    cblas_sgemv(CblasRowMajor, CblasNoTrans,
+                nlist_, dim_,
+                1.0f, centroids_.data(), dim_,
+                query, 1,
+                0.0f, qc.data(), 1);
+
+    const float q_norm = cblas_sdot(dim_, query, 1, query, 1);
+
+    for (uint32_t i = 0; i < nlist_; ++i) {
+        dists[i] = {q_norm + centroid_norms_[i] - 2.0f * qc[i], i};
+    }
+#else
     for (uint32_t i = 0; i < nlist_; ++i) {
         float d = simd::L2Sqr(query, centroid(i), dim_);
         dists[i] = {d, i};
     }
+#endif
 
     // Partial sort to find the nprobe nearest
     std::nth_element(dists.begin(), dists.begin() + actual_nprobe, dists.end(),

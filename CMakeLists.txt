@@ -13,21 +13,39 @@ option(VDB_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(VDB_BUILD_TOOLS "Build tools" OFF)
 option(VDB_USE_AVX2 "Enable AVX2 SIMD" ON)
 option(VDB_USE_AVX512 "Enable AVX-512 SIMD" OFF)
+option(VDB_USE_MKL "Enable Intel MKL for BLAS acceleration" OFF)
 
 # =============================================================================
 # Compiler Flags
 # =============================================================================
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wall -Wextra -Wpedantic")
 set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -funroll-loops -fno-math-errno")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 
 if(VDB_USE_AVX512)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma")
+    # Note: -mprefer-vector-width=512 was tested but produced no wall-clock
+    # improvement on dim=96 (1.43ms → 1.48ms). GCC's 256-bit default works
+    # well for small loops; explicit AVX-512 intrinsics still kick in via the
+    # _mm512_* code in src/simd/. Revisit for larger dims (>= 256).
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=icelake-server -mtune=icelake-server")
     add_compile_definitions(VDB_USE_AVX512=1 VDB_USE_AVX2=1)
 elseif(VDB_USE_AVX2)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
     add_compile_definitions(VDB_USE_AVX2=1)
+endif()
+
+# Link-time optimization for cross-TU inlining (L2Sqr, AccumulateBlock, etc.)
+option(VDB_USE_LTO "Enable link-time optimization" ON)
+if(VDB_USE_LTO)
+    include(CheckIPOSupported)
+    check_ipo_supported(RESULT lto_supported OUTPUT lto_error)
+    if(lto_supported)
+        set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)
+        message(STATUS "LTO: enabled for Release builds")
+    else()
+        message(WARNING "LTO: not supported (${lto_error})")
+    endif()
 endif()
 
 # =============================================================================
@@ -43,6 +61,23 @@ set(SKMEANS_COMPILE_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(SKMEANS_COMPILE_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(SKMEANS_SKIP_FFTW ON CACHE BOOL "" FORCE)
 add_subdirectory(thrid-party/SuperKMeans)
+
+# Intel MKL (optional, for BLAS-accelerated centroid distance)
+if(VDB_USE_MKL)
+    find_path(MKL_INCLUDE_DIR mkl.h PATHS /usr/include/mkl)
+    find_library(MKL_LP64 mkl_intel_lp64 PATHS /usr/lib/x86_64-linux-gnu)
+    find_library(MKL_SEQ mkl_sequential PATHS /usr/lib/x86_64-linux-gnu)
+    find_library(MKL_CORE mkl_core PATHS /usr/lib/x86_64-linux-gnu)
+    if(MKL_INCLUDE_DIR AND MKL_LP64 AND MKL_SEQ AND MKL_CORE)
+        add_library(mkl INTERFACE)
+        target_include_directories(mkl INTERFACE ${MKL_INCLUDE_DIR})
+        target_link_libraries(mkl INTERFACE ${MKL_LP64} ${MKL_SEQ} ${MKL_CORE} pthread m dl)
+        add_compile_definitions(VDB_USE_MKL=1)
+        message(STATUS "MKL: found (sequential, lp64)")
+    else()
+        message(FATAL_ERROR "MKL: not found. Install with: sudo apt install libmkl-dev")
+    endif()
+endif()
 
 # FlatBuffers - build from source to get flatc compiler
 FetchContent_Declare(
@@ -213,6 +248,9 @@ target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schem
 # IvfBuilder uses CrcCalibrator for offline CRC score precomputation.
 # GSL dependency stays PRIVATE within vdb_crc, not exposed to vdb_index consumers.
 target_link_libraries(vdb_index PRIVATE vdb_crc)
+if(VDB_USE_MKL)
+    target_link_libraries(vdb_index PRIVATE mkl)
+endif()
 
 # =============================================================================
 # VDB CRC Library (ConANN CRC calibration — offline only, depends on GSL)
@@ -479,4 +517,5 @@ message(STATUS "  AVX-512:      ${VDB_USE_AVX512}")
 message(STATUS "  Tests:        ${VDB_BUILD_TESTS}")
 message(STATUS "  Benchmarks:   ${VDB_BUILD_BENCHMARKS}")
 message(STATUS "  Tools:        ${VDB_BUILD_TOOLS}")
+message(STATUS "  MKL:          ${VDB_USE_MKL}")
 message(STATUS "")

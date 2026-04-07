@@ -104,6 +104,11 @@ class IvfIndex {
 
     // Payload schemas (loaded from segment meta, for DataFileReader)
     std::vector<ColumnSchema> payload_schemas_;
+
+#ifdef VDB_USE_MKL
+    // Precomputed ||c||² for each centroid (MKL-accelerated distance)
+    std::vector<float> centroid_norms_;
+#endif
 };
 
 }  // namespace index

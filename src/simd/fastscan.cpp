@@ -310,5 +310,128 @@ void AccumulateBlock(const uint8_t* VDB_RESTRICT packed_codes,
 
 #endif  // VDB_USE_AVX512 / VDB_USE_AVX2 / scalar
 
+// ============================================================================
+// FastScanSafeOutMask — batch SafeOut classification for one FastScan block
+// ============================================================================
+
+uint32_t FastScanSafeOutMask(const float* VDB_RESTRICT dists,
+                              const float* VDB_RESTRICT block_norms,
+                              uint32_t count,
+                              float est_kth,
+                              float margin_factor) {
+#if defined(VDB_USE_AVX512)
+    const __m512 v_mfac    = _mm512_set1_ps(margin_factor);
+    const __m512 v_est_kth = _mm512_set1_ps(est_kth);
+    const __m512 v_two     = _mm512_set1_ps(2.0f);
+
+    uint32_t result = 0;
+
+    for (uint32_t base = 0; base < count; base += 16) {
+        // Build a lane mask covering only the valid lanes in this 16-wide chunk
+        uint32_t valid = std::min<uint32_t>(16u, count - base);
+        __mmask16 lane_mask = (valid >= 16)
+            ? __mmask16(0xFFFF)
+            : __mmask16((1u << valid) - 1u);
+
+        // Load dists / norms (use masked loads for the tail to avoid OOB read)
+        __m512 v_dists, v_norms;
+        if (valid >= 16) {
+            v_dists = _mm512_loadu_ps(dists + base);
+            v_norms = _mm512_loadu_ps(block_norms + base);
+        } else {
+            v_dists = _mm512_maskz_loadu_ps(lane_mask, dists + base);
+            v_norms = _mm512_maskz_loadu_ps(lane_mask, block_norms + base);
+        }
+
+        // so_thresh = est_kth + 2 * margin_factor * norm
+        __m512 v_margin = _mm512_mul_ps(v_mfac, v_norms);
+        __m512 v_so_thr = _mm512_fmadd_ps(v_two, v_margin, v_est_kth);
+        // bit = (dist > so_thresh) within valid lanes
+        __mmask16 so_mask = _mm512_mask_cmp_ps_mask(
+            lane_mask, v_dists, v_so_thr, _CMP_GT_OQ);
+        result |= static_cast<uint32_t>(so_mask) << base;
+    }
+    return result;
+#else
+    uint32_t result = 0;
+    for (uint32_t v = 0; v < count; ++v) {
+        float so_thresh = est_kth + 2.0f * margin_factor * block_norms[v];
+        if (dists[v] > so_thresh) {
+            result |= 1u << v;
+        }
+    }
+    return result;
+#endif
+}
+
+// ============================================================================
+// FastScanDequantize — convert raw_accu into final L2² distances
+// ============================================================================
+
+void FastScanDequantize(const uint32_t* VDB_RESTRICT raw_accu,
+                        const float* VDB_RESTRICT block_norms,
+                        uint32_t count,
+                        int32_t fs_shift,
+                        float fs_width,
+                        float sum_q,
+                        float inv_sqrt_dim,
+                        float norm_qc,
+                        float norm_qc_sq,
+                        float* VDB_RESTRICT out_dist) {
+#if defined(VDB_USE_AVX512)
+    // AVX-512 path: 16 lanes per iteration. For typical count=32 → 2 iterations.
+    const __m512 v_shift     = _mm512_set1_ps(static_cast<float>(fs_shift));
+    const __m512 v_width     = _mm512_set1_ps(fs_width);
+    const __m512 v_sum_q     = _mm512_set1_ps(sum_q);
+    const __m512 v_inv_sqrt  = _mm512_set1_ps(inv_sqrt_dim);
+    const __m512 v_norm_qc   = _mm512_set1_ps(norm_qc);
+    const __m512 v_norm_qc_sq= _mm512_set1_ps(norm_qc_sq);
+    const __m512 v_two       = _mm512_set1_ps(2.0f);
+    const __m512 v_zero      = _mm512_setzero_ps();
+
+    uint32_t v = 0;
+    for (; v + 16 <= count; v += 16) {
+        // raw_accu uint32 -> float
+        __m512i v_raw_i = _mm512_loadu_si512(
+            reinterpret_cast<const __m512i*>(raw_accu + v));
+        __m512  v_raw   = _mm512_cvtepu32_ps(v_raw_i);
+        // ip_raw = (raw + shift) * width
+        __m512  v_ip_raw = _mm512_mul_ps(_mm512_add_ps(v_raw, v_shift), v_width);
+        // ip_est = (2*ip_raw - sum_q) * inv_sqrt_dim
+        __m512  v_ip_est = _mm512_mul_ps(
+            _mm512_fmsub_ps(v_two, v_ip_raw, v_sum_q), v_inv_sqrt);
+        // norm_oc = block_norms[v]
+        __m512  v_norm_oc = _mm512_loadu_ps(block_norms + v);
+        // dist = norm_oc² + norm_qc_sq
+        __m512  v_dist = _mm512_fmadd_ps(v_norm_oc, v_norm_oc, v_norm_qc_sq);
+        // dist -= 2*norm_oc*norm_qc*ip_est
+        __m512  v_two_oc_qc = _mm512_mul_ps(v_two, _mm512_mul_ps(v_norm_oc, v_norm_qc));
+        v_dist = _mm512_fnmadd_ps(v_two_oc_qc, v_ip_est, v_dist);
+        // max(dist, 0)
+        v_dist = _mm512_max_ps(v_dist, v_zero);
+        _mm512_storeu_ps(out_dist + v, v_dist);
+    }
+    // Scalar tail
+    for (; v < count; ++v) {
+        float ip_raw = (static_cast<float>(raw_accu[v]) +
+                        static_cast<float>(fs_shift)) * fs_width;
+        float ip_est = (2.0f * ip_raw - sum_q) * inv_sqrt_dim;
+        float dist_sq = block_norms[v] * block_norms[v] + norm_qc_sq
+                        - 2.0f * block_norms[v] * norm_qc * ip_est;
+        out_dist[v] = std::max(dist_sq, 0.0f);
+    }
+#else
+    // Scalar fallback
+    for (uint32_t v = 0; v < count; ++v) {
+        float ip_raw = (static_cast<float>(raw_accu[v]) +
+                        static_cast<float>(fs_shift)) * fs_width;
+        float ip_est = (2.0f * ip_raw - sum_q) * inv_sqrt_dim;
+        float dist_sq = block_norms[v] * block_norms[v] + norm_qc_sq
+                        - 2.0f * block_norms[v] * norm_qc * ip_est;
+        out_dist[v] = std::max(dist_sq, 0.0f);
+    }
+#endif
+}
+
 }  // namespace simd
 }  // namespace vdb

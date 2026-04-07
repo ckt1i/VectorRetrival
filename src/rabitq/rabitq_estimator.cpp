@@ -8,6 +8,10 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(VDB_USE_AVX512)
+#include <immintrin.h>
+#endif
+
 namespace vdb {
 namespace rabitq {
 
@@ -104,6 +108,92 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
 }
 
 // ============================================================================
+// PrepareQueryInto — reuses existing PreparedQuery buffers
+// ============================================================================
+
+void RaBitQEstimator::PrepareQueryInto(
+    const float* query,
+    const float* centroid,
+    const RotationMatrix& rotation,
+    PreparedQuery* pq) const {
+    const size_t L = dim_;
+
+    pq->dim       = dim_;
+    pq->num_words = words_per_plane_;
+    pq->bits      = bits_;
+
+    // Use stack buffer for residual (dim is small, e.g. 96 → 384 bytes)
+    alignas(64) float residual[1024];
+    if (centroid != nullptr) {
+        for (size_t i = 0; i < L; ++i) {
+            residual[i] = query[i] - centroid[i];
+        }
+    } else {
+        std::memcpy(residual, query, L * sizeof(float));
+    }
+
+    // Compute ‖q - c‖₂
+    float norm_sq = 0.0f;
+    for (size_t i = 0; i < L; ++i) {
+        norm_sq += residual[i] * residual[i];
+    }
+    pq->norm_qc_sq = norm_sq;
+    pq->norm_qc    = std::sqrt(norm_sq);
+
+    // Normalize
+    if (pq->norm_qc > 1e-30f) {
+        float inv_norm = 1.0f / pq->norm_qc;
+        for (size_t i = 0; i < L; ++i) {
+            residual[i] *= inv_norm;
+        }
+    }
+
+    // Rotate — Apply reads from residual, writes to rotated
+    pq->rotated.resize(L);
+    rotation.Apply(residual, pq->rotated.data());
+
+    // Sign-quantize q' → packed sign code
+    // Inline zero (avoid memset call overhead for small buffers; typical
+    // dim=96 → words_per_plane_=2 → 16 bytes total)
+    pq->sign_code.resize(words_per_plane_);
+    for (uint32_t w = 0; w < words_per_plane_; ++w) {
+        pq->sign_code[w] = 0;
+    }
+    for (size_t i = 0; i < L; ++i) {
+        if (pq->rotated[i] >= 0.0f) {
+            size_t word_idx = i / 64;
+            size_t bit_idx  = i % 64;
+            pq->sign_code[word_idx] |= (1ULL << bit_idx);
+        }
+    }
+
+    // sum_q
+    pq->sum_q = 0.0f;
+    for (size_t i = 0; i < L; ++i) {
+        pq->sum_q += pq->rotated[i];
+    }
+
+    // FastScan query quantization + LUT
+    pq->quant_query.resize(L);
+    pq->fs_width = simd::QuantizeQuery14Bit(
+        pq->rotated.data(), pq->quant_query.data(), dim_);
+
+    const size_t lut_size = static_cast<size_t>(dim_) * 8;
+    pq->fastscan_lut.resize(lut_size + 63);
+    uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
+    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
+    pq->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+    // Note: BuildFastScanLUT writes every byte (M = dim/4 groups × 16 entries
+    // × 2 bytes lo/hi = lut_size bytes), so the prior zero-init is dead work.
+#ifndef NDEBUG
+    std::memset(pq->lut_aligned, 0xCD, lut_size);  // sentinel to catch bugs
+#endif
+
+    pq->fs_shift = simd::BuildFastScanLUT(
+        pq->quant_query.data(), pq->lut_aligned, dim_);
+}
+
+// ============================================================================
 // EstimateDistance — Stage 1: fast XOR+popcount path (MSB plane only)
 // ============================================================================
 
@@ -167,14 +257,10 @@ void RaBitQEstimator::EstimateDistanceFastScan(
     // Distance:
     //   dist = norm_oc² + norm_qc² - 2*norm_oc*norm_qc*⟨q̄,ô⟩
 
-    for (uint32_t v = 0; v < count; ++v) {
-        float ip_raw = (static_cast<float>(raw_accu[v]) +
-                        static_cast<float>(pq.fs_shift)) * pq.fs_width;
-        float ip_est = (2.0f * ip_raw - pq.sum_q) * inv_sqrt_dim_;
-        float dist_sq = block_norms[v] * block_norms[v] + pq.norm_qc_sq
-                        - 2.0f * block_norms[v] * pq.norm_qc * ip_est;
-        out_dist[v] = std::max(dist_sq, 0.0f);
-    }
+    simd::FastScanDequantize(raw_accu, block_norms, count,
+                              pq.fs_shift, pq.fs_width, pq.sum_q,
+                              inv_sqrt_dim_, pq.norm_qc, pq.norm_qc_sq,
+                              out_dist);
 }
 
 // ============================================================================

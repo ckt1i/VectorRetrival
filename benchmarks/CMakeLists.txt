@@ -36,3 +36,6 @@ target_link_libraries(bench_rabitq_diagnostic PRIVATE vdb_index vdb_io)
 # ----- Vector Search Benchmark -----
 add_executable(bench_vector_search bench_vector_search.cpp)
 target_link_libraries(bench_vector_search PRIVATE vdb_crc vdb_index vdb_io)
+if(VDB_USE_MKL)
+    target_link_libraries(bench_vector_search PRIVATE mkl)
+endif()

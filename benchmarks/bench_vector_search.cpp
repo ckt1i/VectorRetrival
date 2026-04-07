@@ -38,8 +38,14 @@
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/simd/distance_l2.h"
 #include "vdb/simd/fastscan.h"
+#include <immintrin.h>
+#include "vdb/simd/ip_exrabitq.h"
 #include "vdb/simd/popcount.h"
 #include "vdb/storage/pack_codes.h"
+
+#ifdef VDB_USE_MKL
+#include <mkl.h>
+#endif
 
 using namespace vdb;
 using namespace vdb::rabitq;
@@ -283,6 +289,16 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+
+#ifdef VDB_USE_MKL
+    // Precompute ||c||² for MKL-accelerated centroid distance
+    std::vector<float> centroid_norms(nlist);
+    for (uint32_t c = 0; c < nlist; ++c) {
+        const float* cv = centroids.data() + static_cast<size_t>(c) * dim;
+        centroid_norms[c] = cblas_sdot(dim, cv, 1, cv, 1);
+    }
+    Log("  Precomputed centroid norms (MKL).\n");
+#endif
 
     // Diagnostic: check centroid quality
     {
@@ -568,6 +584,29 @@ int main(int argc, char* argv[]) {
     }
 
     // ================================================================
+    // Build SOA layout for Stage 2 code data (contiguous, cache-friendly)
+    // ================================================================
+    // Interleave norm + xipnorm into a single 8-byte struct so a single
+    // cache-line load gets both values needed by Stage 2.
+    struct alignas(8) NormPair { float norm; float xipnorm; };
+    std::vector<uint8_t>   soa_ex_code(static_cast<size_t>(N) * dim);
+    std::vector<uint8_t>   soa_ex_sign(static_cast<size_t>(N) * dim);
+    std::vector<NormPair>  soa_norm_pairs(N);
+    for (uint32_t i = 0; i < N; ++i) {
+        const auto& c = codes[i];
+        soa_norm_pairs[i] = NormPair{c.norm, c.xipnorm};
+        if (!c.ex_code.empty()) {
+            std::memcpy(soa_ex_code.data() + static_cast<size_t>(i) * dim,
+                        c.ex_code.data(), dim);
+            std::memcpy(soa_ex_sign.data() + static_cast<size_t>(i) * dim,
+                        c.ex_sign.data(), dim);
+        }
+    }
+    Log("  SOA code layout built (%u vectors, %.1f MB).\n",
+        N, static_cast<double>(soa_ex_code.size() + soa_ex_sign.size()
+                              + soa_norm_pairs.size() * sizeof(NormPair)) / 1e6);
+
+    // ================================================================
     // Phase D: Vector Search
     // ================================================================
     Log("\n[Phase D] Searching (%u queries, nprobe=%u, fastscan_classify=%d)...\n",
@@ -596,32 +635,50 @@ int main(int argc, char* argv[]) {
 
     const float margin_s2_divisor = static_cast<float>(1u << (bits - 1));
 
+    // Pre-allocate per-query temporaries (reused across queries)
+    std::vector<std::pair<float, uint32_t>> centroid_dists(nlist);
+#ifdef VDB_USE_MKL
+    std::vector<float> qc(nlist);
+#endif
+    std::vector<std::pair<float, uint32_t>> est_heap;
+    std::vector<std::pair<float, uint32_t>> exact_heap;
+    est_heap.reserve(top_k * 2);
+    exact_heap.reserve(top_k * 2);
+    PreparedQuery pq;  // Reused across clusters via PrepareQueryInto
+
     for (uint32_t qi = 0; qi < Q; ++qi) {
         auto t_q = std::chrono::steady_clock::now();
         const float* q_vec = qry.data.data() + static_cast<size_t>(qi) * dim;
 
-        // GT set for this query
-        std::unordered_set<uint32_t> gt_set;
-        if (qi < gt_ids.size()) {
-            uint32_t gt_limit = std::min(top_k, static_cast<uint32_t>(gt_ids[qi].size()));
-            for (uint32_t i = 0; i < gt_limit; ++i) {
-                gt_set.insert(static_cast<uint32_t>(gt_ids[qi][i]));
-            }
-        }
-
         // Sort clusters by centroid distance
-        std::vector<std::pair<float, uint32_t>> centroid_dists(nlist);
+#ifdef VDB_USE_MKL
+        // MKL: ||q-c||² = ||q||² + ||c||² - 2·(q·c)
+        cblas_sgemv(CblasRowMajor, CblasNoTrans,
+                    nlist, dim,
+                    1.0f, centroids.data(), dim,
+                    q_vec, 1,
+                    0.0f, qc.data(), 1);
+        const float q_norm = cblas_sdot(dim, q_vec, 1, q_vec, 1);
+        for (uint32_t c = 0; c < nlist; ++c) {
+            centroid_dists[c] = {q_norm + centroid_norms[c] - 2.0f * qc[c], c};
+        }
+#else
         for (uint32_t c = 0; c < nlist; ++c) {
             centroid_dists[c] = {
                 simd::L2Sqr(q_vec,
                     centroids.data() + static_cast<size_t>(c) * dim, dim),
                 c};
         }
-        std::sort(centroid_dists.begin(), centroid_dists.end());
+#endif
+        // Only need top-nprobe; use partial_sort to avoid O(N log N) full sort
+        const uint32_t actual_nprobe = std::min(nprobe, nlist);
+        std::partial_sort(centroid_dists.begin(),
+                          centroid_dists.begin() + actual_nprobe,
+                          centroid_dists.end());
 
-        // Dual heaps: max-heap (largest at front)
-        std::vector<std::pair<float, uint32_t>> est_heap;
-        std::vector<std::pair<float, uint32_t>> exact_heap;
+        // Dual heaps: max-heap (largest at front) — reuse allocated capacity
+        est_heap.clear();
+        exact_heap.clear();
 
         uint32_t probed = 0;
         bool stopped_early = false;
@@ -630,7 +687,7 @@ int main(int argc, char* argv[]) {
             uint32_t cid = centroid_dists[p].second;
             const float* centroid = centroids.data() +
                 static_cast<size_t>(cid) * dim;
-            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+            estimator.PrepareQueryInto(q_vec, centroid, rotation, &pq);
             float margin_factor = 2.0f * pq.norm_qc * active_eps_ip;
 
             // --- FastScan classify path: batch-32 blocks ---
@@ -638,34 +695,66 @@ int main(int argc, char* argv[]) {
                 const auto& blocks = cluster_fs_blocks[cid];
                 const auto& members = cluster_members[cid];
 
+                // Cache est_kth across vectors; only refresh when est_heap mutates.
+                float est_kth = (est_heap.size() >= top_k)
+                    ? est_heap.front().first
+                    : std::numeric_limits<float>::infinity();
+
                 for (uint32_t b = 0; b < blocks.size(); ++b) {
                     const auto& fb = blocks[b];
                     alignas(64) float fs_dists[32];
                     estimator.EstimateDistanceFastScan(
                         pq, fb.packed.data(), fb.norms.data(), fb.count, fs_dists);
 
-                    for (uint32_t j = 0; j < fb.count; ++j) {
+                    // Phase 1: batch SafeOut classification via SIMD bitmask.
+                    // Bit v in so_mask is 1 iff lane v is SafeOut.
+                    uint32_t so_mask = simd::FastScanSafeOutMask(
+                        fs_dists, fb.norms.data(), fb.count, est_kth, margin_factor);
+                    uint32_t so_count = static_cast<uint32_t>(__builtin_popcount(so_mask));
+                    s1_safeout += so_count;
+                    final_safeout += so_count;
+
+                    // Phase 2: process only non-SafeOut lanes via ctz iteration.
+                    uint32_t lane_valid = (fb.count >= 32)
+                        ? 0xFFFFFFFFu
+                        : ((1u << fb.count) - 1u);
+                    uint32_t maybe_in = (~so_mask) & lane_valid;
+                    while (maybe_in) {
+                        uint32_t j = static_cast<uint32_t>(__builtin_ctz(maybe_in));
+                        maybe_in &= maybe_in - 1u;
+
                         uint32_t local_idx = b * 32 + j;
                         uint32_t vid = members[local_idx];
+
                         float est_dist_s1 = fs_dists[j];
-                        float margin_s1 = margin_factor * fb.norms[j];  // per-vector
+                        float margin_s1 = margin_factor * fb.norms[j];
 
-                        float est_kth = (est_heap.size() >= top_k)
-                            ? est_heap.front().first
-                            : std::numeric_limits<float>::infinity();
-                        ResultClass rc_s1 = conann.ClassifyAdaptive(est_dist_s1, margin_s1, est_kth);
-
-                        bool in_gt = gt_set.count(vid) > 0;
-
-                        if (rc_s1 == ResultClass::SafeIn) s1_safein++;
-                        else if (rc_s1 == ResultClass::SafeOut) s1_safeout++;
-                        else s1_uncertain++;
+                        // Reclassify the non-SafeOut lane as SafeIn or Uncertain.
+                        // (SafeOut already removed via mask.)
+                        ResultClass rc_s1;
+                        if (est_dist_s1 < d_k - 2.0f * margin_s1) {
+                            rc_s1 = ResultClass::SafeIn;
+                            s1_safein++;
+                        } else {
+                            rc_s1 = ResultClass::Uncertain;
+                            s1_uncertain++;
+                        }
 
                         ResultClass rc_final = rc_s1;
 
                         // Stage 2: for S1-Uncertain when bits > 1
                         if (rc_s1 == ResultClass::Uncertain && bits > 1) {
-                            float est_dist_s2 = estimator.EstimateDistanceMultiBit(pq, codes[vid]);
+                            // SOA path: contiguous memory, no pointer indirection
+                            const uint8_t* ec = soa_ex_code.data() + static_cast<size_t>(vid) * dim;
+                            const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * dim;
+                            _mm_prefetch(reinterpret_cast<const char*>(&soa_norm_pairs[vid]), _MM_HINT_T0);
+                            float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, dim);
+                            NormPair np = soa_norm_pairs[vid];  // single 8-byte load
+                            float ip_est = ip_raw * np.xipnorm;
+                            float norm_oc = np.norm;
+                            float est_dist_s2 = norm_oc * norm_oc + pq.norm_qc_sq
+                                              - 2.0f * norm_oc * pq.norm_qc * ip_est;
+                            est_dist_s2 = std::max(est_dist_s2, 0.0f);
                             float margin_s2 = margin_s1 / margin_s2_divisor;
                             ResultClass rc_s2 = conann.ClassifyAdaptive(est_dist_s2, margin_s2, est_kth);
 
@@ -676,25 +765,25 @@ int main(int argc, char* argv[]) {
                             rc_final = rc_s2;
                         }
 
-                        if (rc_final == ResultClass::SafeIn) {
-                            final_safein++;
-                            if (!in_gt) final_false_safein++;
-                        } else if (rc_final == ResultClass::SafeOut) {
-                            final_safeout++;
-                            if (in_gt) final_false_safeout++;
-                        } else {
-                            final_uncertain++;
-                        }
+                        if (rc_final == ResultClass::SafeIn) final_safein++;
+                        else if (rc_final == ResultClass::SafeOut) { final_safeout++; continue; }
+                        else final_uncertain++;
 
-                        if (rc_final == ResultClass::SafeOut) continue;
+                        // Only non-SafeOut reach here (SafeIn + Uncertain)
 
+                        bool est_heap_modified = false;
                         if (est_heap.size() < top_k) {
                             est_heap.push_back({est_dist_s1, vid});
                             std::push_heap(est_heap.begin(), est_heap.end());
+                            est_heap_modified = true;
                         } else if (est_dist_s1 < est_heap.front().first) {
                             std::pop_heap(est_heap.begin(), est_heap.end());
                             est_heap.back() = {est_dist_s1, vid};
                             std::push_heap(est_heap.begin(), est_heap.end());
+                            est_heap_modified = true;
+                        }
+                        if (est_heap_modified && est_heap.size() >= top_k) {
+                            est_kth = est_heap.front().first;
                         }
 
                         float exact_dist = simd::L2Sqr(q_vec,
@@ -711,38 +800,36 @@ int main(int argc, char* argv[]) {
                 }
             } else {
             // --- Original popcount classify path ---
+            // Cache est_kth across vectors; only refresh on heap mutation.
+            float est_kth = (est_heap.size() >= top_k)
+                ? est_heap.front().first
+                : std::numeric_limits<float>::infinity();
             for (uint32_t vid : cluster_members[cid]) {
                 float est_dist_s1 = estimator.EstimateDistance(pq, codes[vid]);
                 float margin_s1 = margin_factor * codes[vid].norm;  // per-vector
 
-                // Stage 1 classification
-                float est_kth = (est_heap.size() >= top_k)
-                    ? est_heap.front().first
-                    : std::numeric_limits<float>::infinity();
                 ResultClass rc_s1 = conann.ClassifyAdaptive(est_dist_s1, margin_s1, est_kth);
 
-                bool in_gt = gt_set.count(vid) > 0;
-
                 if (rc_s1 == ResultClass::SafeIn) s1_safein++;
-                else if (rc_s1 == ResultClass::SafeOut) s1_safeout++;
+                else if (rc_s1 == ResultClass::SafeOut) { s1_safeout++; final_safeout++; continue; }
                 else s1_uncertain++;
 
                 ResultClass rc_final = rc_s1;
 
                 // Stage 2: only for S1-Uncertain when bits > 1
                 if (rc_s1 == ResultClass::Uncertain && bits > 1) {
-                    float est_dist_s2 = estimator.EstimateDistanceMultiBit(pq, codes[vid]);
+                    const uint8_t* ec = soa_ex_code.data() + static_cast<size_t>(vid) * dim;
+                    const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * dim;
+                    _mm_prefetch(reinterpret_cast<const char*>(&soa_norm_pairs[vid]), _MM_HINT_T0);
+                    float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, dim);
+                    NormPair np = soa_norm_pairs[vid];  // single 8-byte load
+                    float ip_est = ip_raw * np.xipnorm;
+                    float norm_oc_s2 = np.norm;
+                    float est_dist_s2 = norm_oc_s2 * norm_oc_s2 + pq.norm_qc_sq
+                                      - 2.0f * norm_oc_s2 * pq.norm_qc * ip_est;
+                    est_dist_s2 = std::max(est_dist_s2, 0.0f);
                     float margin_s2 = margin_s1 / margin_s2_divisor;
                     ResultClass rc_s2 = conann.ClassifyAdaptive(est_dist_s2, margin_s2, est_kth);
-
-                    // Diagnostic: print first few S2 values
-                    static uint64_t s2_diag_count = 0;
-                    if (s2_diag_count < 10) {
-                        Log("  [S2 diag] dist_s2=%.4f margin_s1=%.4f margin_s2=%.4f norm_oc=%.4f norm_qc=%.4f eps_ip=%.6f est_kth=%.4f\n",
-                            est_dist_s2, margin_s1, margin_s2,
-                            codes[vid].norm, pq.norm_qc, active_eps_ip, est_kth);
-                        s2_diag_count++;
-                    }
 
                     if (rc_s2 == ResultClass::SafeIn) s2_safein++;
                     else if (rc_s2 == ResultClass::SafeOut) s2_safeout++;
@@ -751,28 +838,24 @@ int main(int argc, char* argv[]) {
                     rc_final = rc_s2;
                 }
 
-                // Final classification stats + False SafeIn/Out
-                if (rc_final == ResultClass::SafeIn) {
-                    final_safein++;
-                    if (!in_gt) final_false_safein++;
-                } else if (rc_final == ResultClass::SafeOut) {
-                    final_safeout++;
-                    if (in_gt) final_false_safeout++;
-                } else {
-                    final_uncertain++;
-                }
-
-                // Skip SafeOut vectors entirely
-                if (rc_final == ResultClass::SafeOut) continue;
+                if (rc_final == ResultClass::SafeIn) final_safein++;
+                else if (rc_final == ResultClass::SafeOut) { final_safeout++; continue; }
+                else final_uncertain++;
 
                 // SafeIn and Uncertain: update est_heap
+                bool est_heap_modified = false;
                 if (est_heap.size() < top_k) {
                     est_heap.push_back({est_dist_s1, vid});
                     std::push_heap(est_heap.begin(), est_heap.end());
+                    est_heap_modified = true;
                 } else if (est_dist_s1 < est_heap.front().first) {
                     std::pop_heap(est_heap.begin(), est_heap.end());
                     est_heap.back() = {est_dist_s1, vid};
                     std::push_heap(est_heap.begin(), est_heap.end());
+                    est_heap_modified = true;
+                }
+                if (est_heap_modified && est_heap.size() >= top_k) {
+                    est_kth = est_heap.front().first;
                 }
 
                 // Rerank with exact L2 (both SafeIn and Uncertain read vectors)
