@@ -7,6 +7,8 @@
 #include <random>
 #include <numeric>
 
+#include "vdb/simd/hadamard.h"
+
 namespace vdb {
 namespace rabitq {
 
@@ -126,17 +128,12 @@ bool IsPowerOf2(uint32_t n) {
 /// In-place Fast Walsh-Hadamard Transform (unnormalized).
 /// After this, vec[i] contains the transform coefficient.
 /// The transform is its own inverse (up to scaling by 1/n).
+///
+/// Delegates to simd::FWHT_AVX512 which has an AVX-512 fast path for the
+/// levels with len >= 16, and falls back to a scalar implementation for the
+/// early levels (len < 16).
 void FWHT_InPlace(float* vec, uint32_t n) {
-    for (uint32_t len = 1; len < n; len <<= 1) {
-        for (uint32_t i = 0; i < n; i += len << 1) {
-            for (uint32_t j = 0; j < len; ++j) {
-                float u = vec[i + j];
-                float v = vec[i + j + len];
-                vec[i + j]       = u + v;
-                vec[i + j + len] = u - v;
-            }
-        }
-    }
+    simd::FWHT_AVX512(vec, n);
 }
 
 }  // namespace

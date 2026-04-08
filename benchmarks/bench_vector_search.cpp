@@ -53,6 +53,35 @@ using namespace vdb::index;
 
 namespace fs = std::filesystem;
 
+// ---------------------------------------------------------------------------
+// Power-of-2 padding helpers
+// ---------------------------------------------------------------------------
+static inline bool IsPowerOf2(uint32_t n) {
+    return n > 0 && (n & (n - 1)) == 0;
+}
+
+static inline uint32_t NextPowerOf2(uint32_t n) {
+    if (n == 0) return 1;
+    if (IsPowerOf2(n)) return n;
+    uint32_t p = 1;
+    while (p < n) p <<= 1;
+    return p;
+}
+
+/// Pad each row of `data` from `old_dim` to `new_dim` with trailing zeros.
+/// L2 distance, dot product, and norms are preserved (zeros contribute 0).
+static void PadVectors(std::vector<float>& data, uint32_t N,
+                       uint32_t old_dim, uint32_t new_dim) {
+    if (new_dim == old_dim) return;
+    std::vector<float> padded(static_cast<size_t>(N) * new_dim, 0.0f);
+    for (uint32_t i = 0; i < N; ++i) {
+        std::memcpy(padded.data() + static_cast<size_t>(i) * new_dim,
+                    data.data() + static_cast<size_t>(i) * old_dim,
+                    old_dim * sizeof(float));
+    }
+    data = std::move(padded);
+}
+
 // ============================================================================
 // CLI helpers
 // ============================================================================
@@ -127,6 +156,7 @@ int main(int argc, char* argv[]) {
     std::string centroids_path = GetArg(argc, argv, "--centroids", "");
     std::string assignments_path = GetArg(argc, argv, "--assignments", "");
     bool use_fastscan_classify = GetIntArg(argc, argv, "--use-fastscan", 1) != 0;
+    bool pad_to_pow2 = GetIntArg(argc, argv, "--pad-to-pow2", 0) != 0;
 
     if (base_path.empty() || query_path.empty()) {
         std::fprintf(stderr,
@@ -174,6 +204,20 @@ int main(int argc, char* argv[]) {
     }
 
     Log("  N=%u, Q=%u, dim=%u\n", N, Q, dim);
+
+    // Pad to next power of 2 if requested and dim is not already 2^k.
+    // L2/IP/norms are preserved by zero padding, so recall should be unchanged.
+    // This unlocks Hadamard rotation (O(L log L)) for non-power-of-2 dims.
+    uint32_t orig_dim = dim;
+    if (pad_to_pow2 && !IsPowerOf2(dim)) {
+        uint32_t new_dim = NextPowerOf2(dim);
+        Log("  [Padding] dim %u -> %u (next power of 2)\n", dim, new_dim);
+        PadVectors(base.data, N, dim, new_dim);
+        PadVectors(qry.data, qry.rows, dim, new_dim);
+        dim = static_cast<Dim>(new_dim);
+        base.cols = new_dim;
+        qry.cols = new_dim;
+    }
 
     // GT loading
     std::vector<std::vector<uint32_t>> gt_ids;  // [Q][gt_k]
@@ -236,8 +280,16 @@ int main(int argc, char* argv[]) {
         }
         auto& c = c_or.value();
         if (c.cols != dim) {
-            std::fprintf(stderr, "Centroid dim mismatch: %u vs %u\n", c.cols, dim);
-            return 1;
+            // If padding is enabled and centroids match the original dim,
+            // pad them to match.
+            if (pad_to_pow2 && c.cols == orig_dim) {
+                Log("  [Padding] centroids %u -> %u\n", c.cols, dim);
+                PadVectors(c.data, c.rows, c.cols, dim);
+                c.cols = dim;
+            } else {
+                std::fprintf(stderr, "Centroid dim mismatch: %u vs %u\n", c.cols, dim);
+                return 1;
+            }
         }
         nlist = c.rows;
         centroids.assign(c.data.begin(), c.data.end());
@@ -319,7 +371,16 @@ int main(int argc, char* argv[]) {
     }
 
     RotationMatrix rotation(dim);
-    rotation.GenerateRandom(seed);
+    // Prefer Hadamard rotation when dim is a power of 2 (O(L log L) Apply
+    // via FWHT instead of O(L²) matrix multiply). Falls back to random
+    // Gaussian QR for non-power-of-2 dims.
+    bool used_hadamard = (dim > 0 && (dim & (dim - 1)) == 0)
+                       && rotation.GenerateHadamard(seed, /*use_fast_transform=*/true);
+    if (!used_hadamard) {
+        rotation.GenerateRandom(seed);
+    }
+    Log("  Rotation type: %s\n", used_hadamard ? "Hadamard (O(L log L))"
+                                              : "Random Gaussian (O(L²))");
     RaBitQEncoder encoder(dim, rotation, bits);
     RaBitQEstimator estimator(dim, bits);
 

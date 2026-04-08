@@ -24,10 +24,12 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -funroll-loops -fno-math-errno")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 
 if(VDB_USE_AVX512)
-    # Note: -mprefer-vector-width=512 was tested but produced no wall-clock
-    # improvement on dim=96 (1.43ms → 1.48ms). GCC's 256-bit default works
-    # well for small loops; explicit AVX-512 intrinsics still kick in via the
-    # _mm512_* code in src/simd/. Revisit for larger dims (>= 256).
+    # Note: -mprefer-vector-width=512 tested twice (dim=96 and dim=512) and
+    # both regressed. dim=512 perf stat showed: cycles +4%, instructions -10%,
+    # but task-clock +12% — caused by AVX-512 frequency throttling on Ice
+    # Lake-SP (2.878→2.689 GHz, -7%) plus GCC zmm setup overhead outweighing
+    # the 16-vs-8 lane benefit. Hand-written _mm512_* intrinsics in src/simd/
+    # still kick in independently. Keep GCC's 256-bit auto-vec default.
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=icelake-server -mtune=icelake-server")
     add_compile_definitions(VDB_USE_AVX512=1 VDB_USE_AVX2=1)
 elseif(VDB_USE_AVX2)
@@ -176,6 +178,7 @@ add_library(vdb_simd STATIC
     src/simd/transpose.cpp
     src/simd/ip_exrabitq.cpp
     src/simd/fastscan.cpp
+    src/simd/hadamard.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
