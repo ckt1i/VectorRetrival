@@ -81,6 +81,9 @@ if(VDB_USE_MKL)
     endif()
 endif()
 
+# OpenMP (optional, for parallelising calibration loops in benchmarks)
+find_package(OpenMP)
+
 # FlatBuffers - build from source to get flatc compiler
 FetchContent_Declare(
     flatbuffers
@@ -179,6 +182,7 @@ add_library(vdb_simd STATIC
     src/simd/ip_exrabitq.cpp
     src/simd/fastscan.cpp
     src/simd/hadamard.cpp
+    src/simd/signed_dot.cpp
 )
 target_include_directories(vdb_simd PUBLIC
     $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
@@ -251,6 +255,9 @@ target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schem
 # IvfBuilder uses CrcCalibrator for offline CRC score precomputation.
 # GSL dependency stays PRIVATE within vdb_crc, not exposed to vdb_index consumers.
 target_link_libraries(vdb_index PRIVATE vdb_crc)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(vdb_index PRIVATE OpenMP::OpenMP_CXX)
+endif()
 if(VDB_USE_MKL)
     target_link_libraries(vdb_index PRIVATE mkl)
 endif()
@@ -268,6 +275,9 @@ target_include_directories(vdb_crc PUBLIC
 )
 target_link_libraries(vdb_crc PUBLIC vdb_simd vdb_common vdb_rabitq)
 target_link_libraries(vdb_crc PRIVATE GSL::gsl GSL::gslcblas)
+if(OpenMP_CXX_FOUND)
+    target_link_libraries(vdb_crc PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # =============================================================================
 # VDB Query Library (Phase 7)
@@ -390,6 +400,10 @@ if(VDB_BUILD_TESTS)
     add_executable(test_popcount tests/simd/popcount_test.cpp)
     target_link_libraries(test_popcount PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
     add_test(NAME test_popcount COMMAND test_popcount)
+
+    add_executable(test_signed_dot tests/simd/signed_dot_test.cpp)
+    target_link_libraries(test_signed_dot PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_signed_dot COMMAND test_signed_dot)
 
     # -------------------------------------------------------------------------
     # RaBitQ tests (Phase 4)

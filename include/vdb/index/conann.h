@@ -81,8 +81,12 @@ class ConANN {
     /// @param margin       Dynamic distance error bound for this (cluster, query)
     /// @param dynamic_d_k  Current k-th distance from RaBitQ estimate heap
     /// @return             SafeIn / SafeOut / Uncertain
-    ResultClass ClassifyAdaptive(float approx_dist, float margin,
-                                  float dynamic_d_k) const;
+    VDB_FORCE_INLINE ResultClass ClassifyAdaptive(float approx_dist, float margin,
+                                                   float dynamic_d_k) const {
+        if (approx_dist > dynamic_d_k + 2 * margin) return ResultClass::SafeOut;
+        if (approx_dist < d_k_ - 2 * margin)         return ResultClass::SafeIn;
+        return ResultClass::Uncertain;
+    }
 
     /// Calibrate the global distance threshold d_k by sampling from the dataset.
     ///

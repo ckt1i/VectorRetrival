@@ -22,6 +22,16 @@ struct ClusterData {
     uint32_t count;          // number of vectors in this cluster
     const uint8_t* codes_block = nullptr;  // RaBitQ encoded block (optional)
     uint32_t code_entry_size = 0;           // bytes per entry in codes_block
+
+    /// Pre-packed FastScan block (one per 32-vector group).
+    /// When provided, ComputeScoresForQueryRaBitQ skips PackSignBitsForFastScan.
+    struct FsBlock {
+        const uint8_t* packed;  // PackSignBitsForFastScan output (FastScan layout)
+        const float* norms;     // float32 norms[32]
+        uint32_t count;         // actual vectors in this block (≤32)
+    };
+    const FsBlock* fs_blocks = nullptr;  // array of FsBlock; null → fallback path
+    uint32_t num_fs_blocks = 0;          // 0 → use codes_block path
 };
 
 /// Per-query scores and predictions at each nprobe step.

@@ -20,6 +20,10 @@
 #include "vdb/simd/fastscan.h"
 #include "vdb/storage/pack_codes.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace vdb {
 namespace index {
 namespace {
@@ -116,7 +120,9 @@ static QueryScores ComputeScoresForQueryRaBitQ(
 
     // 2. Incremental probe with max-heap using FastScan estimates.
     std::vector<std::pair<float, uint32_t>> heap;
+    // Pre-allocate scratch buffers outside the inner loop to avoid repeated heap allocs.
     std::vector<uint8_t> packed_block(packed_sz, 0);
+    std::vector<rabitq::RaBitQCode> temp_codes(32);
 
     for (uint32_t p = 0; p < nlist; ++p) {
         uint32_t cid = centroid_dists[p].second;
@@ -126,41 +132,63 @@ static QueryScores ComputeScoresForQueryRaBitQ(
         auto pq = estimator.PrepareQuery(
             query, centroids + static_cast<size_t>(cid) * dim, rotation);
 
-        // Process in blocks of 32 for FastScan
-        for (uint32_t vi_base = 0; vi_base < cluster.count; vi_base += 32) {
-            uint32_t block_count = std::min(32u, cluster.count - vi_base);
+        if (cluster.num_fs_blocks > 0) {
+            // FAST PATH: use pre-packed FastScan blocks from Phase B.
+            // Skips temp_codes reconstruction and PackSignBitsForFastScan entirely.
+            for (uint32_t b = 0; b < cluster.num_fs_blocks; ++b) {
+                const auto& fsb = cluster.fs_blocks[b];
+                alignas(64) float fs_dists[32];
+                estimator.EstimateDistanceFastScan(
+                    pq, fsb.packed, fsb.norms, fsb.count, fs_dists);
 
-            // Build temporary RaBitQCode array + norms from flat codes_block
-            std::vector<rabitq::RaBitQCode> temp_codes(block_count);
-            float block_norms[32] = {};
-            for (uint32_t j = 0; j < block_count; ++j) {
-                const auto* entry = cluster.codes_block +
-                    static_cast<size_t>(vi_base + j) * cluster.code_entry_size;
-                const auto* words = reinterpret_cast<const uint64_t*>(entry);
-                temp_codes[j].code.assign(words, words + num_words);
-                std::memcpy(&block_norms[j], entry + norm_byte_offset, sizeof(float));
+                for (uint32_t j = 0; j < fsb.count; ++j) {
+                    uint32_t vi = b * 32 + j;
+                    float dist = fs_dists[j];
+                    if (heap.size() < top_k) {
+                        heap.push_back({dist, cluster.ids[vi]});
+                        std::push_heap(heap.begin(), heap.end());
+                    } else if (dist < heap.front().first) {
+                        std::pop_heap(heap.begin(), heap.end());
+                        heap.back() = {dist, cluster.ids[vi]};
+                        std::push_heap(heap.begin(), heap.end());
+                    }
+                }
             }
+        } else {
+            // FALLBACK PATH: reconstruct from codes_block + PackSignBitsForFastScan.
+            for (uint32_t vi_base = 0; vi_base < cluster.count; vi_base += 32) {
+                uint32_t block_count = std::min(32u, cluster.count - vi_base);
 
-            // Pack sign bits into FastScan layout
-            storage::PackSignBitsForFastScan(
-                temp_codes.data(), block_count, dim, packed_block.data());
+                // Build temporary RaBitQCode array + norms from flat codes_block
+                float block_norms[32] = {};
+                for (uint32_t j = 0; j < block_count; ++j) {
+                    const auto* entry = cluster.codes_block +
+                        static_cast<size_t>(vi_base + j) * cluster.code_entry_size;
+                    const auto* words = reinterpret_cast<const uint64_t*>(entry);
+                    temp_codes[j].code.assign(words, words + num_words);
+                    std::memcpy(&block_norms[j], entry + norm_byte_offset, sizeof(float));
+                }
 
-            // FastScan batch-32 distance estimation
-            alignas(64) float fs_dists[32];
-            estimator.EstimateDistanceFastScan(
-                pq, packed_block.data(), block_norms, block_count, fs_dists);
+                // Pack sign bits into FastScan layout
+                storage::PackSignBitsForFastScan(
+                    temp_codes.data(), block_count, dim, packed_block.data());
 
-            for (uint32_t j = 0; j < block_count; ++j) {
-                uint32_t vi = vi_base + j;
-                float dist = fs_dists[j];
+                // FastScan batch-32 distance estimation
+                alignas(64) float fs_dists[32];
+                estimator.EstimateDistanceFastScan(
+                    pq, packed_block.data(), block_norms, block_count, fs_dists);
 
-                if (heap.size() < top_k) {
-                    heap.push_back({dist, cluster.ids[vi]});
-                    std::push_heap(heap.begin(), heap.end());
-                } else if (dist < heap.front().first) {
-                    std::pop_heap(heap.begin(), heap.end());
-                    heap.back() = {dist, cluster.ids[vi]};
-                    std::push_heap(heap.begin(), heap.end());
+                for (uint32_t j = 0; j < block_count; ++j) {
+                    uint32_t vi = vi_base + j;
+                    float dist = fs_dists[j];
+                    if (heap.size() < top_k) {
+                        heap.push_back({dist, cluster.ids[vi]});
+                        std::push_heap(heap.begin(), heap.end());
+                    } else if (dist < heap.front().first) {
+                        std::pop_heap(heap.begin(), heap.end());
+                        heap.back() = {dist, cluster.ids[vi]};
+                        std::push_heap(heap.begin(), heap.end());
+                    }
                 }
             }
         }
@@ -191,10 +219,12 @@ static std::vector<QueryScores> ComputeAllScores(
     const std::vector<ClusterData>& clusters, uint32_t top_k) {
 
     std::vector<QueryScores> all_scores(query_indices.size());
-    for (size_t i = 0; i < query_indices.size(); ++i) {
-        uint32_t qi = query_indices[i];
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(query_indices.size()); ++i) {
+        uint32_t qi = query_indices[static_cast<size_t>(i)];
         const float* q = queries + static_cast<size_t>(qi) * dim;
-        all_scores[i] = ComputeScoresForQuery(q, dim, centroids, nlist, clusters, top_k);
+        all_scores[static_cast<size_t>(i)] = ComputeScoresForQuery(
+            q, dim, centroids, nlist, clusters, top_k);
     }
     return all_scores;
 }
@@ -207,10 +237,11 @@ static std::vector<QueryScores> ComputeAllScoresRaBitQ(
     const rabitq::RotationMatrix& rotation) {
 
     std::vector<QueryScores> all_scores(query_indices.size());
-    for (size_t i = 0; i < query_indices.size(); ++i) {
-        uint32_t qi = query_indices[i];
+#pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < static_cast<int>(query_indices.size()); ++i) {
+        uint32_t qi = query_indices[static_cast<size_t>(i)];
         const float* q = queries + static_cast<size_t>(qi) * dim;
-        all_scores[i] = ComputeScoresForQueryRaBitQ(
+        all_scores[static_cast<size_t>(i)] = ComputeScoresForQueryRaBitQ(
             q, dim, centroids, nlist, clusters, top_k, rotation);
     }
     return all_scores;

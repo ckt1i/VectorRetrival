@@ -2,6 +2,7 @@
 #include "vdb/simd/fastscan.h"
 #include "vdb/simd/ip_exrabitq.h"
 #include "vdb/simd/popcount.h"
+#include "vdb/simd/prepare_query.h"
 
 #include <algorithm>
 #include <cmath>
@@ -124,23 +125,13 @@ void RaBitQEstimator::PrepareQueryInto(
 
     // Use stack buffer for residual (dim is small, e.g. 96 → 384 bytes)
     alignas(64) float residual[1024];
-    if (centroid != nullptr) {
-        for (size_t i = 0; i < L; ++i) {
-            residual[i] = query[i] - centroid[i];
-        }
-    } else {
-        std::memcpy(residual, query, L * sizeof(float));
-    }
 
-    // Compute ‖q - c‖₂
-    float norm_sq = 0.0f;
-    for (size_t i = 0; i < L; ++i) {
-        norm_sq += residual[i] * residual[i];
-    }
-    pq->norm_qc_sq = norm_sq;
-    pq->norm_qc    = std::sqrt(norm_sq);
+    // Fused subtract + norm_sq in one memory pass
+    pq->norm_qc_sq = simd::SimdSubtractAndNormSq(
+        query, centroid, residual, static_cast<uint32_t>(L));
+    pq->norm_qc = std::sqrt(pq->norm_qc_sq);
 
-    // Normalize
+    // Normalize residual
     if (pq->norm_qc > 1e-30f) {
         float inv_norm = 1.0f / pq->norm_qc;
         for (size_t i = 0; i < L; ++i) {
@@ -152,26 +143,16 @@ void RaBitQEstimator::PrepareQueryInto(
     pq->rotated.resize(L);
     rotation.Apply(residual, pq->rotated.data());
 
-    // Sign-quantize q' → packed sign code
-    // Inline zero (avoid memset call overhead for small buffers; typical
-    // dim=96 → words_per_plane_=2 → 16 bytes total)
+    // Fused sign-quantize + sum_q in one memory pass
     pq->sign_code.resize(words_per_plane_);
     for (uint32_t w = 0; w < words_per_plane_; ++w) {
         pq->sign_code[w] = 0;
     }
-    for (size_t i = 0; i < L; ++i) {
-        if (pq->rotated[i] >= 0.0f) {
-            size_t word_idx = i / 64;
-            size_t bit_idx  = i % 64;
-            pq->sign_code[word_idx] |= (1ULL << bit_idx);
-        }
-    }
-
-    // sum_q
-    pq->sum_q = 0.0f;
-    for (size_t i = 0; i < L; ++i) {
-        pq->sum_q += pq->rotated[i];
-    }
+    // inv_norm=1.0f: rotated is already unit-length; the multiply is a no-op
+    pq->sum_q = simd::SimdNormalizeSignSum(
+        pq->rotated.data(), 1.0f,
+        pq->sign_code.data(), words_per_plane_,
+        static_cast<uint32_t>(L));
 
     // FastScan query quantization + LUT
     pq->quant_query.resize(L);
@@ -187,6 +168,67 @@ void RaBitQEstimator::PrepareQueryInto(
     // × 2 bytes lo/hi = lut_size bytes), so the prior zero-init is dead work.
 #ifndef NDEBUG
     std::memset(pq->lut_aligned, 0xCD, lut_size);  // sentinel to catch bugs
+#endif
+
+    pq->fs_shift = simd::BuildFastScanLUT(
+        pq->quant_query.data(), pq->lut_aligned, dim_);
+}
+
+// ============================================================================
+// PrepareQueryRotatedInto — pre-rotated path, skips per-cluster FWHT
+// ============================================================================
+//
+// rotated_q        = P^T × q                    (one FWHT per query)
+// rotated_centroid = P^T × c_i                  (precomputed at build time)
+//
+// diff = rotated_q - rotated_centroid = P^T × (q - c_i)  (linearity)
+// ‖diff‖ = ‖q - c_i‖                                      (norm preservation)
+//
+// All downstream operations (sign_code, sum_q, LUT) are identical to
+// PrepareQueryInto because they operate on diff/‖diff‖ = P^T × (q̄).
+
+void RaBitQEstimator::PrepareQueryRotatedInto(
+    const float* rotated_q,
+    const float* rotated_centroid,
+    PreparedQuery* pq) const {
+    const size_t L = dim_;
+
+    pq->dim       = dim_;
+    pq->num_words = words_per_plane_;
+    pq->bits      = bits_;
+
+    // Step 1: diff = rotated_q - rotated_centroid; norm_sq = ‖diff‖²
+    // Reuse pq->rotated as the diff buffer (same length L).
+    pq->rotated.resize(L);
+    pq->norm_qc_sq = simd::SimdSubtractAndNormSq(
+        rotated_q, rotated_centroid, pq->rotated.data(), static_cast<uint32_t>(L));
+    pq->norm_qc = std::sqrt(pq->norm_qc_sq);
+
+    // Step 2: Fused normalize + sign-quantize + sum_q.
+    // diff → normalized diff = diff / ‖diff‖, extracting sign bits and sum.
+    pq->sign_code.resize(words_per_plane_);
+    for (uint32_t w = 0; w < words_per_plane_; ++w) {
+        pq->sign_code[w] = 0;
+    }
+    float inv_norm = (pq->norm_qc > 1e-30f) ? (1.0f / pq->norm_qc) : 1.0f;
+    pq->sum_q = simd::SimdNormalizeSignSum(
+        pq->rotated.data(), inv_norm,
+        pq->sign_code.data(), words_per_plane_,
+        static_cast<uint32_t>(L));
+    // pq->rotated now holds the normalized diff = P^T × (q̄)
+
+    // Step 3: FastScan quantization + LUT (identical to PrepareQueryInto)
+    pq->quant_query.resize(L);
+    pq->fs_width = simd::QuantizeQuery14Bit(
+        pq->rotated.data(), pq->quant_query.data(), dim_);
+
+    const size_t lut_size = static_cast<size_t>(dim_) * 8;
+    pq->fastscan_lut.resize(lut_size + 63);
+    uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
+    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
+    pq->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+#ifndef NDEBUG
+    std::memset(pq->lut_aligned, 0xCD, lut_size);
 #endif
 
     pq->fs_shift = simd::BuildFastScanLUT(

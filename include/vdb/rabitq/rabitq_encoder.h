@@ -69,22 +69,42 @@ class RaBitQEncoder {
  public:
     /// Construct an encoder for vectors of dimension `dim` using rotation `P`.
     ///
-    /// @param dim       Vector dimensionality
-    /// @param rotation  Shared rotation matrix (must outlive the encoder).
-    ///                  The encoder does NOT take ownership.
-    /// @param bits      Quantization bits: 1, 2, or 4 (default 1)
-    RaBitQEncoder(Dim dim, const RotationMatrix& rotation, uint8_t bits = 1);
+    /// For M-bit encoding (bits > 1), a global scaling factor `t_const` is
+    /// precomputed once by sampling 100 random Gaussian vectors and averaging
+    /// their optimal rescale factor. This replaces per-vector lattice search
+    /// and gives 10-50× faster encoding with negligible precision loss.
+    /// See: rabitqlib/quantization/rabitq_impl.hpp:380 (faster_quantize_ex)
+    ///
+    /// @param dim          Vector dimensionality
+    /// @param rotation     Shared rotation matrix (must outlive the encoder).
+    ///                     The encoder does NOT take ownership.
+    /// @param bits         Quantization bits: 1, 2, or 4 (default 1)
+    /// @param t_const_seed RNG seed for t_const precomputation (default 42).
+    ///                     Use the same seed for reproducible results.
+    RaBitQEncoder(Dim dim, const RotationMatrix& rotation, uint8_t bits = 1,
+                  uint64_t t_const_seed = 42);
 
     ~RaBitQEncoder() = default;
     VDB_DISALLOW_COPY_AND_MOVE(RaBitQEncoder);
 
-    /// Encode a single vector.
+    /// Encode a single vector (fast path: uses precomputed t_const for bits>1).
     ///
     /// @param vec       Raw float vector (length = dim)
     /// @param centroid  Cluster centroid (length = dim). Pass nullptr to use
     ///                  the zero vector (flat index / testing).
     /// @return          Encoded RaBitQ code with norm and popcount.
     RaBitQCode Encode(const float* vec, const float* centroid = nullptr) const;
+
+    /// Encode a single vector using the slow lattice-search path (bits>1).
+    ///
+    /// Runs per-vector best_rescale_factor priority-queue search to find
+    /// the optimal t for quantization. Used for correctness validation
+    /// against Encode(). For bits=1 the behavior is identical to Encode().
+    ///
+    /// @param vec       Raw float vector (length = dim)
+    /// @param centroid  Cluster centroid (length = dim). Pass nullptr for zero.
+    /// @return          Encoded RaBitQ code with norm and popcount.
+    RaBitQCode EncodeSlow(const float* vec, const float* centroid = nullptr) const;
 
     /// Encode a batch of vectors.
     ///
@@ -113,6 +133,9 @@ class RaBitQEncoder {
     uint32_t words_per_plane_;        // ceil(dim / 64)
     uint32_t total_words_;            // bits_ * words_per_plane_
     const RotationMatrix& rotation_;
+    // Fast-path fields (bits > 1 only)
+    int max_code_ = 0;               // (1 << bits_) - 1; max allowed code value
+    double t_const_ = 0.0;          // Precomputed global rescale factor for fast quantization
 };
 
 }  // namespace rabitq

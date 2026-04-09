@@ -41,7 +41,12 @@
 #include <immintrin.h>
 #include "vdb/simd/ip_exrabitq.h"
 #include "vdb/simd/popcount.h"
+#include "vdb/simd/signed_dot.h"
 #include "vdb/storage/pack_codes.h"
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 #ifdef VDB_USE_MKL
 #include <mkl.h>
@@ -411,42 +416,70 @@ int main(int argc, char* argv[]) {
     const uint32_t num_words = (dim + 63) / 64;
     uint32_t samples_for_eps = 100;
 
-    // Popcount IP-error calibration
-    std::vector<float> ip_errors;
-    for (uint32_t k = 0; k < nlist; ++k) {
-        const auto& members = cluster_members[k];
-        if (members.size() < 2) continue;
-        uint32_t n_queries = std::min(samples_for_eps,
-                                       static_cast<uint32_t>(members.size()));
-        const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
-        std::vector<uint32_t> indices(members.size());
-        std::iota(indices.begin(), indices.end(), 0u);
-        std::mt19937 rng(seed + k);
-        std::shuffle(indices.begin(), indices.end(), rng);
+    // Popcount IP-error calibration (OMP-parallelized, thread-local results)
+#ifdef _OPENMP
+    const int nt_ip = omp_get_max_threads();
+#else
+    const int nt_ip = 1;
+#endif
+    std::vector<std::vector<float>> tl_ip_errors(nt_ip);
 
-        for (uint32_t q = 0; q < n_queries; ++q) {
-            uint32_t q_global = members[indices[q]];
-            const float* q_vec = base.data.data() +
-                static_cast<size_t>(q_global) * dim;
-            auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
-            for (uint32_t t = 0; t < static_cast<uint32_t>(members.size()); ++t) {
-                if (t == indices[q]) continue;
-                uint32_t t_global = members[t];
-                const auto& code = codes[t_global];
-                uint32_t hamming = simd::PopcountXor(
-                    pq.sign_code.data(), code.code.data(), num_words);
-                float ip_hat = 1.0f - 2.0f * static_cast<float>(hamming) /
-                                              static_cast<float>(dim);
-                float dot = 0.0f;
-                for (size_t d = 0; d < dim; ++d) {
-                    int bit = (code.code[d / 64] >> (d % 64)) & 1;
-                    dot += pq.rotated[d] * (2.0f * bit - 1.0f);
+#pragma omp parallel
+    {
+#ifdef _OPENMP
+        int tid = omp_get_thread_num();
+#else
+        int tid = 0;
+#endif
+        auto& local = tl_ip_errors[tid];
+        local.reserve(samples_for_eps * 300);
+
+#pragma omp for schedule(dynamic, 16)
+        for (int k = 0; k < static_cast<int>(nlist); ++k) {
+            const auto& members = cluster_members[k];
+            if (members.size() < 2) continue;
+            uint32_t n_queries = std::min(samples_for_eps,
+                                           static_cast<uint32_t>(members.size()));
+            const float* centroid = centroids.data() +
+                static_cast<size_t>(k) * dim;
+            std::vector<uint32_t> indices(members.size());
+            std::iota(indices.begin(), indices.end(), 0u);
+            std::mt19937 rng(seed + static_cast<uint32_t>(k));
+            std::shuffle(indices.begin(), indices.end(), rng);
+
+            for (uint32_t q = 0; q < n_queries; ++q) {
+                uint32_t q_global = members[indices[q]];
+                const float* q_vec = base.data.data() +
+                    static_cast<size_t>(q_global) * dim;
+                auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+                for (uint32_t t = 0; t < static_cast<uint32_t>(members.size());
+                     ++t) {
+                    if (t == indices[q]) continue;
+                    uint32_t t_global = members[t];
+                    const auto& code = codes[t_global];
+                    uint32_t hamming = simd::PopcountXor(
+                        pq.sign_code.data(), code.code.data(), num_words);
+                    float ip_hat = 1.0f - 2.0f * static_cast<float>(hamming) /
+                                                  static_cast<float>(dim);
+                    float dot = simd::SignedDotFromBits(
+                        pq.rotated.data(), code.code.data(), dim);
+                    float ip_accurate = dot * inv_sqrt_dim;
+                    local.push_back(std::abs(ip_hat - ip_accurate));
                 }
-                float ip_accurate = dot * inv_sqrt_dim;
-                ip_errors.push_back(std::abs(ip_hat - ip_accurate));
             }
         }
     }
+
+    // Merge thread-local ip_errors
+    std::vector<float> ip_errors;
+    {
+        size_t total_ip = 0;
+        for (const auto& v : tl_ip_errors) total_ip += v.size();
+        ip_errors.reserve(total_ip);
+        for (auto& v : tl_ip_errors)
+            ip_errors.insert(ip_errors.end(), v.begin(), v.end());
+    }
+
     float eps_ip = 0.0f;
     if (!ip_errors.empty()) {
         std::sort(ip_errors.begin(), ip_errors.end());
@@ -498,6 +531,33 @@ int main(int argc, char* argv[]) {
         Log("  FastScan blocks packed (%u clusters).\n", nlist);
     }
 
+    // ---- Precompute rotated centroids (Hadamard path only) ----
+    // rotated_centroids[k] = P^T × centroids[k], computed once at build time.
+    // Phase D uses these to skip per-cluster FWHT: diff = rotated_q - rotated_c[k].
+    std::vector<float> rotated_centroids;
+    if (used_hadamard) {
+        auto t_rc = std::chrono::steady_clock::now();
+        rotated_centroids.resize(static_cast<size_t>(nlist) * dim, 0.0f);
+        for (uint32_t k = 0; k < nlist; ++k) {
+            rotation.Apply(
+                centroids.data() + static_cast<size_t>(k) * dim,
+                rotated_centroids.data() + static_cast<size_t>(k) * dim);
+        }
+        double rc_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_rc).count();
+        Log("  Precomputed rotated centroids (%u × %u floats, %.1f ms).\n",
+            nlist, dim, rc_ms);
+        // Numerical check: ||rotated_c[0]|| ≈ ||c[0]|| (orthogonal transform preserves norm)
+        float norm_rc0 = 0.0f, norm_c0 = 0.0f;
+        for (uint32_t i = 0; i < dim; ++i) {
+            norm_rc0 += rotated_centroids[i] * rotated_centroids[i];
+            norm_c0  += centroids[i] * centroids[i];
+        }
+        Log("  [CHECK] ||rotated_c[0]||=%.6f, ||c[0]||=%.6f (diff=%.2e)\n",
+            std::sqrt(norm_rc0), std::sqrt(norm_c0),
+            std::abs(std::sqrt(norm_rc0) - std::sqrt(norm_c0)));
+    }
+
     // d_k calibration (must be before eps_ip_fs for truncation)
     float p_dk_f = static_cast<float>(p_for_dk) / 100.0f;
     float d_k = ConANN::CalibrateDistanceThreshold(
@@ -510,53 +570,90 @@ int main(int argc, char* argv[]) {
     {
         const float trunc_lo = 0.1f * d_k;
         const float trunc_hi = 10.0f * d_k;
-        std::vector<float> fs_normalized_errors;
-        for (uint32_t k = 0; k < nlist; ++k) {
-            const auto& members = cluster_members[k];
-            if (members.size() < 2) continue;
+        // OMP-parallelized: thread-local error vectors, merged after
+#ifdef _OPENMP
+        const int nt_fs = omp_get_max_threads();
+#else
+        const int nt_fs = 1;
+#endif
+        std::vector<std::vector<float>> tl_fs_errors(nt_fs);
 
-            uint32_t n_queries_fs = std::min(samples_for_eps,
-                                              static_cast<uint32_t>(members.size()));
-            const float* centroid = centroids.data() + static_cast<size_t>(k) * dim;
-            std::vector<uint32_t> indices(members.size());
-            std::iota(indices.begin(), indices.end(), 0u);
-            std::mt19937 rng(seed + k + nlist);
-            std::shuffle(indices.begin(), indices.end(), rng);
+#pragma omp parallel
+        {
+#ifdef _OPENMP
+            int tid_fs = omp_get_thread_num();
+#else
+            int tid_fs = 0;
+#endif
+            auto& local_fs = tl_fs_errors[tid_fs];
+            local_fs.reserve(samples_for_eps * 300);
 
-            for (uint32_t q = 0; q < n_queries_fs; ++q) {
-                uint32_t q_global = members[indices[q]];
-                const float* q_vec = base.data.data() +
-                    static_cast<size_t>(q_global) * dim;
-                auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
+#pragma omp for schedule(dynamic, 16)
+            for (int k = 0; k < static_cast<int>(nlist); ++k) {
+                const auto& members = cluster_members[k];
+                if (members.size() < 2) continue;
 
-                for (uint32_t b = 0; b < cluster_fs_blocks[k].size(); ++b) {
-                    const auto& fb = cluster_fs_blocks[k][b];
-                    alignas(64) float fs_dists[32];
-                    estimator.EstimateDistanceFastScan(
-                        pq, fb.packed.data(), fb.norms.data(), fb.count, fs_dists);
+                uint32_t n_queries_fs = std::min(
+                    samples_for_eps, static_cast<uint32_t>(members.size()));
+                const float* centroid = centroids.data() +
+                    static_cast<size_t>(k) * dim;
+                std::vector<uint32_t> indices(members.size());
+                std::iota(indices.begin(), indices.end(), 0u);
+                std::mt19937 rng(seed + static_cast<uint32_t>(k) + nlist);
+                std::shuffle(indices.begin(), indices.end(), rng);
 
-                    for (uint32_t j = 0; j < fb.count; ++j) {
-                        uint32_t local_idx = b * 32 + j;
-                        if (local_idx == indices[q]) continue;
+                for (uint32_t q = 0; q < n_queries_fs; ++q) {
+                    uint32_t q_global = members[indices[q]];
+                    const float* q_vec = base.data.data() +
+                        static_cast<size_t>(q_global) * dim;
+                    auto pq = estimator.PrepareQuery(q_vec, centroid, rotation);
 
-                        uint32_t t_global = members[local_idx];
-                        float norm_oc = fb.norms[j];
+                    for (uint32_t b = 0;
+                         b < static_cast<uint32_t>(cluster_fs_blocks[k].size());
+                         ++b) {
+                        const auto& fb = cluster_fs_blocks[k][b];
+                        alignas(64) float fs_dists[32];
+                        estimator.EstimateDistanceFastScan(
+                            pq, fb.packed.data(), fb.norms.data(),
+                            fb.count, fs_dists);
 
-                        float true_dist = simd::L2Sqr(q_vec,
-                            base.data.data() + static_cast<size_t>(t_global) * dim, dim);
+                        for (uint32_t j = 0; j < fb.count; ++j) {
+                            uint32_t local_idx = b * 32 + j;
+                            if (local_idx == indices[q]) continue;
 
-                        // Truncate: only sample near decision boundary
-                        if (true_dist < trunc_lo || true_dist > trunc_hi) continue;
+                            uint32_t t_global = members[local_idx];
+                            float norm_oc = fb.norms[j];
 
-                        float dist_err = std::abs(fs_dists[j] - true_dist);
-                        float denom = 2.0f * norm_oc * pq.norm_qc;
-                        if (denom > 1e-10f) {
-                            fs_normalized_errors.push_back(dist_err / denom);
+                            float true_dist = simd::L2Sqr(q_vec,
+                                base.data.data() +
+                                    static_cast<size_t>(t_global) * dim, dim);
+
+                            // Truncate: only sample near decision boundary
+                            if (true_dist < trunc_lo ||
+                                true_dist > trunc_hi) continue;
+
+                            float dist_err = std::abs(fs_dists[j] - true_dist);
+                            float denom = 2.0f * norm_oc * pq.norm_qc;
+                            if (denom > 1e-10f) {
+                                local_fs.push_back(dist_err / denom);
+                            }
                         }
                     }
                 }
             }
         }
+
+        // Merge thread-local fs errors
+        std::vector<float> fs_normalized_errors;
+        {
+            size_t total_fs = 0;
+            for (const auto& v : tl_fs_errors) total_fs += v.size();
+            fs_normalized_errors.reserve(total_fs);
+            for (auto& v : tl_fs_errors)
+                fs_normalized_errors.insert(
+                    fs_normalized_errors.end(), v.begin(), v.end());
+        }
+
         if (!fs_normalized_errors.empty()) {
             std::sort(fs_normalized_errors.begin(), fs_normalized_errors.end());
             float p = static_cast<float>(p_for_eps) / 100.0f;
@@ -616,6 +713,23 @@ int main(int argc, char* argv[]) {
             clusters[cid].count = static_cast<uint32_t>(cluster_members[cid].size());
             clusters[cid].codes_block = cluster_code_blocks[cid].data();
             clusters[cid].code_entry_size = code_entry_size;
+        }
+
+        // Fill pre-packed FastScan block metadata from Phase B cluster_fs_blocks.
+        // This avoids redundant PackSignBitsForFastScan calls in ComputeScoresForQueryRaBitQ.
+        std::vector<std::vector<ClusterData::FsBlock>> cluster_fs_meta(nlist);
+        for (uint32_t cid = 0; cid < nlist; ++cid) {
+            const auto& fbs = cluster_fs_blocks[cid];
+            cluster_fs_meta[cid].resize(fbs.size());
+            for (size_t b = 0; b < fbs.size(); ++b) {
+                cluster_fs_meta[cid][b] = ClusterData::FsBlock{
+                    fbs[b].packed.data(),
+                    fbs[b].norms.data(),
+                    fbs[b].count
+                };
+            }
+            clusters[cid].fs_blocks    = cluster_fs_meta[cid].data();
+            clusters[cid].num_fs_blocks = static_cast<uint32_t>(cluster_fs_meta[cid].size());
         }
 
         CrcCalibrator::Config crc_cfg;
@@ -706,6 +820,8 @@ int main(int argc, char* argv[]) {
     est_heap.reserve(top_k * 2);
     exact_heap.reserve(top_k * 2);
     PreparedQuery pq;  // Reused across clusters via PrepareQueryInto
+    // Per-query rotated query buffer (only used in Hadamard fast path).
+    std::vector<float> rotated_q(used_hadamard ? dim : 0);
 
     for (uint32_t qi = 0; qi < Q; ++qi) {
         auto t_q = std::chrono::steady_clock::now();
@@ -741,14 +857,26 @@ int main(int argc, char* argv[]) {
         est_heap.clear();
         exact_heap.clear();
 
+        // One-time query rotation (Hadamard path): rotated_q = P^T × q.
+        // Per-cluster FWHT is then replaced by O(dim) vector subtraction.
+        if (used_hadamard) {
+            rotation.Apply(q_vec, rotated_q.data());
+        }
+
         uint32_t probed = 0;
         bool stopped_early = false;
 
         for (uint32_t p = 0; p < nprobe && p < nlist; ++p) {
             uint32_t cid = centroid_dists[p].second;
-            const float* centroid = centroids.data() +
-                static_cast<size_t>(cid) * dim;
-            estimator.PrepareQueryInto(q_vec, centroid, rotation, &pq);
+            if (used_hadamard) {
+                const float* rotated_c =
+                    rotated_centroids.data() + static_cast<size_t>(cid) * dim;
+                estimator.PrepareQueryRotatedInto(rotated_q.data(), rotated_c, &pq);
+            } else {
+                const float* centroid = centroids.data() +
+                    static_cast<size_t>(cid) * dim;
+                estimator.PrepareQueryInto(q_vec, centroid, rotation, &pq);
+            }
             float margin_factor = 2.0f * pq.norm_qc * active_eps_ip;
 
             // --- FastScan classify path: batch-32 blocks ---
@@ -780,12 +908,26 @@ int main(int argc, char* argv[]) {
                         ? 0xFFFFFFFFu
                         : ((1u << fb.count) - 1u);
                     uint32_t maybe_in = (~so_mask) & lane_valid;
+
                     while (maybe_in) {
                         uint32_t j = static_cast<uint32_t>(__builtin_ctz(maybe_in));
                         maybe_in &= maybe_in - 1u;
 
                         uint32_t local_idx = b * 32 + j;
                         uint32_t vid = members[local_idx];
+
+                        // Prefetch next candidate's base vector while processing
+                        // current one. Stage 2 IPExRaBitQ provides ~200+ cycles
+                        // of compute for the prefetch to complete in background.
+                        if (maybe_in) {
+                            uint32_t j_next = static_cast<uint32_t>(__builtin_ctz(maybe_in));
+                            uint32_t vid_next = members[(b * 32) + j_next];
+                            const char* base_next = reinterpret_cast<const char*>(
+                                base.data.data() + static_cast<size_t>(vid_next) * dim);
+                            _mm_prefetch(base_next,       _MM_HINT_T0);
+                            _mm_prefetch(base_next + 64,  _MM_HINT_T0);
+                            //_mm_prefetch(base_next + 128, _MM_HINT_T1);
+                        }
 
                         float est_dist_s1 = fs_dists[j];
                         float margin_s1 = margin_factor * fb.norms[j];

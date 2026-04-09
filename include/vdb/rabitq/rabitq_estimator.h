@@ -93,6 +93,21 @@ class RaBitQEstimator {
                           const RotationMatrix& rotation,
                           PreparedQuery* pq) const;
 
+    /// Pre-rotated variant: skips per-cluster FWHT.
+    ///
+    /// Requires that caller precomputes:
+    ///   rotated_q      = P^T × q         (once per query)
+    ///   rotated_centroid = P^T × c_i     (once per centroid, at build time)
+    ///
+    /// Then per-cluster: diff = rotated_q - rotated_centroid (O(dim) subtract),
+    /// which equals P^T × (q - c_i) by linearity of P^T.
+    /// Norm is preserved: ‖diff‖ = ‖q - c_i‖ (orthogonal transform).
+    ///
+    /// Produces identical sign_code, sum_q, and LUT to PrepareQueryInto.
+    void PrepareQueryRotatedInto(const float* rotated_q,
+                                 const float* rotated_centroid,
+                                 PreparedQuery* pq) const;
+
     /// Stage 1: Estimate distance using fast XOR+popcount on MSB plane.
     ///
     /// Uses only the first words_per_plane words of the code (MSB plane).

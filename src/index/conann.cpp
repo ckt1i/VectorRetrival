@@ -8,6 +8,10 @@
 
 #include "vdb/simd/distance_l2.h"
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 namespace vdb {
 namespace index {
 
@@ -47,19 +51,6 @@ ResultClass ConANN::Classify(float approx_dist, float margin) const {
     if (approx_dist > d_k_ + 2 * margin) {
         return ResultClass::SafeOut;
     }
-    if (approx_dist < d_k_ - 2 * margin) {
-        return ResultClass::SafeIn;
-    }
-    return ResultClass::Uncertain;
-}
-
-ResultClass ConANN::ClassifyAdaptive(float approx_dist, float margin,
-                                      float dynamic_d_k) const {
-    // SafeOut: dynamic threshold (tightens as estimate heap stabilizes)
-    if (approx_dist > dynamic_d_k + 2 * margin) {
-        return ResultClass::SafeOut;
-    }
-    // SafeIn: static threshold (conservative, uses construction-time d_k_)
     if (approx_dist < d_k_ - 2 * margin) {
         return ResultClass::SafeIn;
     }
@@ -110,9 +101,23 @@ float ConANN::CalibrateDistanceThreshold(
     indices.resize(num_samples);
 
     std::vector<float> sample_dk(num_samples);
-    std::vector<float> dists(N);
 
-    for (uint32_t s = 0; s < num_samples; ++s) {
+    // Per-thread dists buffer to avoid false sharing and malloc in the hot loop
+#ifdef _OPENMP
+    const int nt = omp_get_max_threads();
+#else
+    const int nt = 1;
+#endif
+    std::vector<std::vector<float>> tl_dists(nt, std::vector<float>(N));
+
+#pragma omp parallel for schedule(dynamic, 4)
+    for (int s = 0; s < static_cast<int>(num_samples); ++s) {
+#ifdef _OPENMP
+        int tid = omp_get_thread_num();
+#else
+        int tid = 0;
+#endif
+        auto& dists = tl_dists[tid];
         const float* query = queries + static_cast<size_t>(indices[s]) * dim;
 
         for (uint32_t i = 0; i < N; ++i) {

@@ -393,3 +393,136 @@ TEST(RaBitQEncoderTest, TailBitsZero_MultiBit) {
             << "plane " << static_cast<int>(p);
     }
 }
+
+// ===========================================================================
+// Fast path: t_const stability (Task 2.2)
+// ===========================================================================
+
+TEST(RaBitQEncoderTest, ComputeTConstStable_Deterministic) {
+    // Same (dim, bits, seed) → same behavior across two encoder instances
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder enc1(dim, P, 4, /*t_const_seed=*/42);
+    RaBitQEncoder enc2(dim, P, 4, /*t_const_seed=*/42);
+
+    // Encode same vector; results must be bit-exact (deterministic t_const)
+    auto vec = RandomVec(dim, 100);
+    auto c1 = enc1.Encode(vec.data());
+    auto c2 = enc2.Encode(vec.data());
+
+    EXPECT_EQ(c1.ex_code, c2.ex_code);
+    EXPECT_FLOAT_EQ(c1.xipnorm, c2.xipnorm);
+}
+
+TEST(RaBitQEncoderTest, ComputeTConstStable_DifferentSeeds) {
+    // t_const should be within 5% across different seeds (statistical stability)
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    // We can't read t_const_ directly, but xipnorm from same vector
+    // should be stable if t_const is stable.
+    auto vec = RandomVec(dim, 999);
+
+    float xipnorm_ref = 0.0f;
+    {
+        RaBitQEncoder enc(dim, P, 4, 42);
+        xipnorm_ref = enc.Encode(vec.data()).xipnorm;
+    }
+
+    for (uint64_t seed : {0ull, 1ull, 100ull, 12345ull}) {
+        RaBitQEncoder enc(dim, P, 4, seed);
+        float xipnorm = enc.Encode(vec.data()).xipnorm;
+        // Relative deviation < 5%
+        float rel_diff = std::abs(xipnorm - xipnorm_ref) / std::abs(xipnorm_ref);
+        EXPECT_LT(rel_diff, 0.05f)
+            << "seed=" << seed << " xipnorm=" << xipnorm
+            << " ref=" << xipnorm_ref;
+    }
+}
+
+// ===========================================================================
+// Fast vs Slow consistency (Task 5.2)
+// ===========================================================================
+
+TEST(RaBitQEncoderTest, FastVsSlowConsistency_Bits4) {
+    // Fast path (Encode, global t_const) vs slow lattice search (EncodeSlow).
+    //
+    // The fast path uses a precomputed global t_const instead of per-vector
+    // optimal t, so ex_code values will differ — this is by design and
+    // expected. The official library validates this approach by end-to-end
+    // recall, not per-code equivalence.
+    //
+    // What we check here:
+    //   - MSB plane (1-bit sign) must be identical (same rotation, same sign)
+    //   - norm and sum_x must be identical (norm = ||residual||, sum_x = popcount)
+    //   - ex_code values must be in valid range [0, max_code]
+    //   - xipnorm must be finite and positive
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+
+    RaBitQEncoder encoder(dim, P, 4, 42);
+    const int max_code = (1 << 4) - 1;  // 15 for bits=4
+
+    const int N = 100;
+    uint32_t wpp = encoder.words_per_plane();
+
+    for (int i = 0; i < N; ++i) {
+        auto vec = RandomVec(dim, 200 + i);
+        auto fast = encoder.Encode(vec.data());
+        auto slow = encoder.EncodeSlow(vec.data());
+
+        // MSB plane must be identical — same rotation, same sign bits
+        for (uint32_t w = 0; w < wpp; ++w) {
+            EXPECT_EQ(fast.code[w], slow.code[w])
+                << "vec=" << i << " word=" << w << " MSB plane mismatch";
+        }
+
+        // Norm and sum_x are independent of t_const
+        EXPECT_FLOAT_EQ(fast.norm, slow.norm) << "vec=" << i;
+        EXPECT_EQ(fast.sum_x, slow.sum_x) << "vec=" << i;
+
+        // ex_code values must be in valid range [0, max_code]
+        ASSERT_EQ(static_cast<Dim>(fast.ex_code.size()), dim);
+        for (Dim d = 0; d < dim; ++d) {
+            EXPECT_LE(static_cast<int>(fast.ex_code[d]), max_code)
+                << "vec=" << i << " dim=" << d;
+        }
+
+        // xipnorm must be finite and positive
+        EXPECT_GT(fast.xipnorm, 0.0f) << "vec=" << i;
+        EXPECT_TRUE(std::isfinite(fast.xipnorm)) << "vec=" << i;
+    }
+}
+
+TEST(RaBitQEncoderTest, FastVsSlowConsistency_Bits2) {
+    Dim dim = 128;
+    RotationMatrix P(dim);
+    P.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, P, 2, 42);
+    const int max_code = (1 << 2) - 1;  // 3 for bits=2
+
+    const int N = 100;
+    uint32_t wpp = encoder.words_per_plane();
+
+    for (int i = 0; i < N; ++i) {
+        auto vec = RandomVec(dim, 300 + i);
+        auto fast = encoder.Encode(vec.data());
+        auto slow = encoder.EncodeSlow(vec.data());
+
+        for (uint32_t w = 0; w < wpp; ++w) {
+            EXPECT_EQ(fast.code[w], slow.code[w]) << "vec=" << i;
+        }
+        EXPECT_FLOAT_EQ(fast.norm, slow.norm);
+        EXPECT_EQ(fast.sum_x, slow.sum_x);
+
+        for (Dim d = 0; d < dim; ++d) {
+            EXPECT_LE(static_cast<int>(fast.ex_code[d]), max_code);
+        }
+        EXPECT_GT(fast.xipnorm, 0.0f);
+        EXPECT_TRUE(std::isfinite(fast.xipnorm));
+    }
+}
