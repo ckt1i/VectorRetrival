@@ -104,6 +104,25 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
         conann_ = ConANN(eps, dk);
     }
 
+    // --- Phase 2: Load rotated_centroids.bin from disk ---
+    // When has_rotated_centroids=true (new Phase-2 builder), the file must be present.
+    // When false (non-Hadamard dim or pre-Phase-2 index), skip loading.
+    if (conann_params && conann_params->has_rotated_centroids()) {
+        const std::string rc_path = dir + "/rotated_centroids.bin";
+        std::ifstream rc_file(rc_path, std::ios::binary);
+        if (!rc_file.is_open()) {
+            return Status::IOError(
+                "Index declares has_rotated_centroids=true but file is missing: " + rc_path);
+        }
+        used_hadamard_ = true;
+        rotated_centroids_.resize(static_cast<size_t>(nlist_) * dim_);
+        rc_file.read(reinterpret_cast<char*>(rotated_centroids_.data()),
+                     static_cast<std::streamsize>(nlist_) * dim_ * sizeof(float));
+        if (!rc_file.good()) {
+            return Status::IOError("Failed to read rotated_centroids.bin");
+        }
+    }
+
     // --- 6. Load payload schemas ---
     const auto* ps = seg_meta->payload_schemas();
     if (ps) {

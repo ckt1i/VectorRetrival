@@ -243,6 +243,7 @@ target_link_libraries(vdb_storage PUBLIC vdb_columns vdb_codec vdb_rabitq)
 # =============================================================================
 add_library(vdb_index STATIC
     src/index/conann.cpp
+    src/index/cluster_prober.cpp
     src/index/ivf_index.cpp
     src/index/ivf_builder.cpp
 )

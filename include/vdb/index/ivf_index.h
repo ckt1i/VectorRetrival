@@ -82,6 +82,16 @@ class IvfIndex {
         return centroids_.data() + static_cast<size_t>(cluster_idx) * dim_;
     }
 
+    /// Whether Hadamard rotation was detected at Open() time (dim is power-of-2).
+    /// When true, rotated_centroid() is valid and PrepareQueryRotatedInto can be used.
+    bool used_hadamard() const { return used_hadamard_; }
+
+    /// Get pre-rotated centroid P^T × c_k for the given cluster.
+    /// Only valid when used_hadamard() == true.
+    const float* rotated_centroid(uint32_t cluster_idx) const {
+        return rotated_centroids_.data() + static_cast<size_t>(cluster_idx) * dim_;
+    }
+
     /// Get all cluster IDs.
     const std::vector<ClusterID>& cluster_ids() const { return cluster_ids_; }
 
@@ -96,9 +106,11 @@ class IvfIndex {
     Dim dim_ = 0;
     uint32_t nlist_ = 0;
 
-    std::vector<float> centroids_;         // row-major, nlist × dim
-    std::vector<ClusterID> cluster_ids_;   // ordered cluster IDs
-    ConANN conann_{0.0f, 0.0f};            // default, overwritten by Open
+    std::vector<float> centroids_;              // row-major, nlist × dim
+    std::vector<float> rotated_centroids_;      // P^T × c_k, nlist × dim (Hadamard only)
+    bool used_hadamard_ = false;                // true when dim is power-of-2
+    std::vector<ClusterID> cluster_ids_;        // ordered cluster IDs
+    ConANN conann_{0.0f, 0.0f};                // default, overwritten by Open
     storage::Segment segment_;
     std::unique_ptr<rabitq::RotationMatrix> rotation_;
 

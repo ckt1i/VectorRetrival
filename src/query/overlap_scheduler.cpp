@@ -7,12 +7,8 @@
 #include <cstring>
 #include <limits>
 
-#include "vdb/common/distance.h"
 #include "vdb/query/rerank_consumer.h"
 #include "vdb/rabitq/rabitq_estimator.h"
-#include "vdb/simd/fastscan.h"
-#include "vdb/simd/ip_exrabitq.h"
-#include "vdb/storage/pack_codes.h"
 
 namespace vdb {
 namespace query {
@@ -35,7 +31,13 @@ OverlapScheduler::OverlapScheduler(index::IvfIndex& index,
       config_(config),
       vec_bytes_(index.dim() * sizeof(float)),
       est_top_k_(config.top_k),
-      use_crc_(config.crc_params != nullptr) {
+      use_crc_(config.crc_params != nullptr),
+      estimator_(index.dim(), index.segment().rabitq_config().bits),
+      prober_(index.conann(), index.dim(),
+              index.segment().rabitq_config().bits) {
+    if (index.used_hadamard()) {
+        rotated_q_.resize(index.dim());
+    }
     if (use_crc_) {
         crc_stopper_ = index::CrcStopper(*config.crc_params, index.nlist());
         est_heap_.reserve(est_top_k_);
@@ -59,6 +61,11 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     est_heap_.clear();
 
     auto t_search_start = std::chrono::steady_clock::now();
+
+    // Phase 1.3: precompute P^T × query once when Hadamard rotation is used
+    if (index_.used_hadamard()) {
+        index_.rotation().Apply(query_vec, rotated_q_.data());
+    }
 
     SearchContext ctx(query_vec, config_);
     RerankConsumer reranker(ctx, index_.dim());
@@ -168,152 +175,111 @@ void OverlapScheduler::DispatchCompletion(
 }
 
 // ============================================================================
-// ProbeCluster
+// AsyncIOSink — ProbeResultSink that submits io_uring reads + tracks est_heap
+// ============================================================================
+
+class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
+ public:
+    AsyncIOSink(OverlapScheduler& sched, int dat_fd)
+        : sched_(sched), dat_fd_(dat_fd) {}
+
+    void OnCandidate(uint32_t /*vec_idx*/,
+                     AddressEntry addr,
+                     float est_dist,
+                     index::CandidateClass cls) override {
+        // Maintain est_heap_ for dynamic SafeOut threshold across clusters
+        if (sched_.use_crc_) {
+            if (sched_.est_heap_.size() < sched_.est_top_k_) {
+                sched_.est_heap_.push_back({est_dist, 0u});
+                std::push_heap(sched_.est_heap_.begin(), sched_.est_heap_.end());
+            } else if (est_dist < sched_.est_heap_.front().first) {
+                std::pop_heap(sched_.est_heap_.begin(), sched_.est_heap_.end());
+                sched_.est_heap_.back() = {est_dist, 0u};
+                std::push_heap(sched_.est_heap_.begin(), sched_.est_heap_.end());
+            }
+        }
+
+        PendingIO pio;
+        pio.addr = addr;
+
+        if (cls == index::CandidateClass::SafeIn) {
+            if (addr.size <= sched_.config_.safein_all_threshold) {
+                uint8_t* buf = sched_.buffer_pool_.Acquire(addr.size);
+                CheckPrepRead(sched_.reader_.PrepRead(dat_fd_, buf, addr.size, addr.offset),
+                              "SafeIn VEC_ALL");
+                pio.type = PendingIO::Type::VEC_ALL;
+                pio.read_offset = addr.offset;
+                pio.read_length = addr.size;
+                sched_.pending_[buf] = pio;
+            } else {
+                uint8_t* buf = sched_.buffer_pool_.Acquire(sched_.vec_bytes_);
+                CheckPrepRead(sched_.reader_.PrepRead(dat_fd_, buf, sched_.vec_bytes_, addr.offset),
+                              "SafeIn VEC_ONLY");
+                pio.type = PendingIO::Type::VEC_ONLY;
+                pio.read_offset = addr.offset;
+                pio.read_length = sched_.vec_bytes_;
+                sched_.pending_[buf] = pio;
+            }
+        } else {  // Uncertain
+            uint8_t* buf = sched_.buffer_pool_.Acquire(sched_.vec_bytes_);
+            CheckPrepRead(sched_.reader_.PrepRead(dat_fd_, buf, sched_.vec_bytes_, addr.offset),
+                          "Uncertain VEC_ONLY");
+            pio.type = PendingIO::Type::VEC_ONLY;
+            pio.read_offset = addr.offset;
+            pio.read_length = sched_.vec_bytes_;
+            sched_.pending_[buf] = pio;
+        }
+    }
+
+ private:
+    OverlapScheduler& sched_;
+    int dat_fd_;
+};
+
+// ============================================================================
+// ProbeCluster — Phase 3: thin wrapper around ClusterProber + AsyncIOSink
 // ============================================================================
 
 void OverlapScheduler::ProbeCluster(
     const ParsedCluster& pc, uint32_t cluster_id,
-    SearchContext& ctx, RerankConsumer& reranker) {
+    SearchContext& ctx, RerankConsumer& /*reranker*/) {
 
-    rabitq::RaBitQEstimator estimator(index_.dim());
     int dat_fd = index_.segment().data_reader().fd();
-    const uint32_t dim = index_.dim();
-
     ctx.stats().total_probed += pc.num_records;
 
-    const float* centroid = index_.centroid(cluster_id);
-    auto pq = estimator.PrepareQuery(
-        ctx.query_vec(), centroid, index_.rotation());
-
-    // Per-vector margin: margin_j = 2 · ‖o_j-c‖ · ‖q-c‖ · ε_ip
-    // Uses each vector's actual norm_oc instead of cluster-wide r_max,
-    // preserving the theoretical error bound while tightening the margin.
-    float eps_ip = index_.conann().epsilon();
-    float margin_factor = 2.0f * pq.norm_qc * eps_ip;  // per-vector: multiply by norm_oc
-
-    // v7: Iterate by FastScan blocks of 32 vectors
-    const uint32_t packed_sz = storage::FastScanPackedSize(dim);
-    alignas(64) float dists[32];
-
-    for (uint32_t b = 0; b < pc.num_fastscan_blocks; ++b) {
-        const uint32_t base = b * 32;
-        const uint32_t count = std::min(32u, pc.num_records - base);
-
-        float dynamic_d_k = (use_crc_ && est_heap_.size() >= est_top_k_)
-            ? est_heap_.front().first
-            : index_.conann().d_k();
-
-        const uint8_t* block_ptr =
-            pc.fastscan_blocks + b * pc.fastscan_block_size;
-        const float* block_norms = reinterpret_cast<const float*>(
-            block_ptr + packed_sz);
-
-        // FastScan batch-32: VPSHUFB accumulation with 14-bit query precision
-        estimator.EstimateDistanceFastScan(
-            pq, block_ptr, block_norms, count, dists);
-
-        for (uint32_t j = 0; j < count; ++j) {
-            uint32_t global_idx = base + j;
-            float margin = margin_factor * block_norms[j];  // per-vector norm_oc
-            ResultClass rc = use_crc_
-                ? index_.conann().ClassifyAdaptive(dists[j], margin, dynamic_d_k)
-                : index_.conann().Classify(dists[j], margin);
-
-            // Update est_heap_ with non-SafeOut FastScan distances
-            if (use_crc_ && rc != ResultClass::SafeOut) {
-                if (est_heap_.size() < est_top_k_) {
-                    est_heap_.push_back({dists[j], global_idx});
-                    std::push_heap(est_heap_.begin(), est_heap_.end());
-                } else if (dists[j] < est_heap_.front().first) {
-                    std::pop_heap(est_heap_.begin(), est_heap_.end());
-                    est_heap_.back() = {dists[j], global_idx};
-                    std::push_heap(est_heap_.begin(), est_heap_.end());
-                }
-            }
-            AddressEntry addr = pc.decoded_addresses[global_idx];
-
-            if (rc == ResultClass::SafeOut) {
-                ctx.stats().total_safe_out++;
-                continue;
-            }
-
-            PendingIO pio;
-            pio.addr = addr;
-
-            if (rc == ResultClass::SafeIn) {
-                ctx.stats().total_safe_in++;
-                if (addr.size <= config_.safein_all_threshold) {
-                    uint8_t* buf = buffer_pool_.Acquire(addr.size);
-                    CheckPrepRead(reader_.PrepRead(dat_fd, buf, addr.size, addr.offset), "S1 SafeIn VEC_ALL");
-                    pio.type = PendingIO::Type::VEC_ALL;
-                    pio.read_offset = addr.offset;
-                    pio.read_length = addr.size;
-                    pending_[buf] = pio;
-                } else {
-                    uint8_t* buf = buffer_pool_.Acquire(vec_bytes_);
-                    CheckPrepRead(reader_.PrepRead(dat_fd, buf, vec_bytes_, addr.offset), "S1 SafeIn VEC_ONLY");
-                    pio.type = PendingIO::Type::VEC_ONLY;
-                    pio.read_offset = addr.offset;
-                    pio.read_length = vec_bytes_;
-                    pending_[buf] = pio;
-                }
-            } else {
-                // S1 Uncertain → attempt S2 re-classification if bits > 1
-                if (has_s2_ && pc.exrabitq_entries != nullptr) {
-                    const uint8_t* ex_code = pc.ex_code(global_idx);
-                    const uint8_t* ex_sign = pc.ex_sign(global_idx, dim);
-                    float xipn = pc.xipnorm(global_idx, dim);
-
-                    float ip_raw = simd::IPExRaBitQ(
-                        pq.rotated.data(), ex_code, ex_sign, dim);
-                    float ip_est = ip_raw * xipn;
-
-                    float norm_oc = pc.norm_oc(b, j);
-                    float dist_s2 = norm_oc * norm_oc + pq.norm_qc_sq
-                        - 2.0f * norm_oc * pq.norm_qc * ip_est;
-
-                    float margin_s2 = margin / margin_s2_divisor_;
-                    ResultClass rc_s2 = use_crc_
-                        ? index_.conann().ClassifyAdaptive(dist_s2, margin_s2, dynamic_d_k)
-                        : index_.conann().Classify(dist_s2, margin_s2);
-
-                    if (rc_s2 == ResultClass::SafeOut) {
-                        ctx.stats().s2_safe_out++;
-                        continue;
-                    }
-                    if (rc_s2 == ResultClass::SafeIn) {
-                        ctx.stats().s2_safe_in++;
-                        if (addr.size <= config_.safein_all_threshold) {
-                            uint8_t* buf = buffer_pool_.Acquire(addr.size);
-                            CheckPrepRead(reader_.PrepRead(dat_fd, buf, addr.size, addr.offset), "S2 SafeIn VEC_ALL");
-                            pio.type = PendingIO::Type::VEC_ALL;
-                            pio.read_offset = addr.offset;
-                            pio.read_length = addr.size;
-                            pending_[buf] = pio;
-                        } else {
-                            uint8_t* buf = buffer_pool_.Acquire(vec_bytes_);
-                            CheckPrepRead(reader_.PrepRead(dat_fd, buf, vec_bytes_, addr.offset), "S2 SafeIn VEC_ONLY");
-                            pio.type = PendingIO::Type::VEC_ONLY;
-                            pio.read_offset = addr.offset;
-                            pio.read_length = vec_bytes_;
-                            pending_[buf] = pio;
-                        }
-                        continue;
-                    }
-                    // S2 Uncertain → fall through to VEC_ONLY
-                    ctx.stats().s2_uncertain++;
-                }
-
-                ctx.stats().total_uncertain++;
-                uint8_t* buf = buffer_pool_.Acquire(vec_bytes_);
-                CheckPrepRead(reader_.PrepRead(dat_fd, buf, vec_bytes_, addr.offset), "Uncertain VEC_ONLY");
-                pio.type = PendingIO::Type::VEC_ONLY;
-                pio.read_offset = addr.offset;
-                pio.read_length = vec_bytes_;
-                pending_[buf] = pio;
-            }
-        }
+    // Phase 1.3: fast path avoids per-cluster FWHT using precomputed rotated_q_
+    // and precomputed rotated_centroid (P^T × c_k). Falls back to full rotation otherwise.
+    if (index_.used_hadamard()) {
+        estimator_.PrepareQueryRotatedInto(
+            rotated_q_.data(), index_.rotated_centroid(cluster_id), &pq_);
+    } else {
+        estimator_.PrepareQueryInto(
+            ctx.query_vec(), index_.centroid(cluster_id), index_.rotation(), &pq_);
     }
+
+    float margin_factor = 2.0f * pq_.norm_qc * index_.conann().epsilon();
+
+    // dynamic_d_k: infinity when est_heap not yet full (avoids false SafeOut
+    // on early clusters before a reliable k-th estimate is available).
+    float dynamic_d_k = (use_crc_ && est_heap_.size() >= est_top_k_)
+        ? est_heap_.front().first
+        : std::numeric_limits<float>::infinity();
+
+    AsyncIOSink sink(*this, dat_fd);
+    index::ProbeStats local_stats;
+    prober_.Probe(pc, pq_, margin_factor, dynamic_d_k, sink, local_stats);
+
+    // Aggregate classification statistics into SearchContext.
+    // total_safe_in  = S1 SafeIn (I/O submitted)
+    // total_safe_out = S1 SafeOut (skipped)
+    // total_uncertain = final Uncertain candidates (S1 uncertain minus S2 eliminations)
+    ctx.stats().total_safe_in   += local_stats.s1_safein;
+    ctx.stats().total_safe_out  += local_stats.s1_safeout;
+    ctx.stats().s2_safe_in      += local_stats.s2_safein;
+    ctx.stats().s2_safe_out     += local_stats.s2_safeout;
+    ctx.stats().s2_uncertain    += local_stats.s2_uncertain;
+    ctx.stats().total_uncertain +=
+        local_stats.s1_uncertain - local_stats.s2_safein - local_stats.s2_safeout;
 }
 
 // ============================================================================

@@ -1,0 +1,107 @@
+#pragma once
+
+#include <cstdint>
+#include <memory>
+
+#include "vdb/common/macros.h"
+#include "vdb/common/types.h"
+#include "vdb/index/conann.h"
+#include "vdb/query/parsed_cluster.h"
+#include "vdb/rabitq/rabitq_estimator.h"
+
+namespace vdb {
+namespace index {
+
+// ============================================================================
+// ClusterProber — cluster candidate classification (Stage 1 + Stage 2)
+// ============================================================================
+
+/// Classification of a non-SafeOut candidate passed to ProbeResultSink.
+///
+/// SafeOut lanes are consumed internally by ClusterProber (counted in
+/// ProbeStats.s1_safeout / s2_safeout). Only SafeIn and Uncertain
+/// candidates are forwarded to the sink.
+enum class CandidateClass { SafeIn, Uncertain };
+
+/// Sink for non-SafeOut candidates produced by ClusterProber::Probe.
+///
+/// Implementors handle I/O submission (e.g. AsyncIOSink in OverlapScheduler).
+/// Called once per non-SafeOut candidate in probe order.
+class ProbeResultSink {
+ public:
+    virtual ~ProbeResultSink() = default;
+
+    /// Called for each candidate that passed Stage 1 (and optionally Stage 2)
+    /// classification without being SafeOut.
+    ///
+    /// @param vec_idx  Global index within the cluster (0..num_records-1)
+    /// @param addr     On-disk address entry for this vector
+    /// @param est_dist FastScan estimated squared L2 distance (Stage 1)
+    /// @param cls      SafeIn or Uncertain
+    virtual void OnCandidate(uint32_t vec_idx,
+                              AddressEntry addr,
+                              float est_dist,
+                              CandidateClass cls) = 0;
+};
+
+/// Per-cluster probe statistics.
+struct ProbeStats {
+    uint32_t s1_safein = 0;
+    uint32_t s1_safeout = 0;
+    uint32_t s1_uncertain = 0;
+    uint32_t s2_safein = 0;
+    uint32_t s2_safeout = 0;
+    uint32_t s2_uncertain = 0;
+};
+
+/// Cluster candidate classifier implementing the two-stage RaBitQ pipeline.
+///
+/// Encapsulates the FastScan Stage 1 / ExRaBitQ Stage 2 classification loop
+/// from bench_vector_search (FastScan path, L883-1003).
+///
+/// Usage:
+///   float margin_factor = 2.0f * pq.norm_qc * conann.epsilon();
+///   float dynamic_d_k   = est_heap_full ? est_heap.front().first
+///                                        : infinity;
+///   prober.Probe(pc, pq, margin_factor, dynamic_d_k, sink, stats);
+class ClusterProber {
+ public:
+    /// @param conann  ConANN classifier (caller owns, must outlive ClusterProber)
+    /// @param dim     Vector dimensionality
+    /// @param bits    RaBitQ quantization bits (1, 2, or 4)
+    ClusterProber(const ConANN& conann, Dim dim, uint8_t bits);
+    ~ClusterProber();
+
+    VDB_DISALLOW_COPY_AND_MOVE(ClusterProber);
+
+    /// Probe one parsed cluster and forward non-SafeOut candidates to sink.
+    ///
+    /// FastScan Stage 1: batch-32 SIMD SafeOut mask + per-lane SafeIn/Uncertain.
+    /// Stage 2: ExRaBitQ re-classification for S1-Uncertain (when bits > 1).
+    ///
+    /// @param pc             Parsed cluster (Region 1 + Region 2)
+    /// @param pq             Prepared query for this cluster
+    /// @param margin_factor  2 * pq.norm_qc * conann.epsilon()
+    /// @param dynamic_d_k    Current k-th estimate distance:
+    ///                         (est_heap.size() >= top_k) ? est_heap.front()
+    ///                                                     : +infinity
+    /// @param sink           Receives non-SafeOut candidates
+    /// @param stats          Accumulated classification statistics
+    void Probe(const query::ParsedCluster& pc,
+               const rabitq::PreparedQuery& pq,
+               float margin_factor,
+               float dynamic_d_k,
+               ProbeResultSink& sink,
+               ProbeStats& stats) const;
+
+ private:
+    const ConANN& conann_;
+    Dim dim_;
+    uint8_t bits_;
+    bool has_s2_;
+    float margin_s2_divisor_;   // 2^(bits-1), precomputed; 1.0 when bits==1
+    rabitq::RaBitQEstimator estimator_;
+};
+
+}  // namespace index
+}  // namespace vdb

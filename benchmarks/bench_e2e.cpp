@@ -445,6 +445,9 @@ int main(int argc, char* argv[]) {
     std::string arg_centroids = GetStringArg(argc, argv, "--centroids", "");
     std::string arg_assignments = GetStringArg(argc, argv, "--assignments", "");
 
+    // Pre-built index directory (skip Phase C build if specified)
+    std::string arg_index_dir = GetStringArg(argc, argv, "--index-dir", "");
+
     // CRC parameters (CRC always enabled)
     float arg_crc_alpha = GetFloatArg(argc, argv, "--crc-alpha", 0.1f);
     float arg_crc_calib = GetFloatArg(argc, argv, "--crc-calib", 0.5f);
@@ -562,61 +565,67 @@ int main(int argc, char* argv[]) {
     Log("  Brute-force time: %.1f ms\n", brute_force_time_ms);
 
     // ================================================================
-    // Phase C: Build Index
+    // Phase C: Build Index (skipped when --index-dir is provided)
     // ================================================================
     std::string output_dir = output_base + "/" + ds_name + "_" + ts;
-    std::string index_dir = output_dir + "/index";
-    fs::create_directories(index_dir);
+    std::string index_dir = !arg_index_dir.empty() ? arg_index_dir
+                                                    : output_dir + "/index";
+    double training_time_ms = 0.0;
 
-    Log("\n[Phase C] Building index -> %s\n", index_dir.c_str());
+    if (arg_index_dir.empty()) {
+        fs::create_directories(index_dir);
+        Log("\n[Phase C] Building index -> %s\n", index_dir.c_str());
 
-    IvfBuilderConfig cfg;
-    cfg.nlist = static_cast<uint32_t>(arg_nlist);
-    cfg.max_iterations = static_cast<uint32_t>(arg_max_iter);
-    cfg.seed = static_cast<uint64_t>(arg_seed);
-    cfg.rabitq = {static_cast<uint8_t>(arg_bits),
-                  static_cast<uint32_t>(arg_block_size), arg_c_factor};
-    cfg.calibration_samples = std::min(100u, N);
-    cfg.epsilon_samples = 100;
-    cfg.epsilon_percentile = 0.99f;  // match bench_vector_search P99
-    cfg.calibration_topk = GT_K;
-    cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
-    cfg.page_size = static_cast<uint32_t>(arg_page_size);
-    cfg.calibration_queries = qry_emb.data.data();
-    cfg.num_calibration_queries = Q;
-    cfg.centroids_path = arg_centroids;
-    cfg.assignments_path = arg_assignments;
-    cfg.crc_top_k = GT_K;  // always precompute CRC scores at build time
-    cfg.payload_schemas = {
-        {0, "id",      DType::INT64,  false},
-        {1, "caption", DType::STRING, false},
-    };
+        IvfBuilderConfig cfg;
+        cfg.nlist = static_cast<uint32_t>(arg_nlist);
+        cfg.max_iterations = static_cast<uint32_t>(arg_max_iter);
+        cfg.seed = static_cast<uint64_t>(arg_seed);
+        cfg.rabitq = {static_cast<uint8_t>(arg_bits),
+                      static_cast<uint32_t>(arg_block_size), arg_c_factor};
+        cfg.calibration_samples = std::min(100u, N);
+        cfg.epsilon_samples = 100;
+        cfg.epsilon_percentile = 0.99f;  // match bench_vector_search P99
+        cfg.calibration_topk = GT_K;
+        cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
+        cfg.page_size = static_cast<uint32_t>(arg_page_size);
+        cfg.calibration_queries = qry_emb.data.data();
+        cfg.num_calibration_queries = Q;
+        cfg.centroids_path = arg_centroids;
+        cfg.assignments_path = arg_assignments;
+        cfg.crc_top_k = GT_K;  // always precompute CRC scores at build time
+        cfg.payload_schemas = {
+            {0, "id",      DType::INT64,  false},
+            {1, "caption", DType::STRING, false},
+        };
 
-    PayloadFn payload_fn = [&](uint32_t idx) -> std::vector<Datum> {
-        int64_t id = img_ids.data[idx];
-        auto it = id_to_caption.find(id);
-        std::string cap = (it != id_to_caption.end()) ? it->second : "";
-        return {Datum::Int64(id), Datum::String(std::move(cap))};
-    };
+        PayloadFn payload_fn = [&](uint32_t idx) -> std::vector<Datum> {
+            int64_t id = img_ids.data[idx];
+            auto it = id_to_caption.find(id);
+            std::string cap = (it != id_to_caption.end()) ? it->second : "";
+            return {Datum::Int64(id), Datum::String(std::move(cap))};
+        };
 
-    IvfBuilder builder(cfg);
-    builder.SetProgressCallback([](uint32_t cluster, uint32_t total) {
-        if ((cluster + 1) % 8 == 0 || cluster + 1 == total) {
-            Log("  Build progress: cluster %u/%u\n", cluster + 1, total);
+        IvfBuilder builder(cfg);
+        builder.SetProgressCallback([](uint32_t cluster, uint32_t total) {
+            if ((cluster + 1) % 8 == 0 || cluster + 1 == total) {
+                Log("  Build progress: cluster %u/%u\n", cluster + 1, total);
+            }
+        });
+
+        auto t_build_start = std::chrono::steady_clock::now();
+        Log("  Starting Build...\n");
+        s = builder.Build(img_emb.data.data(), N, dim, index_dir, payload_fn);
+        training_time_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_build_start).count();
+
+        if (!s.ok()) {
+            std::fprintf(stderr, "Build failed: %s\n", s.ToString().c_str());
+            return 1;
         }
-    });
-
-    auto t_build_start = std::chrono::steady_clock::now();
-    Log("  Starting Build...\n");
-    s = builder.Build(img_emb.data.data(), N, dim, index_dir, payload_fn);
-    double training_time_ms = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - t_build_start).count();
-
-    if (!s.ok()) {
-        std::fprintf(stderr, "Build failed: %s\n", s.ToString().c_str());
-        return 1;
+        Log("  Build time: %.1f ms\n", training_time_ms);
+    } else {
+        Log("\n[Phase C] Skipped (using pre-built index: %s)\n", index_dir.c_str());
     }
-    Log("  Build time: %.1f ms\n", training_time_ms);
 
     // ================================================================
     // Phase C.5: Open Index + CRC Calibration (from disk)
@@ -890,13 +899,14 @@ int main(int argc, char* argv[]) {
         f << "  " << JInt("num_queries", Q) << ",\n";
         f << "  " << JInt("dimension", dim) << ",\n";
         f << "  \"build_config\": {\n";
-        f << "    " << JInt("nlist", cfg.nlist) << ",\n";
-        f << "    " << JInt("max_iterations", cfg.max_iterations) << ",\n";
-        f << "    " << JInt("seed", static_cast<int64_t>(cfg.seed)) << ",\n";
-        f << "    " << JInt("rabitq_bits", cfg.rabitq.bits) << ",\n";
-        f << "    " << JInt("rabitq_block_size", cfg.rabitq.block_size) << ",\n";
-        f << "    " << JNum("rabitq_c_factor", cfg.rabitq.c_factor) << ",\n";
-        f << "    " << JInt("page_size", cfg.page_size) << "\n";
+        f << "    " << JInt("nlist", arg_nlist) << ",\n";
+        f << "    " << JInt("max_iterations", arg_max_iter) << ",\n";
+        f << "    " << JInt("seed", arg_seed) << ",\n";
+        f << "    " << JInt("rabitq_bits", arg_bits) << ",\n";
+        f << "    " << JInt("rabitq_block_size", arg_block_size) << ",\n";
+        f << "    " << JNum("rabitq_c_factor", arg_c_factor) << ",\n";
+        f << "    " << JInt("page_size", arg_page_size) << ",\n";
+        f << "    " << JStr("index_dir", arg_index_dir) << "\n";
         f << "  },\n";
         f << "  \"search_config\": {\n";
         f << "    " << JInt("top_k", search_cfg.top_k) << ",\n";

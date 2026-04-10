@@ -9,6 +9,10 @@
 #include <numeric>
 #include <random>
 
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
 #include "superkmeans/superkmeans.h"
 #include "superkmeans/hierarchical_superkmeans.h"
 
@@ -217,75 +221,109 @@ static float CalibrateEpsilonIp(
     float d_k,
     uint8_t bits = 1) {
 
-    rabitq::RaBitQEstimator estimator(dim, bits);
     const uint32_t packed_sz = storage::FastScanPackedSize(dim);
 
     // Truncation: only sample pairs with true_dist in [lo, hi] around d_k
     const float lo = 0.1f * d_k;
     const float hi = 10.0f * d_k;
 
-    std::vector<float> normalized_errors;
-    std::vector<uint8_t> packed_codes(packed_sz, 0);
+    // Thread-local error vectors (merged at the end).
+    // Avoids contention on a shared vector::push_back and matches the pattern
+    // used by eps-calibration-simd in bench_vector_search.
+#ifdef _OPENMP
+    const int nt = omp_get_max_threads();
+#else
+    const int nt = 1;
+#endif
+    std::vector<std::vector<float>> tl_errors(nt);
 
-    for (uint32_t k = 0; k < K; ++k) {
-        const auto& members = cluster_members[k];
-        const auto& codes = all_codes[k];
-        const uint32_t n_members = static_cast<uint32_t>(members.size());
-        if (n_members < 2) continue;
+#pragma omp parallel
+    {
+#ifdef _OPENMP
+        int tid = omp_get_thread_num();
+#else
+        int tid = 0;
+#endif
+        auto& local_errors = tl_errors[tid];
+        local_errors.reserve(max_samples_per_cluster * 300);
 
-        uint32_t n_queries = max_samples_per_cluster;
-        if (n_members < 2 * max_samples_per_cluster) {
-            n_queries = std::max(n_members / 2, 1u);
-        }
-        n_queries = std::min(n_queries, n_members);
+        // Per-thread estimator and packed_codes buffer (no false sharing,
+        // no per-iteration malloc in the hot loop).
+        rabitq::RaBitQEstimator estimator(dim, bits);
+        std::vector<uint8_t> packed_codes(packed_sz, 0);
 
-        std::vector<uint32_t> indices(n_members);
-        std::iota(indices.begin(), indices.end(), 0u);
-        std::mt19937 rng(seed + k);
-        std::shuffle(indices.begin(), indices.end(), rng);
+#pragma omp for schedule(dynamic, 16)
+        for (int k = 0; k < static_cast<int>(K); ++k) {
+            const auto& members = cluster_members[static_cast<size_t>(k)];
+            const auto& codes = all_codes[static_cast<size_t>(k)];
+            const uint32_t n_members = static_cast<uint32_t>(members.size());
+            if (n_members < 2) continue;
 
-        const float* centroid = centroids + static_cast<size_t>(k) * dim;
+            uint32_t n_queries = max_samples_per_cluster;
+            if (n_members < 2 * max_samples_per_cluster) {
+                n_queries = std::max(n_members / 2, 1u);
+            }
+            n_queries = std::min(n_queries, n_members);
 
-        for (uint32_t q = 0; q < n_queries; ++q) {
-            const uint32_t q_idx = indices[q];
-            const float* query = vectors +
-                static_cast<size_t>(members[q_idx]) * dim;
+            std::vector<uint32_t> indices(n_members);
+            std::iota(indices.begin(), indices.end(), 0u);
+            std::mt19937 rng(seed + static_cast<uint32_t>(k));
+            std::shuffle(indices.begin(), indices.end(), rng);
 
-            auto pq = estimator.PrepareQuery(query, centroid, rotation);
+            const float* centroid = centroids +
+                static_cast<size_t>(k) * dim;
 
-            for (uint32_t t_base = 0; t_base < n_members; t_base += 32) {
-                uint32_t block_count = std::min(32u, n_members - t_base);
+            for (uint32_t q = 0; q < n_queries; ++q) {
+                const uint32_t q_idx = indices[q];
+                const float* query = vectors +
+                    static_cast<size_t>(members[q_idx]) * dim;
 
-                storage::PackSignBitsForFastScan(
-                    &codes[t_base], block_count, dim, packed_codes.data());
+                auto pq = estimator.PrepareQuery(query, centroid, rotation);
 
-                float block_norms[32] = {};
-                for (uint32_t j = 0; j < block_count; ++j)
-                    block_norms[j] = codes[t_base + j].norm;
+                for (uint32_t t_base = 0; t_base < n_members; t_base += 32) {
+                    uint32_t block_count = std::min(32u, n_members - t_base);
 
-                alignas(64) float fs_dists[32];
-                estimator.EstimateDistanceFastScan(
-                    pq, packed_codes.data(), block_norms, block_count, fs_dists);
+                    storage::PackSignBitsForFastScan(
+                        &codes[t_base], block_count, dim, packed_codes.data());
 
-                for (uint32_t j = 0; j < block_count; ++j) {
-                    uint32_t t = t_base + j;
-                    if (t == q_idx) continue;
+                    float block_norms[32] = {};
+                    for (uint32_t j = 0; j < block_count; ++j)
+                        block_norms[j] = codes[t_base + j].norm;
 
-                    uint32_t global_id = members[t];
-                    float true_dist = simd::L2Sqr(
-                        query, vectors + static_cast<size_t>(global_id) * dim, dim);
+                    alignas(64) float fs_dists[32];
+                    estimator.EstimateDistanceFastScan(
+                        pq, packed_codes.data(), block_norms, block_count, fs_dists);
 
-                    // Truncate: skip pairs far from decision boundary
-                    if (true_dist < lo || true_dist > hi) continue;
+                    for (uint32_t j = 0; j < block_count; ++j) {
+                        uint32_t t = t_base + j;
+                        if (t == q_idx) continue;
 
-                    float dist_err = std::abs(fs_dists[j] - true_dist);
-                    float denom = 2.0f * block_norms[j] * pq.norm_qc;
-                    if (denom > 1e-10f) {
-                        normalized_errors.push_back(dist_err / denom);
+                        uint32_t global_id = members[t];
+                        float true_dist = simd::L2Sqr(
+                            query, vectors + static_cast<size_t>(global_id) * dim, dim);
+
+                        // Truncate: skip pairs far from decision boundary
+                        if (true_dist < lo || true_dist > hi) continue;
+
+                        float dist_err = std::abs(fs_dists[j] - true_dist);
+                        float denom = 2.0f * block_norms[j] * pq.norm_qc;
+                        if (denom > 1e-10f) {
+                            local_errors.push_back(dist_err / denom);
+                        }
                     }
                 }
             }
         }
+    }
+
+    // Merge thread-local error vectors.
+    std::vector<float> normalized_errors;
+    {
+        size_t total = 0;
+        for (const auto& v : tl_errors) total += v.size();
+        normalized_errors.reserve(total);
+        for (auto& v : tl_errors)
+            normalized_errors.insert(normalized_errors.end(), v.begin(), v.end());
     }
 
     if (normalized_errors.empty()) return 0.0f;
@@ -310,10 +348,38 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     std::filesystem::create_directories(output_dir);
 
     // --- Generate rotation matrix ---
+    // Prefer Hadamard rotation when dim is a power of 2 (O(L log L) Apply via
+    // FWHT). Falls back to random Gaussian QR for non-power-of-2 dims.
+    // Matches the selection strategy in bench_vector_search and aligns
+    // bench_e2e recall with the direct-memory benchmark.
     rabitq::RotationMatrix rotation(dim);
-    rotation.GenerateRandom(config_.seed);
+    bool used_hadamard = (dim > 0 && (dim & (dim - 1)) == 0)
+                       && rotation.GenerateHadamard(config_.seed,
+                                                     /*use_fast_transform=*/true);
+    if (!used_hadamard) {
+        rotation.GenerateRandom(config_.seed);
+    }
     auto s = rotation.Save(output_dir + "/rotation.bin");
     if (!s.ok()) return s;
+
+    // --- Phase 2.1: Write rotated_centroids.bin (Hadamard path only) ---
+    if (used_hadamard) {
+        const std::string rc_path = output_dir + "/rotated_centroids.bin";
+        std::vector<float> rot_cents(static_cast<size_t>(K) * dim);
+        for (uint32_t k = 0; k < K; ++k) {
+            const float* c = centroids_.data() + static_cast<size_t>(k) * dim;
+            rotation.Apply(c, rot_cents.data() + static_cast<size_t>(k) * dim);
+        }
+        std::ofstream rc_file(rc_path, std::ios::binary);
+        if (!rc_file.is_open()) {
+            return Status::IOError("Failed to create rotated_centroids.bin: " + rc_path);
+        }
+        rc_file.write(reinterpret_cast<const char*>(rot_cents.data()),
+                      static_cast<std::streamsize>(K) * dim * sizeof(float));
+        if (!rc_file.good()) {
+            return Status::IOError("Failed to write rotated_centroids.bin");
+        }
+    }
 
     // --- Write centroids.bin ---
     {
@@ -472,7 +538,9 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         calibrated_dk_,                  // d_k
         config_.calibration_samples,     // calibration_samples
         config_.calibration_topk,        // calibration_topk
-        config_.calibration_percentile   // calibration_percentile
+        config_.calibration_percentile,  // calibration_percentile
+        calibrated_eps_ip_,              // eps_ip_fs (same as epsilon; explicit FastScan label)
+        used_hadamard                    // has_rotated_centroids
     );
 
     // ClusterMeta array — per-cluster info from the lookup table

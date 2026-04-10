@@ -6,12 +6,14 @@
 
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
+#include "vdb/index/cluster_prober.h"
 #include "vdb/index/ivf_index.h"
 #include "vdb/query/async_reader.h"
 #include "vdb/query/buffer_pool.h"
 #include "vdb/query/parsed_cluster.h"
 #include "vdb/query/search_context.h"
 #include "vdb/query/search_results.h"
+#include "vdb/rabitq/rabitq_estimator.h"
 
 namespace vdb {
 namespace query {
@@ -61,6 +63,11 @@ class OverlapScheduler {
     SearchResults AssembleResults(class RerankConsumer& reranker,
                                   const std::vector<CollectorEntry>& results);
 
+    // AsyncIOSink: ProbeResultSink implementation that submits io_uring reads
+    // and maintains est_heap_. Defined in overlap_scheduler.cpp; declared here
+    // so ProbeCluster can instantiate it without exposing internals.
+    class AsyncIOSink;
+
     index::IvfIndex& index_;
     AsyncReader& reader_;
     SearchConfig config_;
@@ -83,6 +90,13 @@ class OverlapScheduler {
     // Stage 2 ExRaBitQ re-classification
     float margin_s2_divisor_ = 1.0f;  // 2^(bits-1), precomputed
     bool has_s2_ = false;             // true when bits > 1
+
+    // Phase 3: per-query estimator for PrepareQueryInto, ClusterProber for
+    // FastScan classification, and reusable PreparedQuery buffer.
+    rabitq::RaBitQEstimator estimator_;  // for PrepareQueryInto in ProbeCluster
+    index::ClusterProber prober_;
+    rabitq::PreparedQuery pq_;           // reused across ProbeCluster calls (avoids alloc)
+    std::vector<float> rotated_q_;       // P^T × query, computed once per Search() (Hadamard)
 };
 
 }  // namespace query

@@ -144,6 +144,10 @@ table ConANNParams {
     calibration_samples: uint32;     // 校准时采样 query 数量
     calibration_topk: uint32;        // 校准时 top-k 的 k
     calibration_percentile: float;   // d_k 取的分位数
+
+    // Phase 2 新增: FastScan 专用 epsilon + rotated centroids 标志
+    eps_ip_fs: float;                // ε_ip FastScan 校准值 (同 epsilon, 显式标注来源)
+    has_rotated_centroids: bool = false;  // true 当且仅当 rotated_centroids.bin 已写入
 }
 
 // ============================================================

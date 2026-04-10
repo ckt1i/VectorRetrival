@@ -112,6 +112,11 @@ class RaBitQEstimator {
     ///
     /// Uses only the first words_per_plane words of the code (MSB plane).
     /// Result is identical regardless of M — always uses 1-bit approximation.
+    ///
+    /// @deprecated Production query path uses EstimateDistanceFastScan (FastScan SIMD).
+    ///             This popcount path is retained for diagnostic benchmarks and
+    ///             the frozen bench_vector_search_inline reference.
+    [[deprecated("Use EstimateDistanceFastScan for production paths")]]
     float EstimateDistance(const PreparedQuery& pq,
                            const RaBitQCode& code) const;
 
@@ -120,6 +125,9 @@ class RaBitQEstimator {
                                     const RaBitQCode& code) const;
 
     /// Batch estimate using Stage 1 (fast popcount path).
+    ///
+    /// @deprecated Use EstimateDistanceFastScan for production batch estimation.
+    [[deprecated("Use EstimateDistanceFastScan for production paths")]]
     void EstimateDistanceBatch(const PreparedQuery& pq,
                                 const RaBitQCode* codes,
                                 uint32_t n,
