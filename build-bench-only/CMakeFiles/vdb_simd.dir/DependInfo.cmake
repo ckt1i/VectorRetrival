@@ -11,9 +11,11 @@ set(CMAKE_DEPENDS_DEPENDENCY_FILES
   "/home/zcq/VDB/VectorRetrival/src/simd/bit_unpack.cpp" "CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/distance_l2.cpp" "CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/fastscan.cpp" "CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o.d"
+  "/home/zcq/VDB/VectorRetrival/src/simd/hadamard.cpp" "CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/ip_exrabitq.cpp" "CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/popcount.cpp" "CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/prefix_sum.cpp" "CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o.d"
+  "/home/zcq/VDB/VectorRetrival/src/simd/signed_dot.cpp" "CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o.d"
   "/home/zcq/VDB/VectorRetrival/src/simd/transpose.cpp" "CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o" "gcc" "CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o.d"
   )
 

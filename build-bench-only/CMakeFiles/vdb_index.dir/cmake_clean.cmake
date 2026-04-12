@@ -1,4 +1,6 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o"
+  "CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o.d"
   "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o"
   "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o.d"
   "CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"

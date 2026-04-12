@@ -1,2 +1,2 @@
-/usr/bin/ar qc libvdb_query.a CMakeFiles/vdb_query.dir/src/common/distance.cpp.o CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o
-/usr/bin/ranlib libvdb_query.a
+"/usr/bin/gcc-ar-13" cr libvdb_query.a CMakeFiles/vdb_query.dir/src/common/distance.cpp.o CMakeFiles/vdb_query.dir/src/query/pread_fallback_reader.cpp.o CMakeFiles/vdb_query.dir/src/query/io_uring_reader.cpp.o CMakeFiles/vdb_query.dir/src/query/result_collector.cpp.o CMakeFiles/vdb_query.dir/src/query/rerank_consumer.cpp.o CMakeFiles/vdb_query.dir/src/query/overlap_scheduler.cpp.o CMakeFiles/vdb_query.dir/src/query/buffer_pool.cpp.o
+"/usr/bin/gcc-ranlib-13" libvdb_query.a

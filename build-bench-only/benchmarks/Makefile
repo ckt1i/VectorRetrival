@@ -273,6 +273,20 @@ bench_vector_search/fast:
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/build
 .PHONY : bench_vector_search/fast
 
+# Convenience name for target.
+benchmarks/CMakeFiles/bench_vector_search_inline.dir/rule:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 benchmarks/CMakeFiles/bench_vector_search_inline.dir/rule
+.PHONY : benchmarks/CMakeFiles/bench_vector_search_inline.dir/rule
+
+# Convenience name for target.
+bench_vector_search_inline: benchmarks/CMakeFiles/bench_vector_search_inline.dir/rule
+.PHONY : bench_vector_search_inline
+
+# fast build rule for target.
+bench_vector_search_inline/fast:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search_inline.dir/build.make benchmarks/CMakeFiles/bench_vector_search_inline.dir/build
+.PHONY : bench_vector_search_inline/fast
+
 bench_conann_crc.o: bench_conann_crc.cpp.o
 .PHONY : bench_conann_crc.o
 
@@ -465,6 +479,30 @@ bench_vector_search.cpp.s:
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/bench_vector_search.cpp.s
 .PHONY : bench_vector_search.cpp.s
 
+bench_vector_search_inline.o: bench_vector_search_inline.cpp.o
+.PHONY : bench_vector_search_inline.o
+
+# target to build an object file
+bench_vector_search_inline.cpp.o:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search_inline.dir/build.make benchmarks/CMakeFiles/bench_vector_search_inline.dir/bench_vector_search_inline.cpp.o
+.PHONY : bench_vector_search_inline.cpp.o
+
+bench_vector_search_inline.i: bench_vector_search_inline.cpp.i
+.PHONY : bench_vector_search_inline.i
+
+# target to preprocess a source file
+bench_vector_search_inline.cpp.i:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search_inline.dir/build.make benchmarks/CMakeFiles/bench_vector_search_inline.dir/bench_vector_search_inline.cpp.i
+.PHONY : bench_vector_search_inline.cpp.i
+
+bench_vector_search_inline.s: bench_vector_search_inline.cpp.s
+.PHONY : bench_vector_search_inline.s
+
+# target to generate assembly for a file
+bench_vector_search_inline.cpp.s:
+	cd /home/zcq/VDB/VectorRetrival/build-bench-only && $(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search_inline.dir/build.make benchmarks/CMakeFiles/bench_vector_search_inline.dir/bench_vector_search_inline.cpp.s
+.PHONY : bench_vector_search_inline.cpp.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -485,6 +523,7 @@ help:
 	@echo "... bench_rabitq_accuracy"
 	@echo "... bench_rabitq_diagnostic"
 	@echo "... bench_vector_search"
+	@echo "... bench_vector_search_inline"
 	@echo "... bench_conann_crc.o"
 	@echo "... bench_conann_crc.i"
 	@echo "... bench_conann_crc.s"
@@ -509,6 +548,9 @@ help:
 	@echo "... bench_vector_search.o"
 	@echo "... bench_vector_search.i"
 	@echo "... bench_vector_search.s"
+	@echo "... bench_vector_search_inline.o"
+	@echo "... bench_vector_search_inline.i"
+	@echo "... bench_vector_search_inline.s"
 .PHONY : help
 
 

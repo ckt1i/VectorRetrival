@@ -159,14 +159,22 @@ void OverlapScheduler::DispatchCompletion(
             // Do NOT Release to BufferPool — ownership moved to ParsedCluster
             break;
         }
-        case PendingIO::Type::VEC_ONLY:
+        case PendingIO::Type::VEC_ONLY: {
+            auto t_rerank_start = std::chrono::steady_clock::now();
             reranker.ConsumeVec(buf, io.addr);
+            ctx.stats().rerank_cpu_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_rerank_start).count();
             buffer_pool_.Release(buf);
             break;
-        case PendingIO::Type::VEC_ALL:
+        }
+        case PendingIO::Type::VEC_ALL: {
+            auto t_rerank_start = std::chrono::steady_clock::now();
             reranker.ConsumeAll(buf, io.addr);
+            ctx.stats().rerank_cpu_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_rerank_start).count();
             buffer_pool_.Release(buf);
             break;
+        }
         case PendingIO::Type::PAYLOAD:
             reranker.ConsumePayload(buf, io.addr);
             // ConsumePayload takes ownership — don't release

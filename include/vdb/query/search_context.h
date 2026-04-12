@@ -45,6 +45,7 @@ struct SearchStats {
     uint32_t crc_clusters_probed = 0;
     double probe_time_ms = 0;
     double rerank_time_ms = 0;
+    double rerank_cpu_ms = 0;
     double total_time_ms = 0;
     double io_wait_time_ms = 0;
     // Stage 2 (ExRaBitQ re-classification, only when bits > 1)

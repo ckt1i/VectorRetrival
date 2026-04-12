@@ -1,2 +1,2 @@
-/usr/bin/ar qc libvdb_index.a CMakeFiles/vdb_index.dir/src/index/conann.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o
-/usr/bin/ranlib libvdb_index.a
+"/usr/bin/gcc-ar-13" cr libvdb_index.a CMakeFiles/vdb_index.dir/src/index/conann.cpp.o CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o
+"/usr/bin/gcc-ranlib-13" libvdb_index.a

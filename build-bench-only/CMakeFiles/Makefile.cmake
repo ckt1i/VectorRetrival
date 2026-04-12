@@ -47,6 +47,10 @@ set(CMAKE_MAKEFILE_DEPENDS
   "/usr/share/cmake-3.28/Modules/CheckCXXSourceCompiles.cmake"
   "/usr/share/cmake-3.28/Modules/CheckCXXSymbolExists.cmake"
   "/usr/share/cmake-3.28/Modules/CheckFunctionExists.cmake"
+  "/usr/share/cmake-3.28/Modules/CheckIPOSupported.cmake"
+  "/usr/share/cmake-3.28/Modules/CheckIPOSupported/CMakeLists-CXX.txt.in"
+  "/usr/share/cmake-3.28/Modules/CheckIPOSupported/foo.cpp"
+  "/usr/share/cmake-3.28/Modules/CheckIPOSupported/main.cpp"
   "/usr/share/cmake-3.28/Modules/CheckIncludeFile.cmake"
   "/usr/share/cmake-3.28/Modules/CheckIncludeFileCXX.cmake"
   "/usr/share/cmake-3.28/Modules/CheckLibraryExists.cmake"
@@ -93,6 +97,9 @@ set(CMAKE_MAKEFILE_OUTPUTS
 
 # Byproducts of CMake generate step:
 set(CMAKE_MAKEFILE_PRODUCTS
+  "CMakeFiles/_CMakeLTOTest-CXX/src/CMakeLists.txt"
+  "CMakeFiles/_CMakeLTOTest-CXX/src/foo.cpp"
+  "CMakeFiles/_CMakeLTOTest-CXX/src/main.cpp"
   "_deps/flatbuffers-subbuild/CMakeLists.txt"
   "_deps/googletest-subbuild/CMakeLists.txt"
   "CMakeFiles/CMakeDirectoryInformation.cmake"
@@ -165,4 +172,5 @@ set(CMAKE_DEPEND_INFO_FILES
   "benchmarks/CMakeFiles/bench_crc_overlap.dir/DependInfo.cmake"
   "benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir/DependInfo.cmake"
   "benchmarks/CMakeFiles/bench_vector_search.dir/DependInfo.cmake"
+  "benchmarks/CMakeFiles/bench_vector_search_inline.dir/DependInfo.cmake"
   )

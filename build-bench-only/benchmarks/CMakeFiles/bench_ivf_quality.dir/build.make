@@ -98,8 +98,6 @@ benchmarks/bench_ivf_quality: libvdb_columns.a
 benchmarks/bench_ivf_quality: libvdb_codec.a
 benchmarks/bench_ivf_quality: _deps/flatbuffers-build/libflatbuffers.a
 benchmarks/bench_ivf_quality: libvdb_io.a
-benchmarks/bench_ivf_quality: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
-benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libpthread.a
 benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_intel_lp64.so
 benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_intel_thread.so
 benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libmkl_core.so
@@ -109,6 +107,8 @@ benchmarks/bench_ivf_quality: libvdb_rabitq.a
 benchmarks/bench_ivf_quality: libvdb_simd.a
 benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libgsl.so
 benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libgslcblas.so
+benchmarks/bench_ivf_quality: /usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so
+benchmarks/bench_ivf_quality: /usr/lib/x86_64-linux-gnu/libpthread.a
 benchmarks/bench_ivf_quality: benchmarks/CMakeFiles/bench_ivf_quality.dir/link.txt
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Linking CXX executable bench_ivf_quality"
 	cd /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks && $(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/bench_ivf_quality.dir/link.txt --verbose=$(VERBOSE)

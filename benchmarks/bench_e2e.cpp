@@ -228,6 +228,7 @@ struct QueryResult {
     double query_time_ms;
     double io_wait_ms;
     double probe_time_ms;
+    double rerank_cpu_ms = 0;
     bool early_stopped;
     uint32_t clusters_skipped;
     uint32_t total_probed;
@@ -252,6 +253,7 @@ struct RoundMetrics {
     double avg_io_wait = 0;
     double avg_cpu = 0;
     double avg_probe = 0;
+    double avg_rerank_cpu = 0;
     double avg_probed = 0;
     double avg_safe_in = 0;
     double avg_safe_out = 0;
@@ -294,6 +296,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.query_time_ms = results.stats().total_time_ms;
         qr.io_wait_ms = results.stats().io_wait_time_ms;
         qr.probe_time_ms = results.stats().probe_time_ms;
+        qr.rerank_cpu_ms = results.stats().rerank_cpu_ms;
         qr.early_stopped = results.stats().early_stopped;
         qr.clusters_skipped = results.stats().clusters_skipped;
         qr.total_probed = results.stats().total_probed;
@@ -358,7 +361,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_probed = 0, sum_si = 0, sum_so = 0, sum_unc = 0;
     double sum_s2_si = 0, sum_s2_so = 0, sum_s2_unc = 0;
     double sum_false_so = 0, sum_false_si = 0;
-    double sum_io_wait = 0, sum_probe = 0, sum_total = 0;
+    double sum_io_wait = 0, sum_probe = 0, sum_rerank_cpu = 0, sum_total = 0;
     uint32_t early_count = 0;
     double sum_skipped = 0;
     for (uint32_t qi = 0; qi < Q; ++qi) {
@@ -373,6 +376,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_false_si += qresults[qi].false_safein_upper;
         sum_io_wait += qresults[qi].io_wait_ms;
         sum_probe += qresults[qi].probe_time_ms;
+        sum_rerank_cpu += qresults[qi].rerank_cpu_ms;
         sum_total += qresults[qi].query_time_ms;
         if (qresults[qi].early_stopped) {
             early_count++;
@@ -383,6 +387,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_io_wait = sum_io_wait / Q;
     m.avg_cpu = (sum_total - sum_io_wait) / Q;
     m.avg_probe = sum_probe / Q;
+    m.avg_rerank_cpu = sum_rerank_cpu / Q;
     m.avg_probed = sum_probed / Q;
     m.avg_safe_in = sum_si / Q;
     m.avg_safe_out = sum_so / Q;
@@ -401,8 +406,8 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         m.recall_at[0], m.recall_at[1], m.recall_at[2]);
     Log("  %s: avg=%.3f ms  p50=%.3f  p95=%.3f  p99=%.3f\n", label,
         m.avg_query_ms, m.p50, m.p95, m.p99);
-    Log("  %s: io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n", label,
-        m.avg_io_wait, m.avg_cpu, m.avg_probe);
+    Log("  %s: io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms  rerank_cpu=%.3f ms\n", label,
+        m.avg_io_wait, m.avg_cpu, m.avg_probe, m.avg_rerank_cpu);
     Log("  %s: safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n", label,
         m.avg_safe_in, m.avg_safe_out, m.avg_uncertain);
     Log("  %s: s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n", label,
@@ -851,6 +856,9 @@ int main(int argc, char* argv[]) {
         Log("║  avg_probe (ms)      │ %11.3f │ %11.3f │%+.0f%%║\n",
             metrics.avg_probe, cold_metrics.avg_probe,
             (cold_metrics.avg_probe / std::max(metrics.avg_probe, 0.001) - 1.0) * 100);
+        Log("║  avg_rerank_cpu (ms) │ %11.3f │ %11.3f │%+.0f%%║\n",
+            metrics.avg_rerank_cpu, cold_metrics.avg_rerank_cpu,
+            (cold_metrics.avg_rerank_cpu / std::max(metrics.avg_rerank_cpu, 0.001) - 1.0) * 100);
         Log("║  p99 (ms)            │ %11.3f │ %11.3f │%+.0f%%║\n",
             metrics.p99, cold_metrics.p99,
             (cold_metrics.p99 / std::max(metrics.p99, 0.001) - 1.0) * 100);
@@ -886,6 +894,7 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase F: Output JSON
     // ================================================================
+    fs::create_directories(output_dir);  // ensure output_dir exists (needed when --index-dir is used)
     Log("\n[Phase F] Writing results to %s\n", output_dir.c_str());
 
     // config.json
@@ -957,6 +966,7 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_io_wait_ms", metrics.avg_io_wait) << ",\n";
         f << "    " << JNum("avg_cpu_time_ms", metrics.avg_cpu) << ",\n";
         f << "    " << JNum("avg_probe_time_ms", metrics.avg_probe) << ",\n";
+        f << "    " << JNum("avg_rerank_cpu_ms", metrics.avg_rerank_cpu) << ",\n";
         f << "    " << JNum("early_stopped_pct", metrics.early_pct) << ",\n";
         f << "    " << JNum("avg_clusters_skipped", metrics.avg_skipped) << ",\n";
         f << "    " << JNum("overlap_ratio", metrics.overlap_ratio) << "\n";

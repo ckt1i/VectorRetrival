@@ -6,5 +6,5 @@ CXX_DEFINES = -DVDB_USE_AVX2=1 -DVDB_USE_AVX512=1
 
 CXX_INCLUDES = -I/home/zcq/VDB/VectorRetrival/include
 
-CXX_FLAGS =  -Wall -Wextra -Wpedantic -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512vpopcntdq -mavx2 -mfma -O3 -DNDEBUG -std=gnu++17
+CXX_FLAGS =  -Wall -Wextra -Wpedantic -march=icelake-server -mtune=icelake-server -O3 -DNDEBUG -funroll-loops -fno-math-errno -std=gnu++17 -flto=auto -fno-fat-lto-objects -fopenmp
 

@@ -837,6 +837,19 @@ bench_vector_search/fast:
 	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search.dir/build.make benchmarks/CMakeFiles/bench_vector_search.dir/build
 .PHONY : bench_vector_search/fast
 
+#=============================================================================
+# Target rules for targets named bench_vector_search_inline
+
+# Build rule for target.
+bench_vector_search_inline: cmake_check_build_system
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/Makefile2 bench_vector_search_inline
+.PHONY : bench_vector_search_inline
+
+# fast build rule for target.
+bench_vector_search_inline/fast:
+	$(MAKE) $(MAKESILENT) -f benchmarks/CMakeFiles/bench_vector_search_inline.dir/build.make benchmarks/CMakeFiles/bench_vector_search_inline.dir/build
+.PHONY : bench_vector_search_inline/fast
+
 src/codec/bitpack_codec.o: src/codec/bitpack_codec.cpp.o
 .PHONY : src/codec/bitpack_codec.o
 
@@ -980,6 +993,30 @@ src/common/distance.s: src/common/distance.cpp.s
 src/common/distance.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_query.dir/build.make CMakeFiles/vdb_query.dir/src/common/distance.cpp.s
 .PHONY : src/common/distance.cpp.s
+
+src/index/cluster_prober.o: src/index/cluster_prober.cpp.o
+.PHONY : src/index/cluster_prober.o
+
+# target to build an object file
+src/index/cluster_prober.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o
+.PHONY : src/index/cluster_prober.cpp.o
+
+src/index/cluster_prober.i: src/index/cluster_prober.cpp.i
+.PHONY : src/index/cluster_prober.i
+
+# target to preprocess a source file
+src/index/cluster_prober.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.i
+.PHONY : src/index/cluster_prober.cpp.i
+
+src/index/cluster_prober.s: src/index/cluster_prober.cpp.s
+.PHONY : src/index/cluster_prober.s
+
+# target to generate assembly for a file
+src/index/cluster_prober.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_index.dir/build.make CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.s
+.PHONY : src/index/cluster_prober.cpp.s
 
 src/index/conann.o: src/index/conann.cpp.o
 .PHONY : src/index/conann.o
@@ -1437,6 +1474,30 @@ src/simd/fastscan.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.s
 .PHONY : src/simd/fastscan.cpp.s
 
+src/simd/hadamard.o: src/simd/hadamard.cpp.o
+.PHONY : src/simd/hadamard.o
+
+# target to build an object file
+src/simd/hadamard.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o
+.PHONY : src/simd/hadamard.cpp.o
+
+src/simd/hadamard.i: src/simd/hadamard.cpp.i
+.PHONY : src/simd/hadamard.i
+
+# target to preprocess a source file
+src/simd/hadamard.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.i
+.PHONY : src/simd/hadamard.cpp.i
+
+src/simd/hadamard.s: src/simd/hadamard.cpp.s
+.PHONY : src/simd/hadamard.s
+
+# target to generate assembly for a file
+src/simd/hadamard.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.s
+.PHONY : src/simd/hadamard.cpp.s
+
 src/simd/ip_exrabitq.o: src/simd/ip_exrabitq.cpp.o
 .PHONY : src/simd/ip_exrabitq.o
 
@@ -1508,6 +1569,30 @@ src/simd/prefix_sum.s: src/simd/prefix_sum.cpp.s
 src/simd/prefix_sum.cpp.s:
 	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.s
 .PHONY : src/simd/prefix_sum.cpp.s
+
+src/simd/signed_dot.o: src/simd/signed_dot.cpp.o
+.PHONY : src/simd/signed_dot.o
+
+# target to build an object file
+src/simd/signed_dot.cpp.o:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o
+.PHONY : src/simd/signed_dot.cpp.o
+
+src/simd/signed_dot.i: src/simd/signed_dot.cpp.i
+.PHONY : src/simd/signed_dot.i
+
+# target to preprocess a source file
+src/simd/signed_dot.cpp.i:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.i
+.PHONY : src/simd/signed_dot.cpp.i
+
+src/simd/signed_dot.s: src/simd/signed_dot.cpp.s
+.PHONY : src/simd/signed_dot.s
+
+# target to generate assembly for a file
+src/simd/signed_dot.cpp.s:
+	$(MAKE) $(MAKESILENT) -f CMakeFiles/vdb_simd.dir/build.make CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.s
+.PHONY : src/simd/signed_dot.cpp.s
 
 src/simd/transpose.o: src/simd/transpose.cpp.o
 .PHONY : src/simd/transpose.o
@@ -1726,6 +1811,7 @@ help:
 	@echo "... bench_rabitq_accuracy"
 	@echo "... bench_rabitq_diagnostic"
 	@echo "... bench_vector_search"
+	@echo "... bench_vector_search_inline"
 	@echo "... flatbuffers"
 	@echo "... flatc"
 	@echo "... gmock"
@@ -1759,6 +1845,9 @@ help:
 	@echo "... src/common/distance.o"
 	@echo "... src/common/distance.i"
 	@echo "... src/common/distance.s"
+	@echo "... src/index/cluster_prober.o"
+	@echo "... src/index/cluster_prober.i"
+	@echo "... src/index/cluster_prober.s"
 	@echo "... src/index/conann.o"
 	@echo "... src/index/conann.i"
 	@echo "... src/index/conann.s"
@@ -1816,6 +1905,9 @@ help:
 	@echo "... src/simd/fastscan.o"
 	@echo "... src/simd/fastscan.i"
 	@echo "... src/simd/fastscan.s"
+	@echo "... src/simd/hadamard.o"
+	@echo "... src/simd/hadamard.i"
+	@echo "... src/simd/hadamard.s"
 	@echo "... src/simd/ip_exrabitq.o"
 	@echo "... src/simd/ip_exrabitq.i"
 	@echo "... src/simd/ip_exrabitq.s"
@@ -1825,6 +1917,9 @@ help:
 	@echo "... src/simd/prefix_sum.o"
 	@echo "... src/simd/prefix_sum.i"
 	@echo "... src/simd/prefix_sum.s"
+	@echo "... src/simd/signed_dot.o"
+	@echo "... src/simd/signed_dot.i"
+	@echo "... src/simd/signed_dot.s"
 	@echo "... src/simd/transpose.o"
 	@echo "... src/simd/transpose.i"
 	@echo "... src/simd/transpose.s"

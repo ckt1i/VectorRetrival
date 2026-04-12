@@ -86,6 +86,7 @@
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_crc_overlap.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_rabitq_diagnostic.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_vector_search.dir
+/home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/bench_vector_search_inline.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/edit_cache.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/rebuild_cache.dir
 /home/zcq/VDB/VectorRetrival/build-bench-only/benchmarks/CMakeFiles/list_install_components.dir

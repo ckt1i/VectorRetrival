@@ -167,6 +167,34 @@ CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/simd/fastscan.cpp -o CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.s
 
+CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o: CMakeFiles/vdb_simd.dir/flags.make
+CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o: /home/zcq/VDB/VectorRetrival/src/simd/hadamard.cpp
+CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o: CMakeFiles/vdb_simd.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building CXX object CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o -MF CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o.d -o CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/hadamard.cpp
+
+CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zcq/VDB/VectorRetrival/src/simd/hadamard.cpp > CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.i
+
+CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/simd/hadamard.cpp -o CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.s
+
+CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o: CMakeFiles/vdb_simd.dir/flags.make
+CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o: /home/zcq/VDB/VectorRetrival/src/simd/signed_dot.cpp
+CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o: CMakeFiles/vdb_simd.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Building CXX object CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o -MF CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o.d -o CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o -c /home/zcq/VDB/VectorRetrival/src/simd/signed_dot.cpp
+
+CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zcq/VDB/VectorRetrival/src/simd/signed_dot.cpp > CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.i
+
+CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/simd/signed_dot.cpp -o CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.s
+
 # Object files for target vdb_simd
 vdb_simd_OBJECTS = \
 "CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o" \
@@ -175,7 +203,9 @@ vdb_simd_OBJECTS = \
 "CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o" \
 "CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o" \
 "CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o" \
-"CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o"
+"CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o" \
+"CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o" \
+"CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o"
 
 # External object files for target vdb_simd
 vdb_simd_EXTERNAL_OBJECTS =
@@ -187,9 +217,11 @@ libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o
 libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o
 libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o
 libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o
+libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o
+libvdb_simd.a: CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o
 libvdb_simd.a: CMakeFiles/vdb_simd.dir/build.make
 libvdb_simd.a: CMakeFiles/vdb_simd.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Linking CXX static library libvdb_simd.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_10) "Linking CXX static library libvdb_simd.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/vdb_simd.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/vdb_simd.dir/link.txt --verbose=$(VERBOSE)
 

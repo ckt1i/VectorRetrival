@@ -1,2 +1,2 @@
-/usr/bin/ar qc libvdb_crc.a CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o
-/usr/bin/ranlib libvdb_crc.a
+"/usr/bin/gcc-ar-13" cr libvdb_crc.a CMakeFiles/vdb_crc.dir/src/index/crc_calibrator.cpp.o
+"/usr/bin/gcc-ranlib-13" libvdb_crc.a

@@ -83,10 +83,24 @@ CMakeFiles/vdb_index.dir/src/index/conann.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_index.dir/src/index/conann.cpp.s"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/index/conann.cpp -o CMakeFiles/vdb_index.dir/src/index/conann.cpp.s
 
+CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o: CMakeFiles/vdb_index.dir/flags.make
+CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o: /home/zcq/VDB/VectorRetrival/src/index/cluster_prober.cpp
+CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o: CMakeFiles/vdb_index.dir/compiler_depend.ts
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o -MF CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o.d -o CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/cluster_prober.cpp
+
+CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.i: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Preprocessing CXX source to CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.i"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/zcq/VDB/VectorRetrival/src/index/cluster_prober.cpp > CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.i
+
+CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.s: cmake_force
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green "Compiling CXX source to assembly CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.s"
+	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/zcq/VDB/VectorRetrival/src/index/cluster_prober.cpp -o CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.s
+
 CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: CMakeFiles/vdb_index.dir/flags.make
 CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: /home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp
 CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o: CMakeFiles/vdb_index.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o -MF CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o.d -o CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_index.cpp
 
 CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.i: cmake_force
@@ -100,7 +114,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.s: cmake_force
 CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: CMakeFiles/vdb_index.dir/flags.make
 CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: /home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp
 CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o: CMakeFiles/vdb_index.dir/compiler_depend.ts
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"
 	/usr/bin/c++ $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -MD -MT CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o -MF CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o.d -o CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o -c /home/zcq/VDB/VectorRetrival/src/index/ivf_builder.cpp
 
 CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.i: cmake_force
@@ -114,6 +128,7 @@ CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.s: cmake_force
 # Object files for target vdb_index
 vdb_index_OBJECTS = \
 "CMakeFiles/vdb_index.dir/src/index/conann.cpp.o" \
+"CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o" \
 "CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o" \
 "CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o"
 
@@ -121,11 +136,12 @@ vdb_index_OBJECTS = \
 vdb_index_EXTERNAL_OBJECTS =
 
 libvdb_index.a: CMakeFiles/vdb_index.dir/src/index/conann.cpp.o
+libvdb_index.a: CMakeFiles/vdb_index.dir/src/index/cluster_prober.cpp.o
 libvdb_index.a: CMakeFiles/vdb_index.dir/src/index/ivf_index.cpp.o
 libvdb_index.a: CMakeFiles/vdb_index.dir/src/index/ivf_builder.cpp.o
 libvdb_index.a: CMakeFiles/vdb_index.dir/build.make
 libvdb_index.a: CMakeFiles/vdb_index.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Linking CXX static library libvdb_index.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color "--switch=$(COLOR)" --green --bold --progress-dir=/home/zcq/VDB/VectorRetrival/build-bench-only/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Linking CXX static library libvdb_index.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/vdb_index.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/vdb_index.dir/link.txt --verbose=$(VERBOSE)
 

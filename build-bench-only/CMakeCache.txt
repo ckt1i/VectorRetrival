@@ -540,6 +540,12 @@ VDB_USE_AVX2:BOOL=ON
 //Enable AVX-512 SIMD
 VDB_USE_AVX512:BOOL=ON
 
+//Enable link-time optimization
+VDB_USE_LTO:BOOL=ON
+
+//Enable Intel MKL for BLAS acceleration
+VDB_USE_MKL:BOOL=OFF
+
 //Value Computed by CMake
 gmock_BINARY_DIR:STATIC=/home/zcq/VDB/VectorRetrival/build-bench-only/_deps/googletest-build/googlemock
 
@@ -821,6 +827,10 @@ CTEST_SUBMIT_RETRY_DELAY-ADVANCED:INTERNAL=1
 DART_TESTING_TIMEOUT-ADVANCED:INTERNAL=1
 //Details about finding GSL
 FIND_PACKAGE_MESSAGE_DETAILS_GSL:INTERNAL=[/usr/include][/usr/lib/x86_64-linux-gnu/libgsl.so][/usr/lib/x86_64-linux-gnu/libgslcblas.so][v2.7.1()]
+//Details about finding OpenMP
+FIND_PACKAGE_MESSAGE_DETAILS_OpenMP:INTERNAL=[TRUE][c ][v4.5()]
+//Details about finding OpenMP_CXX
+FIND_PACKAGE_MESSAGE_DETAILS_OpenMP_CXX:INTERNAL=[-fopenmp][/usr/lib/gcc/x86_64-linux-gnu/13/libgomp.so][/usr/lib/x86_64-linux-gnu/libpthread.a][v4.5()]
 //Details about finding Python3
 FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/usr/bin/python3][cfound components: Interpreter ][v3.12.3()]
 //Details about finding Threads
@@ -947,6 +957,8 @@ _Python_INCLUDE_DIR:INTERNAL=/usr/include/python3.12
 //Python Properties
 _Python_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;3;64;;cpython-312-x86_64-linux-gnu;abi3;/usr/lib/python3.12;/usr/lib/python3.12;/usr/local/lib/python3.12/dist-packages;/usr/local/lib/python3.12/dist-packages
 _Python_INTERPRETER_SIGNATURE:INTERNAL=4c8bfa8951e99fa32e4000a94f8c04a2
+//Interpreter reason failure
+_Python_Interpreter_REASON_FAILURE:INTERNAL=
 //NumPy reason failure
 _Python_NumPy_REASON_FAILURE:INTERNAL=
 __pkg_config_arguments_GSL:INTERNAL=QUIET;gsl

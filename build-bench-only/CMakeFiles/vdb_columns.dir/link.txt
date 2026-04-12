@@ -1,2 +1,2 @@
-/usr/bin/ar qc libvdb_columns.a CMakeFiles/vdb_columns.dir/src/columns/column_chunk_writer.cpp.o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_reader.cpp.o CMakeFiles/vdb_columns.dir/src/columns/column_store.cpp.o
-/usr/bin/ranlib libvdb_columns.a
+"/usr/bin/gcc-ar-13" cr libvdb_columns.a CMakeFiles/vdb_columns.dir/src/columns/column_chunk_writer.cpp.o CMakeFiles/vdb_columns.dir/src/columns/column_chunk_reader.cpp.o CMakeFiles/vdb_columns.dir/src/columns/column_store.cpp.o
+"/usr/bin/gcc-ranlib-13" libvdb_columns.a

@@ -1,2 +1,2 @@
-/usr/bin/ar qc libvdb_simd.a CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o
-/usr/bin/ranlib libvdb_simd.a
+"/usr/bin/gcc-ar-13" cr libvdb_simd.a CMakeFiles/vdb_simd.dir/src/simd/distance_l2.cpp.o CMakeFiles/vdb_simd.dir/src/simd/bit_unpack.cpp.o CMakeFiles/vdb_simd.dir/src/simd/prefix_sum.cpp.o CMakeFiles/vdb_simd.dir/src/simd/popcount.cpp.o CMakeFiles/vdb_simd.dir/src/simd/transpose.cpp.o CMakeFiles/vdb_simd.dir/src/simd/ip_exrabitq.cpp.o CMakeFiles/vdb_simd.dir/src/simd/fastscan.cpp.o CMakeFiles/vdb_simd.dir/src/simd/hadamard.cpp.o CMakeFiles/vdb_simd.dir/src/simd/signed_dot.cpp.o
+"/usr/bin/gcc-ranlib-13" libvdb_simd.a
