@@ -1,57 +1,41 @@
 # Review Summary
 
-**Date**: 2026-04-10 (v3: updated with preliminary experiments)
+**Problem**: Refocus BoundFetch after the baseline stage and submit-path optimization results.  
+**Initial Approach**: Continue broad disk-mode evaluation, keep cold-start in scope, and pursue additional low-level optimization.  
+**Date**: 2026-04-13  
+**Rounds**: 1 local refinement round  
+**Final Verdict**: READY  
 
----
+## Problem Anchor
+- Bottom-line problem: evaluate and improve BoundFetch as a production-style warm steady-state `search + payload` system.
+- Must-solve bottleneck: defend the integrated E2E value of the system and determine whether future effort should go to recall improvement or more low-level optimization.
+- Non-goals: cold-start, sudo-dependent cache dropping, and pure-search graph ANN superiority.
+- Constraints: warm-only environment, no sudo, modest engineering budget, one compact paper story.
 
-## Round 1: Method Focus
+## Round-by-Round Resolution Log
 
-### Strengths
-1. Clear problem anchor: vector search + payload co-retrieval I/O gap is real and understudied
-2. Principled mechanism: RaBitQ closed-form error bounds drive I/O decisions
-3. Implementation maturity: 530+ tests, 15 development phases, production-grade SIMD
-4. Natural ablation structure: each component independently disableable
+| Round | Main Concern | What Was Simplified / Tightened | Solved? | Remaining Risk |
+|-------|--------------|----------------------------------|---------|----------------|
+| 1 | The previous plan was too broad and still partially centered on cold-start and SafeIn-heavy framing. | Reframed the paper around warm steady-state E2E serving; demoted cold-start to non-goal; demoted SafeIn to non-central; shifted future work from micro-optimization to recall-latency improvement. | Yes | Recall ceiling may still be the main competitive weakness. |
 
-### Resolved Weaknesses
-| Weakness | Resolution |
-|----------|-----------|
-| Too broad framing | Narrowed to bound-driven I/O scheduling for search+payload |
-| Too many equal contributions | Hierarchy: SafeOut pruning > layout, overlap, multi-stage |
-| "Bag of tricks" perception | Unified under: error bounds → confidence → I/O scheduling |
-| Missing graph index positioning | Analyzed why graphs don't suit payload co-prefetch (§5.1) |
+## Overall Evolution
+- The method story became more concrete: evaluate BoundFetch as one integrated E2E path rather than as a generic disk ANN.
+- The dominant contribution became tighter: integrated warm-serving retrieval, not a bundle of unrelated system ideas.
+- Unnecessary complexity was removed:
+  - no cold-start obligation
+  - no need for more queue-depth / SQPOLL sweeps as primary future work
+  - no expansion into new indexing families
+- Modernity remains intentionally conservative: no frontier-model primitive is needed here.
+- Drift was avoided by aligning the proposal with the actual experimental regime already achieved.
 
----
-
-## Round 2: Preliminary Experiment Corrections
-
-**Finding 1: SafeIn ≈ 0%**
-- All configs (COCO 768-dim, Deep1M 96-dim, top_k=10/20): SafeIn ≈ 0%
-- **Handling**: Retain in framework for completeness + exploratory claim C7
-
-**Finding 2: SafeOut-CRC inverse relationship**
-```
-Deep1M: top_k=10 → SafeOut 93.79%, early_stop 100%, probed 27/100
-        top_k=20 → SafeOut 97.91%, early_stop 21%,  probed 85.64/100
-```
-- **Handling**: Systematically vary top_k, analyze as interesting tradeoff
-
-**Finding 3: Stage 2 ExRaBitQ contribution**
-- Meaningful but not transformative additional SafeOut on Uncertain candidates
-
----
-
-## Round 3: Anticipated Reviewer Concerns
-
-| Concern | Pre-emptive Answer |
-|---------|-------------------|
-| "SafeIn never fires, three-class is misleading?" | Report honestly; focus narrative on SafeOut; SafeIn as exploratory contribution with systematic condition search |
-| "Why not compare pure search with DiskANN?" | Our contribution is search+payload; graph pointer-chasing doesn't suit payload co-prefetch |
-| "CRC fails at large top_k?" | Report top_k sensitivity honestly; note SafeOut compensates |
-| "Single thread realistic?" | Focus on per-query latency; throughput via query-level parallelism |
-| "Synthetic datasets?" | Primary datasets are real: MS MARCO, COCO, Amazon Products |
-
----
-
-## Final Verdict
-
-**READY (conditional)** — SafeOut pruning is validated (90-98%), CRC early-stop is validated with interesting top_k sensitivity, SafeIn activation conditions need experimental exploration. Proceed to experiments.
+## Final Status
+- Anchor status: preserved and tightened
+- Focus status: tight
+- Modernity status: intentionally conservative and appropriate
+- Strongest parts of final method:
+  - integrated E2E evaluation target
+  - strong warm-latency improvement already demonstrated
+  - clear bottleneck transition from I/O wait to submit/probe CPU
+- Remaining weaknesses:
+  - recall is still the main place where the paper can lose credibility
+  - competitive comparisons need Pareto-style reporting rather than one-point wins

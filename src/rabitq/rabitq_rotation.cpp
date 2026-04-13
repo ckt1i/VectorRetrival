@@ -287,6 +287,16 @@ Status RotationMatrix::Save(const std::string& path) const {
     const size_t data_bytes = static_cast<size_t>(dim_) * dim_ * sizeof(float);
     ofs.write(reinterpret_cast<const char*>(data_.data()), data_bytes);
 
+    // Write flags: bit 0 = use_fast_hadamard_
+    uint8_t flags = use_fast_hadamard_ ? 1u : 0u;
+    ofs.write(reinterpret_cast<const char*>(&flags), sizeof(flags));
+
+    // When Hadamard mode, write diag_signs (dim × int8)
+    if (use_fast_hadamard_) {
+        ofs.write(reinterpret_cast<const char*>(diag_signs_.data()),
+                  static_cast<std::streamsize>(diag_signs_.size()) * sizeof(int8_t));
+    }
+
     if (!ofs.good()) {
         return Status::IOError("Failed to write rotation matrix to: " + path);
     }
@@ -319,7 +329,30 @@ StatusOr<RotationMatrix> RotationMatrix::Load(const std::string& path, Dim dim) 
         return Status::Corruption("Failed to read rotation matrix data");
     }
 
-    return RotationMatrix(dim, std::move(data));
+    // Read flags: bit 0 = use_fast_hadamard_
+    uint8_t flags = 0;
+    ifs.read(reinterpret_cast<char*>(&flags), sizeof(flags));
+    if (!ifs.good()) {
+        return Status::Corruption("Failed to read flags from rotation file");
+    }
+
+    RotationMatrix result(dim, std::move(data));
+
+    if (flags & 1u) {
+        // Hadamard mode: read diag_signs (dim × int8)
+        std::vector<int8_t> diag_signs(dim);
+        ifs.read(reinterpret_cast<char*>(diag_signs.data()),
+                 static_cast<std::streamsize>(dim) * sizeof(int8_t));
+        if (!ifs.good()) {
+            return Status::Corruption("Failed to read diag_signs from rotation file");
+        }
+        result.use_fast_hadamard_ = true;
+        result.diag_signs_ = std::move(diag_signs);
+    } else {
+        result.use_fast_hadamard_ = false;
+    }
+
+    return result;
 }
 
 }  // namespace rabitq

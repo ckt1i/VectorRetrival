@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstring>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <vector>
@@ -94,4 +95,61 @@ TEST_F(IoUringReaderTest, EmptySubmit) {
 TEST_F(IoUringReaderTest, PollNonBlocking) {
     IoCompletion comp;
     EXPECT_EQ(reader_->Poll(&comp, 1), 0u);
+}
+
+TEST_F(IoUringReaderTest, SqpollRequestFallsBackCleanly) {
+    IoUringReader sqpoll_reader;
+    auto s = sqpoll_reader.Init(64, 256, /*iopoll=*/false, /*sqpoll=*/true);
+    if (!s.ok()) {
+        GTEST_SKIP() << "io_uring not available for SQPOLL test: " << s.message();
+    }
+
+    uint8_t buf[16];
+    ASSERT_TRUE(sqpoll_reader.PrepRead(fd_, buf, 16, 0).ok());
+    EXPECT_EQ(sqpoll_reader.Submit(), 1u);
+
+    IoCompletion comp;
+    EXPECT_EQ(sqpoll_reader.WaitAndPoll(&comp, 1), 1u);
+    EXPECT_EQ(comp.result, 16);
+    EXPECT_TRUE(sqpoll_reader.queue_depth() >= 64u);
+}
+
+TEST_F(IoUringReaderTest, TaggedReadPreservesUserData) {
+    uint8_t buf[16];
+    constexpr uint64_t kTag = 0xBEEFULL;
+    ASSERT_TRUE(reader_->PrepReadTagged(fd_, buf, 16, 0, kTag).ok());
+    EXPECT_EQ(reader_->Submit(), 1u);
+
+    IoCompletion comp;
+    EXPECT_EQ(reader_->WaitAndPoll(&comp, 1), 1u);
+    EXPECT_EQ(comp.user_data, kTag);
+    EXPECT_EQ(comp.result, 16);
+}
+
+TEST_F(IoUringReaderTest, RegisteredFixedBufferReadWorks) {
+    void* raw = std::aligned_alloc(4096, 4096);
+    ASSERT_NE(raw, nullptr);
+    uint8_t* buf = static_cast<uint8_t*>(raw);
+    const uint8_t* bufs[] = {buf};
+    uint32_t capacities[] = {4096};
+
+    auto reg_status = reader_->RegisterBuffers(bufs, capacities, 1);
+    if (!reg_status.ok()) {
+        std::free(raw);
+        GTEST_SKIP() << "io_uring buffer registration unavailable: "
+                     << reg_status.message();
+    }
+
+    constexpr uint64_t kTag = 0xCAFEULL;
+    ASSERT_TRUE(reader_->PrepReadRegisteredBufferTagged(
+                    fd_, buf, 0, 16, 64, kTag).ok());
+    EXPECT_EQ(reader_->Submit(), 1u);
+
+    IoCompletion comp;
+    EXPECT_EQ(reader_->WaitAndPoll(&comp, 1), 1u);
+    EXPECT_EQ(comp.user_data, kTag);
+    EXPECT_EQ(comp.result, 16);
+    EXPECT_EQ(buf[0], static_cast<uint8_t>(64));
+
+    std::free(raw);
 }

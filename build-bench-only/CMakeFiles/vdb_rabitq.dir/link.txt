@@ -1,2 +1,0 @@
-"/usr/bin/gcc-ar-13" cr libvdb_rabitq.a CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_rotation.cpp.o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_encoder.cpp.o CMakeFiles/vdb_rabitq.dir/src/rabitq/rabitq_estimator.cpp.o
-"/usr/bin/gcc-ranlib-13" libvdb_rabitq.a

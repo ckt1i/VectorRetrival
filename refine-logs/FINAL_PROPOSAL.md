@@ -1,117 +1,156 @@
-# Final Proposal: Bound-Driven I/O Scheduling for Disk-Based Vector Search with Payload Co-Retrieval
+# Final Proposal: Warm-Steady-State Integrated Vector Search and Payload Co-Retrieval
 
-**Date**: 2026-04-10 (v3: updated with preliminary experiment data)
-**Status**: READY
-**Target Venue**: SIGMOD / VLDB / OSDI
+**Date**: 2026-04-13  
+**Status**: READY  
+**Target Venue**: SIGMOD / VLDB / systems-data crossover
 
----
+## Problem Anchor
+- Bottom-line problem: In production vector retrieval, the query path should be evaluated as `search + payload delivery`, not vector search in isolation.
+- Must-solve bottleneck: Existing separated pipelines either pay a second-stage payload retrieval cost after search, or waste work on candidates that do not survive to the final Top-K. Under the current deployment setting, the remaining latency bottleneck is no longer block-device wait, but the CPU path around integrated probing, submission, and candidate verification.
+- Non-goals: This project does not target cold-start latency, strict drop-cache protocols, or first-query cache-miss behavior. It also does not try to win pure vector-search latency against graph indexes without payload delivery.
+- Constraints: The server does not provide `sudo`; warm steady-state is the only required protocol. The codebase should remain single-node, modest in complexity, and focused on one dominant mechanism rather than many parallel contributions.
+- Success condition: Show that under warm steady-state serving, BoundFetch delivers a better or more favorable recall-latency end-to-end tradeoff than strong separated baselines, and explain the gain with a compact mechanism-level analysis.
 
-## 1. Problem Anchor
+## Technical Gap
+The earlier proposal over-emphasized cold I/O and a broad three-class scheduling story. The current experimental evidence says something sharper:
 
-In production vector search systems (RAG, multimodal retrieval, recommendation), queries must return not only the nearest vectors but also associated payloads (documents, metadata, images). On disk-based systems, **I/O accounts for 70–90% of query latency** (PageANN 2024, PipeANN OSDI 2025).
+1. The meaningful setting is warm steady-state serving.
+2. `io_wait` is already almost fully hidden; the practical bottleneck is submit-side CPU plus fixed probe-side cost.
+3. The strongest available competitive comparison is not "who is best at cold-start", but "who gives the best end-to-end search+payload result under production-like steady state".
+4. SafeIn is structurally interesting but not currently the center of evidence; SafeOut plus integrated submission/path design is the stronger dominant story.
 
-Existing systems either fetch payloads sequentially after search (adding a full I/O round-trip) or eagerly co-fetch everything (wasting >90% of I/O bandwidth on non-Top-K candidates).
+So the paper should not widen into a generic disk I/O paper. It should narrow into a systems paper about integrated search+payload retrieval under warm serving conditions.
 
-**The gap**: No existing system uses the *confidence* of approximate distance estimation to make fine-grained, per-candidate I/O scheduling decisions.
+## Method Thesis
+- One-sentence thesis: BoundFetch wins in warm steady-state because it integrates candidate filtering, payload access, and asynchronous submission into one retrieval path, reducing end-to-end work relative to separated search-then-fetch baselines.
+- Why this is the smallest adequate intervention: The winning mechanism is already in the codebase; the next meaningful step is not adding more subsystems, but tightening recall at roughly the current latency and validating the mechanism with cleaner evidence.
+- Why this route is timely: Production vector systems increasingly care about full serving latency rather than search-only latency, especially once payload delivery and metadata access are included.
 
----
+## Contribution Focus
+- Dominant contribution: A warm-serving integrated retrieval path that combines vector probing and payload co-retrieval into one end-to-end system and outperforms strong separated baselines on E2E latency.
+- Optional supporting contribution: Submit-path optimization and mechanism attribution that explain where the remaining latency goes and why additional queue-depth or SQPOLL tuning is not the main next lever.
+- Explicit non-contributions:
+  - cold-start superiority
+  - graph-search supremacy in pure ANN
+  - large-scale kernel or OS tuning claims
+  - SafeIn as the main claimed source of gain
 
-## 2. Method Thesis
+## Proposed Method
+### Complexity Budget
+- Frozen / reused backbone:
+  - Existing IVF-based BoundFetch retrieval framework
+  - Existing dual-file / integrated storage format
+  - Existing warm benchmark harness and baseline pipeline
+- New trainable components: none
+- New system components to avoid:
+  - new indexing families
+  - new concurrency models
+  - GPU / distributed / learned controllers
 
-We use RaBitQ's controllable quantization error bounds as confidence signals for three-class per-candidate I/O scheduling: SafeOut pruning eliminates 90-98% of candidates, SafeIn prefetches complete records for high-confidence Top-K candidates, and Uncertain candidates undergo exact verification with on-demand payload retrieval — all executed asynchronously via io_uring in parallel with cluster probing.
+### System Overview
+1. Probe IVF clusters and compute candidate scores.
+2. Use the current filtering path to suppress obviously unneeded candidate work.
+3. Submit payload/vector reads through the optimized `io_uring` path.
+4. Parse, rerank, and complete Top-K delivery inside the same integrated pipeline.
+5. Measure the system as one E2E serving path under warm steady-state.
 
----
+### Core Mechanism
+- Input / output:
+  - Input: query vector, index state, payload-backed data file
+  - Output: Top-K retrieval results plus payload access in one E2E latency measurement
+- Architecture or policy:
+  - integrated probing + async submission + on-demand verification
+  - shared submission mode as the default warm-serving path
+- Training signal / loss: not applicable; this is a systems mechanism, not a learned model
+- Why this is the main novelty:
+  - the contribution is not just "use io_uring"
+  - the contribution is that the search path and payload path are no longer evaluated or executed as separate stages
 
-## 3. Dominant Contribution
+### Optional Supporting Component
+- Component: submit-path optimization and batching
+- Role: reduce per-query submission overhead so integrated retrieval remains competitive at low-millisecond latency
+- Why it does not create contribution sprawl: it is evidence and engineering support for the dominant integrated-path claim, not a second independent paper
 
-**Bound-driven three-class I/O scheduling**: RaBitQ's error bound `epsilon = c * 2^{-bits/2} / sqrt(dim)` provides per-candidate margins that drive three I/O actions:
+### Modern Primitive Usage
+- Frontier primitive usage: absent
+- Reason: this work does not benefit from forcing an LLM/VLM/RL component; the strongest story is an intentionally simple systems contribution
 
-- **SafeOut** (`approx_dist > d_k + 2*margin`): Guaranteed NOT in Top-K → skip (zero I/O). **Preliminary: 90-98% pruning rate.**
-- **Uncertain** (between thresholds): Cannot determine → read vector only, compute exact distance, conditionally fetch payload.
-- **SafeIn** (`approx_dist < d_k - 2*margin`): Guaranteed in Top-K → prefetch complete record.
+### Integration into the Downstream Pipeline
+- BoundFetch should be positioned as a serving-path system, not a standalone ANN core.
+- The evaluation target is the application-visible latency of returning usable results, including payload access.
+- The baseline comparison must therefore remain end-to-end and warm-only.
 
-### SafeIn Status and Potential
+### Execution-Facing Plan
+- Keep the current optimized submission path.
+- Spend additional optimization budget only if it clearly increases recall at roughly fixed latency.
+- Prefer parameter-level and threshold-level tuning over structural redesign.
 
-SafeIn rate is ≈0% in current configurations due to strict conditions (conservative d_k calibration, wide 1-bit margins, small top_k). SafeIn may activate with:
-- Larger top_k (50/100/200): wider d_k threshold
-- Higher quantization precision (8-bit): smaller margin
-- Aggressive d_k calibration (P90 vs P99)
-- Large payloads: greater I/O savings per SafeIn hit
+### Failure Modes and Diagnostics
+- Failure mode: BoundFetch remains faster than DiskANN+FlatStor but stays materially below the target recall range.
+  - Detect via recall-latency Pareto curve.
+  - Mitigation: tune `CRC_alpha`, pruning thresholds, and lightweight rerank/fetch policy.
+- Failure mode: further submit-path work yields negligible gains.
+  - Detect via unchanged `uring_submit_ms`, `submit_calls`, and E2E latency.
+  - Mitigation: stop systems micro-optimization and switch effort to recall improvement and evidence tightening.
+- Failure mode: reviewers see the gain as recall tradeoff rather than a true systems win.
+  - Detect via lack of near-iso-recall comparison points.
+  - Mitigation: run a compact recall-improvement ablation and report Pareto curves instead of a single point.
 
-**Positioning**: SafeIn provides theoretical completeness in the three-class framework and is retained for systematic experimental exploration (C7).
+### Novelty and Elegance Argument
+The strongest paper version is not "we built many components for disk ANN." It is:
 
----
+"Once the serving target is correctly defined as warm steady-state `search + payload`, an integrated retrieval path can beat separated baselines end-to-end, and the remaining bottleneck is submit/probe CPU rather than device I/O."
 
-## 4. Supporting Contributions
+That is a tighter and more defensible contribution than a broader cold-I/O or universal-ANN claim.
 
-### 4.1 Co-Designed Dual-File Storage Layout
-- **ClusterStore (.clu)**: Quantized codes + address column per IVF cluster
-- **DataFile (.dat)**: Raw vectors co-located with payload columns, 4KB page-aligned
+## Claim-Driven Validation Sketch
+### Claim 1: BoundFetch provides a better warm E2E Pareto than strong separated baselines.
+- Minimal experiment: COCO 100K warm-only end-to-end comparison using BoundFetch sweep versus DiskANN+FlatStor and FAISS-disk+FlatStor.
+- Baselines / ablations:
+  - BoundFetch `nprobe` sweep
+  - strongest separated baseline points already available
+- Metric:
+  - `recall@10`
+  - `e2e_ms`
+  - `p99_ms`
+- Expected evidence:
+  - BoundFetch dominates at least one practically relevant operating region
+  - BoundFetch clearly beats DiskANN+FlatStor on latency
+  - FAISS-IVFPQ-disk is documented as recall-limited on COCO
 
-### 4.2 Single-Thread Overlap Scheduler
-- io_uring-based single-thread, single-ring model
-- Three concurrent pipelines: cluster prefetch, candidate I/O dispatch, rerank consumption
-- **Design scope**: Single-query latency optimization. Throughput scales linearly via query-level parallelism (orthogonal).
+### Claim 2: The remaining engineering value lies in recall improvement, not more submission-path micro-tuning.
+- Minimal experiment: compact ablation over `CRC_alpha` / pruning policy / optional rerank behavior at fixed warm protocol.
+- Baselines / ablations:
+  - current best config
+  - 2-3 nearby threshold settings
+  - optional pruning-off or relaxed-threshold variant
+- Metric:
+  - recall improvement at comparable latency
+  - `uring_submit_ms`, `submit_calls`, `probe_ms`
+- Expected evidence:
+  - recall can move meaningfully while E2E stays close
+  - queue-depth / SQPOLL / submission-mode sweeps remain secondary validation, not main future work
 
-### 4.3 Multi-Stage Quantization Pipeline
-- Stage 1 (FastScan): AVX-512 VPSHUFB batch-32, 90-98% SafeOut
-- Stage 2 (ExRaBitQ): 2/4-bit refinement for Uncertain candidates
-- Dynamic CRC threshold: Progressive SafeOut tightening
+## Experiment Handoff Inputs
+- Must-prove claims:
+  - BoundFetch should be evaluated as a warm-serving integrated E2E system
+  - the paper's next gains should come from better recall-latency tradeoff, not lower raw submit overhead
+- Must-run ablations:
+  - recall-latency Pareto sweep
+  - mechanism attribution
+  - minimal recall-improvement ablation
+- Critical datasets / metrics:
+  - COCO 100K as primary warm serving benchmark
+  - Deep1M / Deep8M only if needed for supporting trend or ablation generality
+  - `recall@10`, `e2e_ms`, `p99_ms`, `uring_submit_ms`, `probe_ms`, `submit_calls`
+- Highest-risk assumptions:
+  - current recall ceiling may still be too low for a convincing main-paper comparison
+  - the story weakens if no better near-iso-recall operating point is found
 
----
-
-## 5. Intentionally Rejected Complexity
-
-- **Graph index (DiskANN/Vamana)**: Pointer-chasing I/O prevents batch scheduling and bound-based pruning. See §5.1.
-- **Multi-threading**: Orthogonal engineering. Single-thread isolates I/O scheduling contribution.
-- **Learned routing / GPU / Distributed / Filtered search**: As before.
-
-### 5.1 Why Graph Indexes Don't Suit Payload Co-Prefetch
-
-| Property | IVF (BoundFetch) | Graph (DiskANN) |
-|----------|-----------------|-----------------|
-| Traversal | Batch scan all candidates in cluster | Per-node pointer chasing |
-| I/O predictability | High: know cluster blocks ahead | Low: next node depends on current |
-| Batch I/O scheduling | Yes: classify entire cluster | No: one node at a time |
-| Error bound utilization | RaBitQ global bounds for SafeOut/SafeIn | No analogous mechanism |
-| Payload prefetch timing | Parallel with cluster probing | Sequential after search complete |
-
----
-
-## 6. Key Claims (updated with preliminary data)
-
-| # | Claim | Type | Preliminary |
-|---|-------|------|-------------|
-| C1 | SafeOut pruning eliminates 90%+ candidates, reducing I/O 40-60% vs eager-fetch | Main | ✓ 90-98% |
-| C2 | Single-thread overlap scheduler achieves >80% CPU-I/O overlap | Main | Pending |
-| C3 | Co-designed layout achieves 2-3x lower latency vs separated | Layout | Pending |
-| C4 | Multi-stage quantization tightens Uncertain rate | Ablation | ✓ Stage 2 further prunes |
-| C5 | CRC dynamic threshold enables 30-73% cluster early-stop | Ablation | ✓ top_k dependent |
-| C6 | search+payload end-to-end superior to existing systems | Competitive | Pending |
-| C7 | SafeIn activates under specific conditions (large top_k, high-bit, large payload) | Exploratory | Pending |
-
----
-
-## 7. Preliminary Experiment Anchors
-
-### COCO 100K (768-dim, top_k=10, bits=4, CRC on)
-```
-recall@10=0.8925, latency=1.738ms, SafeOut S1=90.54%, SafeIn=0%
-```
-
-### Deep1M top_k=10 (96→128 dim, bits=4, CRC on)
-```
-recall@10=0.9230, latency=0.814ms, SafeOut S1=93.79%, early_stop=73%, SafeIn=0%
-```
-
-### Deep1M top_k=20 (96→128 dim, bits=4, CRC on)
-```
-recall@10=0.9630, latency=1.547ms, SafeOut S1=97.91%, early_stop=21%, SafeIn=0.03%
-```
-
-### Key Finding: SafeOut-CRC Inverse Relationship
-| | top_k=10 | top_k=20 |
-|--|----------|----------|
-| SafeOut S1 | 93.79% | 97.91% |
-| CRC early stop | 100% (27/100) | 21% (85.64/100) |
-| Latency | 0.814ms | 1.547ms |
+## Compute & Timeline Estimate
+- Estimated GPU-hours: 0
+- Data / annotation cost: none for the next stage
+- Timeline:
+  - 1-2 days for warm-only documentation cleanup and Pareto-ready planning
+  - 2-4 days for compact recall-improvement and ablation runs
+  - 1-2 days for result consolidation and figure generation

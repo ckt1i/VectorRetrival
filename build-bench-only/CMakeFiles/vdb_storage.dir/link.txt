@@ -1,2 +1,0 @@
-"/usr/bin/gcc-ar-13" cr libvdb_storage.a CMakeFiles/vdb_storage.dir/src/storage/address_column.cpp.o CMakeFiles/vdb_storage.dir/src/storage/data_file_writer.cpp.o CMakeFiles/vdb_storage.dir/src/storage/data_file_reader.cpp.o CMakeFiles/vdb_storage.dir/src/storage/cluster_store.cpp.o CMakeFiles/vdb_storage.dir/src/storage/pack_codes.cpp.o CMakeFiles/vdb_storage.dir/src/storage/segment.cpp.o
-"/usr/bin/gcc-ranlib-13" libvdb_storage.a

@@ -4,7 +4,22 @@ cmake-build-*/
 out/
 build-bench-only/
 build-bench-nomkl/
+build-bench-only
 *.cmake
+
+# CMake stage & dependency files (build-*/**)
+**/*.dir/
+**/compiler_depend.*
+**/cmake_install.cmake
+**/CXXFLAGS*
+**/CXX.includecache
+**/*.includecache
+
+# Benchmarks build artifacts
+benchmarks/*.cmake
+benchmarks/CMakeFiles/
+benchmarks/Makefile
+benchmarks/cmake_install.cmake
 
 # IDE
 .idea/
@@ -18,6 +33,8 @@ build-bench-nomkl/
 *.a
 *.so
 *.dylib
+*.make
+*.dir
 
 # Generated files
 schema/generated/

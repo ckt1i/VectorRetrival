@@ -1,111 +1,28 @@
 # Experiment Tracker
 
-**Date**: 2026-04-10
-**System**: BoundFetch
+**Date**: 2026-04-13  
+**System**: BoundFetch  
+**Protocol**: Warm steady-state only
 
----
-
-## Status Legend
-- [ ] Not started
-- [~] In progress
-- [x] Complete
-- [!] Blocked
-- [-] Skipped (with reason)
-
----
-
-## Phase 1: Development Validation (Target: Week 1-2)
-
-### E1-dev: Main Result on SIFT1M
-- [ ] Build index on SIFT1M with 1KB/10KB/100KB synthetic payloads
-- [ ] Run BoundFetch: top_k={1,10,100}, nprobe={8,16,32,64}
-- [ ] Run Eager-Fetch baseline (same index, classification disabled)
-- [ ] Run Sequential-Fetch baseline (search first, then payload fetch)
-- [ ] Collect: recall, QPS, latency, I/O bytes, classification stats
-- [ ] **Gate check**: I/O reduction ≥20%?
-
-### E3-dev: Classification Ablation on SIFT1M
-- [ ] Run Full (3-class), Binary-Out, No-Class, Eager configs
-- [ ] Collect classification distribution (SafeIn/Uncertain/SafeOut rates)
-- [ ] Collect I/O bytes per query for each config
-- [ ] **Gate check**: 3-class ≥10% better than Binary-Out?
-
----
-
-## Phase 2: Core Ablations (Target: Week 3-4)
-
-### E4: Layout Ablation
-- [ ] Implement separated layout variant (separate .vec + .payload files)
-- [ ] Implement vector-in-cluster layout variant
-- [ ] Build all 3 layouts on SIFT10M
-- [ ] Run with payload sizes {1KB, 10KB, 100KB}
-- [ ] Collect latency, I/O ops, I/O bytes
-- [ ] **Gate check**: Co-located ≥1.5x better at 10KB?
-
-### E5: Multi-Stage Quantization Ablation
-- [ ] Run 1-bit only, 1+2 bit, 1+4 bit, 4-bit only on SIFT10M
-- [ ] Run same on GIST1M (high-dim test)
-- [ ] Collect Uncertain rate, SafeIn rate, recall, QPS
-- [ ] **Gate check**: ExRaBitQ reduces Uncertain by ≥15%?
-
-### E6: CRC Early Stop Ablation
-- [ ] Run CRC ON vs OFF on SIFT10M, nprobe={16,32,64,128}
-- [ ] Run same on Deep10M
-- [ ] Collect actual clusters probed, recall, QPS
-
-### E2: Overlap Analysis
-- [ ] Run on SIFT10M with 10KB payloads
-- [ ] Vary prefetch_depth={1,2,4,8,16,32}
-- [ ] Collect CPU utilization, I/O wait time, overlap ratio
-- [ ] Profile with perf for time breakdown
-- [ ] **Gate check**: Overlap ratio >60%?
-
----
-
-## Phase 3: Baseline Comparison (Target: Week 5-6)
-
-### E7: Baseline Setup
-- [ ] Build DiskANN index on SIFT1M, Deep10M, SIFT100M
-- [ ] Build SPANN index on same datasets
-- [ ] Build FAISS IVF-PQ on-disk index on same datasets
-- [ ] Verify all baselines achieve reported recall numbers
-
-### E7: Baseline Runs
-- [ ] Run all systems on SIFT1M (10KB payloads), collect metrics
-- [ ] Run all systems on Deep10M (10KB payloads), collect metrics
-- [ ] Run all systems on SIFT100M (10KB payloads), collect metrics
-- [ ] Measure payload fetch latency separately for baselines
-- [ ] Generate Pareto curves (recall vs QPS, with and without payload)
-
-### E1-full: Main Result at Scale
-- [ ] Run BoundFetch on Deep10M with full parameter sweep
-- [ ] Run BoundFetch on SIFT100M with full parameter sweep
-- [ ] Generate main result tables
-
----
-
-## Phase 4: Scale & Polish (Target: Week 7-8)
-
-### E8: Scalability Study
-- [ ] Run SIFT1M → 10M → 100M at fixed recall target
-- [ ] Collect QPS, latency, I/O bytes, build time, index size
-- [ ] Generate scalability plots
-
-### E9: Real-World Payloads (Optional)
-- [ ] Prepare COCO dataset with CLIP embeddings + image payloads
-- [ ] Build BoundFetch index
-- [ ] Run multimodal retrieval benchmark
-- [ ] Collect end-to-end latency with real payload distribution
-
----
-
-## Paper Figures Checklist
-- [ ] Figure 1: System architecture diagram
-- [ ] Figure 2: Recall-QPS Pareto curves (E7)
-- [ ] Figure 3: Latency breakdown stacked bar (E2)
-- [ ] Figure 4: I/O volume with/without classification (E3)
-- [ ] Figure 5: Classification distribution (E5)
-- [ ] Figure 6: Scalability curves (E8)
-- [ ] Table 1: Main results
-- [ ] Table 2: I/O breakdown
-- [ ] Table 3: Ablation summary
+| Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
+|--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
+| R001 | M0 | Freeze evaluation scope | Warm-only protocol update across docs | coco_100k | protocol, reporting fields | MUST | TODO | Remove cold-start language from active plan |
+| R002 | M1 | Main Pareto anchor | BoundFetch `nprobe=50` | coco_100k | recall@10, e2e_ms, p99_ms | MUST | DONE | Existing result: 0.8018 / 0.6391ms |
+| R003 | M1 | Main Pareto anchor | BoundFetch `nprobe=100` | coco_100k | recall@10, e2e_ms, p99_ms | MUST | DONE | Existing result: 0.8748 / 0.9323ms |
+| R004 | M1 | Main Pareto anchor | BoundFetch `nprobe=200` | coco_100k | recall@10, e2e_ms, p99_ms | MUST | DONE | Existing result: 0.8984 / 1.1414ms |
+| R005 | M1 | Main Pareto anchor | BoundFetch `nprobe=300` | coco_100k | recall@10, e2e_ms, p99_ms | MUST | DONE | Existing result: 0.8988 / 1.1530ms |
+| R006 | M1 | Main Pareto anchor | BoundFetch `nprobe=500` | coco_100k | recall@10, e2e_ms, p99_ms | MUST | DONE | Existing result: 0.8988 / 1.1595ms |
+| R007 | M1 | Strengthen Pareto density | BoundFetch intermediate point(s) such as `nprobe=150/250` if available | coco_100k | recall@10, e2e_ms, p99_ms | MUST | TODO | Only add if needed to clarify the curve |
+| R008 | M1 | Baseline anchor | DiskANN+FlatStor strongest warm point | coco_100k | recall@10, e2e_ms | MUST | DONE | Existing result: 1.000 / 3.7899ms |
+| R009 | M1 | Baseline anchor | FAISS-IVFPQ-disk+FlatStor strongest warm point | coco_100k | recall@10, e2e_ms | MUST | DONE | Existing result: 0.747 / 1.3124ms |
+| R010 | M2 | Mechanism attribution | BoundFetch best point breakdown | coco_100k | uring_submit_ms, probe_ms, io_wait_ms, submit_calls | MUST | DONE | Existing result at nprobe=200 already available |
+| R011 | M2 | Stability check | BoundFetch nearby-point breakdown | coco_100k | same as R010 | MUST | TODO | Use `nprobe=100` or `300` for contrast |
+| R012 | M3 | Recall improvement | Tune `CRC_alpha` low side | coco_100k | recall@10, e2e_ms, submit_calls | MUST | TODO | Keep `io_qd=64`, `mode=shared` fixed |
+| R013 | M3 | Recall improvement | Tune `CRC_alpha` high side | coco_100k | recall@10, e2e_ms, submit_calls | MUST | TODO | Single-factor change only |
+| R014 | M3 | Recall improvement | Relax pruning / verification threshold | coco_100k | recall@10, e2e_ms, probe_ms | MUST | TODO | Purpose: test whether recall can move without large latency loss |
+| R015 | M3 | Simplification check | Current best config vs simplified pruning policy | coco_100k | recall@10, e2e_ms | MUST | TODO | Decide whether some mechanism can be deleted |
+| R016 | M4 | Generality support | BoundFetch representative point on Deep1M | deep1m | recall, latency, breakdown | NICE | TODO | Only after M1-M3 succeed |
+| R017 | M4 | Generality support | BoundFetch representative point on Deep8M | deep8m | recall, latency, breakdown | NICE | TODO | Skip if it delays writeup |
+| R018 | M4 | Freeze appendix checks | qd sweep summary | coco_100k | e2e_ms | NICE | DONE | Existing qd=64/128/256/512 results available |
+| R019 | M4 | Freeze appendix checks | shared vs isolated summary | coco_100k | e2e_ms, submit_calls | NICE | DONE | Existing result available |
+| R020 | M4 | Freeze appendix checks | SQPOLL fallback summary | coco_100k | e2e_ms, effective flag | NICE | DONE | Existing `effective=0` result available |

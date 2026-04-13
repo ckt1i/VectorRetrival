@@ -9,6 +9,11 @@
 namespace vdb {
 namespace query {
 
+enum class SubmissionMode : uint8_t {
+    Shared = 0,
+    Isolated = 1,
+};
+
 struct SearchConfig {
     uint32_t top_k = 10;
     uint32_t nprobe = 8;
@@ -17,6 +22,9 @@ struct SearchConfig {
     uint32_t io_queue_depth = 64;
     uint32_t cq_entries = 4096;
     uint32_t safein_all_threshold = 256 * 1024;  // 256KB
+    uint32_t cluster_submit_reserve = 8;
+    bool use_sqpoll = false;
+    SubmissionMode submission_mode = SubmissionMode::Shared;
 
     // Early stop: skip remaining clusters when TopK quality exceeds d_k
     bool early_stop = true;
@@ -29,6 +37,12 @@ struct SearchConfig {
 
     // CRC early stop parameters (nullptr = use legacy d_k early stop)
     const index::CalibrationResults* crc_params = nullptr;
+
+    // Submit batching: Submit when prepped() SQEs reach N (0 = submit every probe, original behavior).
+    // NOTE: For workloads with many vec reads per cluster (e.g., ~26 reads/cluster with SQ depth=64),
+    // batching shifts overhead from uring_submit_ms to uring_prep_ms (auto-flush inside PrepRead)
+    // without reducing total latency. Keep at 0 unless SQ depth is increased significantly.
+    uint32_t submit_batch_size = 0;
 };
 
 struct SearchStats {
@@ -40,6 +54,7 @@ struct SearchStats {
     uint32_t total_reranked = 0;
     uint32_t total_payload_prefetched = 0;
     uint32_t total_payload_fetched = 0;
+    uint32_t total_submit_calls = 0;
     bool early_stopped = false;
     uint32_t clusters_skipped = 0;
     uint32_t crc_clusters_probed = 0;
@@ -52,6 +67,11 @@ struct SearchStats {
     uint32_t s2_safe_in = 0;
     uint32_t s2_safe_out = 0;
     uint32_t s2_uncertain = 0;
+    // Fine-grained timing breakdown (ms)
+    double uring_prep_ms = 0;    // io_uring PrepRead() calls in AsyncIOSink::OnCandidate()
+    double uring_submit_ms = 0;  // reader_.Submit() calls in pipeline
+    double parse_cluster_ms = 0; // ParseClusterBlock() in DispatchCompletion()
+    double fetch_missing_ms = 0; // FetchMissingPayloads() wall time
 };
 
 class SearchContext {

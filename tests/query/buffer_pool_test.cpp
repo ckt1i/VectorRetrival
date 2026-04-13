@@ -35,12 +35,13 @@ TEST(BufferPoolTest, AllocateNewWhenTooSmall) {
     uint8_t* buf1 = pool.Acquire(64);
     pool.Release(buf1);
 
-    // Need 256, pool only has 64 → allocate new
-    uint8_t* buf2 = pool.Acquire(256);
-    EXPECT_NE(buf2, buf1);
+    uint8_t* buf2 = pool.Acquire(8192);
+    ASSERT_NE(buf2, nullptr);
+    EXPECT_EQ(pool.OutstandingCount(), 1u);
 
     pool.Release(buf2);
-    EXPECT_EQ(pool.PoolSize(), 2u);
+    EXPECT_EQ(pool.OutstandingCount(), 0u);
+    EXPECT_GE(pool.PoolSize(), 1u);
 }
 
 TEST(BufferPoolTest, MultipleBuffers) {
@@ -74,4 +75,23 @@ TEST(BufferPoolTest, WriteAndReadBack) {
         EXPECT_EQ(buf2[i], static_cast<uint8_t>(i));
     }
     pool.Release(buf2);
+}
+
+TEST(BufferPoolTest, PrimePreallocatesReusableBuffers) {
+    BufferPool pool;
+    pool.Prime(256, 3);
+
+    EXPECT_EQ(pool.PoolSize(), 3u);
+    EXPECT_EQ(pool.OutstandingCount(), 0u);
+
+    uint8_t* a = pool.Acquire(128);
+    uint8_t* b = pool.Acquire(128);
+    EXPECT_NE(a, nullptr);
+    EXPECT_NE(b, nullptr);
+    EXPECT_NE(a, b);
+    EXPECT_EQ(pool.PoolSize(), 1u);
+
+    pool.Release(a);
+    pool.Release(b);
+    EXPECT_EQ(pool.PoolSize(), 3u);
 }

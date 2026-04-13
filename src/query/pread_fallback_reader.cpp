@@ -7,9 +7,10 @@
 namespace vdb {
 namespace query {
 
-Status PreadFallbackReader::PrepRead(int fd, uint8_t* buf,
-                                      uint32_t len, uint64_t offset) {
-    pending_.push_back({fd, buf, len, offset});
+Status PreadFallbackReader::PrepReadTagged(int fd, uint8_t* buf,
+                                           uint32_t len, uint64_t offset,
+                                           uint64_t user_data) {
+    pending_.push_back({fd, buf, len, offset, user_data});
     return Status::OK();
 }
 
@@ -20,6 +21,7 @@ uint32_t PreadFallbackReader::Submit() {
                               static_cast<off_t>(entry.offset));
         IoCompletion comp;
         comp.buffer = entry.buf;
+        comp.user_data = entry.user_data;
         comp.result = (ret >= 0) ? static_cast<int32_t>(ret)
                                  : -static_cast<int32_t>(errno);
         completed_.push_back(comp);

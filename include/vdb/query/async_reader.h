@@ -12,6 +12,7 @@ namespace query {
 /// I/O completion result
 struct IoCompletion {
     uint8_t* buffer;    // From CQE user_data
+    uint64_t user_data = 0;
     int32_t result;     // Success: bytes read, Failure: negative errno
 };
 
@@ -26,8 +27,14 @@ class AsyncReader {
     virtual ~AsyncReader() = default;
 
     /// Prepare a read (fills SQE, does not submit).
-    virtual Status PrepRead(int fd, uint8_t* buf,
-                            uint32_t len, uint64_t offset) = 0;
+    virtual Status PrepReadTagged(int fd, uint8_t* buf,
+                                  uint32_t len, uint64_t offset,
+                                  uint64_t user_data) = 0;
+    Status PrepRead(int fd, uint8_t* buf,
+                    uint32_t len, uint64_t offset) {
+        return PrepReadTagged(fd, buf, len, offset,
+                              reinterpret_cast<uint64_t>(buf));
+    }
 
     /// Submit all prepared SQEs.
     /// @return Number of SQEs submitted
@@ -41,6 +48,9 @@ class AsyncReader {
 
     /// Number of in-flight requests.
     virtual uint32_t InFlight() const = 0;
+
+    /// Number of PrepRead()ed SQEs not yet Submit()ed.
+    virtual uint32_t prepped() const = 0;
 };
 
 // ============================================================================
@@ -53,12 +63,16 @@ class PreadFallbackReader : public AsyncReader {
  public:
     PreadFallbackReader() = default;
 
-    Status PrepRead(int fd, uint8_t* buf,
-                    uint32_t len, uint64_t offset) override;
+    Status PrepReadTagged(int fd, uint8_t* buf,
+                          uint32_t len, uint64_t offset,
+                          uint64_t user_data) override;
     uint32_t Submit() override;
     uint32_t Poll(IoCompletion* out, uint32_t max_count) override;
     uint32_t WaitAndPoll(IoCompletion* out, uint32_t max_count) override;
     uint32_t InFlight() const override;
+    uint32_t prepped() const override {
+        return static_cast<uint32_t>(pending_.size());
+    }
 
  private:
     struct PendingEntry {
@@ -66,6 +80,7 @@ class PreadFallbackReader : public AsyncReader {
         uint8_t* buf;
         uint32_t len;
         uint64_t offset;
+        uint64_t user_data;
     };
 
     std::vector<PendingEntry> pending_;
@@ -86,29 +101,53 @@ class IoUringReader : public AsyncReader {
     /// @param cq_entries CQ capacity (via IORING_SETUP_CQSIZE)
     /// @return Status::OK or Status::NotSupported
     Status Init(uint32_t queue_depth = 64, uint32_t cq_entries = 4096,
-                bool use_iopoll = false);
+                bool use_iopoll = false, bool use_sqpoll = false);
 
     /// Register file descriptors for IOSQE_FIXED_FILE optimization.
     /// After registration, use PrepReadFixed with the fd index (0-based).
     Status RegisterFiles(const int* fds, uint32_t count);
+    Status RegisterBuffers(const uint8_t* const* bufs,
+                           const uint32_t* capacities,
+                           uint32_t count);
 
-    Status PrepRead(int fd, uint8_t* buf,
-                    uint32_t len, uint64_t offset) override;
+    Status PrepReadTagged(int fd, uint8_t* buf,
+                          uint32_t len, uint64_t offset,
+                          uint64_t user_data) override;
 
     /// PrepRead using a registered fd index (IOSQE_FIXED_FILE).
     Status PrepReadFixed(int fd_index, uint8_t* buf,
                          uint32_t len, uint64_t offset);
+    Status PrepReadFixedTagged(int fd_index, uint8_t* buf,
+                               uint32_t len, uint64_t offset,
+                               uint64_t user_data);
+    Status PrepReadRegisteredBufferTagged(int fd, uint8_t* buf,
+                                          uint16_t buf_index,
+                                          uint32_t len, uint64_t offset,
+                                          uint64_t user_data);
 
     uint32_t Submit() override;
     uint32_t Poll(IoCompletion* out, uint32_t max_count) override;
     uint32_t WaitAndPoll(IoCompletion* out, uint32_t max_count) override;
     uint32_t InFlight() const override;
+    uint32_t prepped() const override { return prepped_; }
+    uint32_t queue_depth() const { return queue_depth_; }
+    uint32_t cq_entries() const { return cq_entries_; }
+    bool defer_taskrun_enabled() const { return defer_taskrun_enabled_; }
+    bool iopoll_enabled() const { return iopoll_enabled_; }
+    bool sqpoll_enabled() const { return sqpoll_enabled_; }
+    bool registered_buffers_enabled() const { return registered_buffers_enabled_; }
 
  private:
     struct Impl;
     Impl* impl_ = nullptr;
     uint32_t in_flight_ = 0;
     uint32_t prepped_ = 0;
+    uint32_t queue_depth_ = 0;
+    uint32_t cq_entries_ = 0;
+    bool defer_taskrun_enabled_ = false;
+    bool iopoll_enabled_ = false;
+    bool sqpoll_enabled_ = false;
+    bool registered_buffers_enabled_ = false;
 };
 
 }  // namespace query

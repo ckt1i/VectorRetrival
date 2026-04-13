@@ -392,6 +392,50 @@ E2E COLD 结果：
 
 ---
 
+## 10. v5 实际结果（2026-04-13 更新）
+
+### 10.1 已完成范围
+
+- 已完成 `bench-disk-mode-baseline` 对应的 warm 协议主线验证：FAISS OnDisk、DiskANN disk-mode、Deep8M payload、COCO 100K E2E 汇总。
+- 本轮不再新增 `cold` / `semi_cold` 结果；由于环境约束，本 change 先以 warm steady-state 为主，并把真实磁盘叙事保留给后续补测。
+- v4 的 pure-memory 结果继续只作为 appendix 里的 memory upper bound，不参与主表。
+
+### 10.2 当前权威结果锚点
+
+**COCO 100K warm E2E：**
+
+| System | Key config | recall@10 | E2E (ms) | 备注 |
+|--------|------------|-----------|----------|------|
+| BoundFetch | nlist=2048, nprobe=200, qd=64, shared | 0.8984 | 1.136-1.141 | submit-path 优化后结果 |
+| FAISS-IVFPQ-disk + FlatStor-sim | nprobe=32 | 0.7470 | 1.3124 | 精度受 PQ 限制 |
+| DiskANN-disk + FlatStor-sim | L_search=50 | 1.0000 | 3.7899 | 图索引 warm 下明显更慢 |
+
+**BoundFetch nprobe sweep（COCO 100K, warm, qd=64, shared）：**
+
+| nprobe | recall@10 | avg (ms) | probe (ms) | uring_submit (ms) | submit_calls |
+|--------|-----------|----------|------------|-------------------|--------------|
+| 50  | 0.8018 | 0.6391 | 0.2169 | 0.2618 | 13.376 |
+| 100 | 0.8748 | 0.9323 | 0.3440 | 0.3890 | 19.240 |
+| 200 | 0.8984 | 1.1414 | 0.4276 | 0.4834 | 23.038 |
+| 300 | 0.8988 | 1.1530 | 0.4306 | 0.4869 | 23.222 |
+| 500 | 0.8988 | 1.1595 | 0.4301 | 0.4861 | 23.222 |
+
+### 10.3 本轮结论修正
+
+- 2026-04-12 的旧结论是 `BoundFetch WARM E2E=5.42ms > DiskANN+FlatStor=3.79ms`，当时仍受 rotation 持久化缺陷和 submit-path 开销影响。
+- 经过 rotation 修复和 submit batching 优化后，BoundFetch 在同类 warm workload 下已降到约 1.14ms，优于当前的 DiskANN+FlatStor，且接近 FAISS-IVFPQ-disk+FlatStor。
+- 因此，本 change 的结论应更新为：`warm steady-state 下 BoundFetch 已具备竞争力，后续优化重点是 submit-side CPU，而不是设备 I/O wait`。
+
+### 10.4 后续动作
+
+- 补 `cold` / `semi_cold`：用于验证论文中的真实 disk I/O 叙事，而不是继续放大 warm micro-optimization。
+- 若继续沿 warm 路径优化，优先级应放在：
+  1. 进一步减少 `io_uring_enter` 次数和 submit calls。
+  2. 合并/延后不必要的 payload fetch submit。
+  3. 继续压缩 `ProbeCluster()` 的固定成本，使 nprobe=200 档位进入稳定 1.0ms 左右区间。
+
+---
+
 ## 附录 A：v4 历史结果（保留作参考，不进论文主表）
 
 v4 在 lab (py3.8) 下跑的 pure-memory 结果：

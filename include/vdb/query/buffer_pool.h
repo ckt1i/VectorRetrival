@@ -27,6 +27,9 @@ class BufferPool {
     /// Return a buffer to the pool for reuse.
     void Release(uint8_t* buf);
 
+    /// Pre-allocate a slab of reusable buffers for a hot-path size class.
+    void Prime(uint32_t size, uint32_t count);
+
     /// Number of buffers currently in the pool (available for reuse).
     uint32_t PoolSize() const {
         return static_cast<uint32_t>(pool_.size());

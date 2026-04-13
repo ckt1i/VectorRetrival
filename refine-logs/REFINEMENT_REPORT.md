@@ -1,70 +1,49 @@
 # Refinement Report
 
-**Date**: 2026-04-10 (v3: updated with preliminary experiments)
+**Problem**: Re-anchor BoundFetch after the baseline phase using the current warm-only evidence.  
+**Initial Approach**: Keep expanding the old broad disk-baseline story.  
+**Date**: 2026-04-13  
+**Rounds**: 1 local refinement round  
+**Final Verdict**: READY  
 
----
+## Problem Anchor
+- Evaluate BoundFetch as a warm steady-state integrated search+payload system.
+- Identify whether further engineering should target lower E2E latency or better recall at similar latency.
+- Exclude cold-start from the required paper story.
 
-## Starting Point
+## Output Files
+- Review summary: `refine-logs/REVIEW_SUMMARY.md`
+- Final proposal: `refine-logs/FINAL_PROPOSAL.md`
 
-User-provided innovation points:
-1. ConANN cluster probing pruning + RaBitQ error bounds for multi-stage pruning and prefetch thresholds
-2. Data layout: FlatBuffers, co-located vectors+payloads, clustered quantized codes+addresses
-3. io_uring CPU-I/O decoupling for parallel vector search and data prefetch
+## Round-by-Round Review Record
 
-## Refinement Trajectory
+| Round | Main Concern | What Was Changed | Result |
+|-------|--------------|------------------|--------|
+| 1 | The old proposal overfit to cold-start and broad disk-ANN claims. | Tightened the thesis to warm-only E2E serving, moved cold-start to non-goal, made recall improvement the main next optimization target. | Resolved |
 
-### Step 1: Identify the Unifying Insight
+## Final Proposal Snapshot
+- The main paper should argue for integrated warm-serving E2E retrieval, not generic disk ANN leadership.
+- The strongest current evidence is the reduction from `5.42ms` to about `1.136ms` on COCO 100K warm.
+- The strongest remaining question is whether recall can be improved without losing the latency win.
+- Further low-level submit-path work is secondary unless it directly enables better recall-latency tradeoff.
 
-> **Quantization error bounds create a confidence spectrum that drives I/O scheduling decisions.**
+## Method Evolution Highlights
+1. Shifted the paper target from cold-start disk behavior to warm steady-state serving.
+2. Re-centered the dominant claim on end-to-end integrated retrieval instead of a broad three-class / SafeIn story.
+3. Replaced open-ended system optimization with a compact recall-improvement and mechanism-validation roadmap.
 
-- Point 1 (ConANN + RaBitQ bounds) → **decision mechanism**
-- Point 2 (data layout) → **I/O targets**
-- Point 3 (io_uring overlap) → **execution model**
+## Pushback / Drift Log
 
-### Step 2: Establish Contribution Hierarchy
+| Round | Drift Candidate | Response | Outcome |
+|-------|-----------------|----------|---------|
+| 1 | Keep cold-start as a required protocol despite deployment mismatch. | Rejected; cold-start is now an explicit non-goal because it is both operationally unsupported and misaligned with the intended production setting. | Rejected |
+| 1 | Continue broad low-level optimization as the main next step. | Rejected; current measurements show diminishing returns and point to recall tradeoff as the more meaningful next question. | Rejected |
 
-- **Dominant**: Bound-driven three-class I/O scheduling (bounds → SafeOut/SafeIn/Uncertain → differentiated I/O)
-- **Supporting**: Co-designed storage layout, single-thread io_uring overlap, multi-stage FastScan→ExRaBitQ
+## Remaining Weaknesses
+- The current best BoundFetch point still trades away some recall relative to DiskANN.
+- The paper needs a clean Pareto view, not only a single operating point.
+- Mechanism attribution is good, but it must remain compact to avoid turning into a profiling-only story.
 
-### Step 3: Sharpen Problem Statement
-
-**Before**: "Disk ANNS optimization"
-**After**: "Minimize wasted I/O in disk vector search with payload co-retrieval, using quantization error bounds as scheduling signals"
-
-### Step 4: Name the System — **BoundFetch**
-
-### Step 5: Position Against Related Work
-
-| System | Index | I/O Model | Payload | Our Advantage |
-|--------|-------|-----------|---------|---------------|
-| DiskANN | Graph | Sector-aligned | Post-search | Bound-driven scheduling eliminates sequential payload trip |
-| SPANN | IVF+postings | Batch reads | Separated | Classification reduces wasted I/O |
-| Starling | Two-tier graph | Block reads | Not addressed | Payload co-retrieval as first-class |
-| PipeANN | Graph | SSD-aligned | Not addressed | IVF batch scanning more schedulable |
-| RaBitQ | (Quantization) | N/A | N/A | Extend bounds from distance to I/O scheduling |
-
-### Step 6: Reject Complexity
-
-- ~~Graph index~~ — pointer-chasing defeats batch I/O scheduling
-- ~~Multi-threading~~ — focus on single-query latency; throughput via query-level parallelism
-- ~~Learned routing~~ — bounds are provable, learned routing is not
-- ~~GPU offload~~ — I/O is bottleneck, not compute
-- ~~Filter predicates~~ — orthogonal, future work
-- ~~Multi-node~~ — single-node scope sufficient
-
-### Step 7: Preliminary Experiment Corrections (v2→v3)
-
-**Key findings:**
-1. **SafeOut is the dominant mechanism**: Stage 1 prunes 90-98% candidates
-2. **SafeIn ≈ 0% in current configs**: Retained for theoretical completeness + exploratory C7
-3. **CRC early-stop inversely related to top_k**: top_k=10→73%, top_k=20→21%
-4. **Single-thread scope**: Documented as explicit design choice
-
-**Narrative impact:**
-- Original: "Three-class classification each plays a role"
-- Revised: "SafeOut pruning is the core value; SafeIn is a mechanism with potential awaiting the right conditions"
-- Added top_k sensitivity as a new analysis dimension
-
-## Final Method Summary
-
-BoundFetch uses RaBitQ error bounds for three-class I/O scheduling (SafeOut: skip, Uncertain: vector-only + on-demand payload, SafeIn: full record prefetch), executed via single-thread io_uring overlap on a co-designed dual-file layout. Preliminary experiments show SafeOut pruning (90-98%) is the primary I/O savings source, CRC dynamic threshold provides strong early-stop at small top_k (73%), and SafeIn activation conditions require further exploration.
+## Next Steps
+- Use `refine-logs/EXPERIMENT_PLAN.md` and `refine-logs/EXPERIMENT_TRACKER.md` as the execution roadmap.
+- Prioritize warm-only Pareto and recall-improvement runs before any further systems micro-optimization.

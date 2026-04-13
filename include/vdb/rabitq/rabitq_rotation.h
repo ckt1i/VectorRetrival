@@ -124,9 +124,8 @@ class RotationMatrix {
 
     /// Save the rotation matrix to a binary file.
     ///
-    /// File format: [dim:uint32][data: dim*dim floats]
-    /// The Hadamard mode flag and diagonal signs are NOT persisted —
-    /// a loaded matrix always uses the general O(L²) matmul path.
+    /// File format: [dim:uint32][data: dim*dim floats][flags:uint8][diag_signs: dim*int8 (if flags&1)]
+    /// flags bit 0 = use_fast_hadamard_. When flags&1, dim int8 diag_signs follow.
     ///
     /// @param path  Output file path
     /// @return      Status

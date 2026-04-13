@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <numeric>
+#include <sstream>
 #include <string>
 #include <unistd.h>
 #include <unordered_map>
@@ -229,6 +230,11 @@ struct QueryResult {
     double io_wait_ms;
     double probe_time_ms;
     double rerank_cpu_ms = 0;
+    double uring_prep_ms = 0;
+    double uring_submit_ms = 0;
+    double parse_cluster_ms = 0;
+    double fetch_missing_ms = 0;
+    uint32_t submit_calls = 0;
     bool early_stopped;
     uint32_t clusters_skipped;
     uint32_t total_probed;
@@ -254,6 +260,11 @@ struct RoundMetrics {
     double avg_cpu = 0;
     double avg_probe = 0;
     double avg_rerank_cpu = 0;
+    double avg_uring_prep = 0;
+    double avg_uring_submit = 0;
+    double avg_parse_cluster = 0;
+    double avg_fetch_missing = 0;
+    double avg_submit_calls = 0;
     double avg_probed = 0;
     double avg_safe_in = 0;
     double avg_safe_out = 0;
@@ -275,7 +286,7 @@ struct RoundMetrics {
 
 static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     const char* label,
-    IvfIndex& index, IoUringReader& reader,
+    IvfIndex& index, AsyncReader& cluster_reader, AsyncReader* data_reader,
     const SearchConfig& search_cfg,
     const float* queries, uint32_t Q, Dim dim,
     const std::vector<int64_t>& qry_ids_data,
@@ -284,12 +295,19 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
 
     Log("\n[%s] Querying %u vectors...\n", label, Q);
 
-    OverlapScheduler scheduler(index, reader, search_cfg);
+    std::unique_ptr<OverlapScheduler> scheduler;
+    if (data_reader != nullptr) {
+        scheduler = std::make_unique<OverlapScheduler>(
+            index, cluster_reader, *data_reader, search_cfg);
+    } else {
+        scheduler = std::make_unique<OverlapScheduler>(
+            index, cluster_reader, search_cfg);
+    }
 
     std::vector<QueryResult> qresults(Q);
     for (uint32_t qi = 0; qi < Q; ++qi) {
         const float* qvec = queries + static_cast<size_t>(qi) * dim;
-        auto results = scheduler.Search(qvec);
+        auto results = scheduler->Search(qvec);
 
         QueryResult& qr = qresults[qi];
         qr.query_id = qry_ids_data[qi];
@@ -297,6 +315,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.io_wait_ms = results.stats().io_wait_time_ms;
         qr.probe_time_ms = results.stats().probe_time_ms;
         qr.rerank_cpu_ms = results.stats().rerank_cpu_ms;
+        qr.uring_prep_ms = results.stats().uring_prep_ms;
+        qr.uring_submit_ms = results.stats().uring_submit_ms;
+        qr.parse_cluster_ms = results.stats().parse_cluster_ms;
+        qr.fetch_missing_ms = results.stats().fetch_missing_ms;
+        qr.submit_calls = results.stats().total_submit_calls;
         qr.early_stopped = results.stats().early_stopped;
         qr.clusters_skipped = results.stats().clusters_skipped;
         qr.total_probed = results.stats().total_probed;
@@ -362,6 +385,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_s2_si = 0, sum_s2_so = 0, sum_s2_unc = 0;
     double sum_false_so = 0, sum_false_si = 0;
     double sum_io_wait = 0, sum_probe = 0, sum_rerank_cpu = 0, sum_total = 0;
+    double sum_uring_prep = 0, sum_uring_submit = 0;
+    double sum_parse_cluster = 0, sum_fetch_missing = 0;
+    double sum_submit_calls = 0;
     uint32_t early_count = 0;
     double sum_skipped = 0;
     for (uint32_t qi = 0; qi < Q; ++qi) {
@@ -377,6 +403,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_io_wait += qresults[qi].io_wait_ms;
         sum_probe += qresults[qi].probe_time_ms;
         sum_rerank_cpu += qresults[qi].rerank_cpu_ms;
+        sum_uring_prep += qresults[qi].uring_prep_ms;
+        sum_uring_submit += qresults[qi].uring_submit_ms;
+        sum_parse_cluster += qresults[qi].parse_cluster_ms;
+        sum_fetch_missing += qresults[qi].fetch_missing_ms;
+        sum_submit_calls += qresults[qi].submit_calls;
         sum_total += qresults[qi].query_time_ms;
         if (qresults[qi].early_stopped) {
             early_count++;
@@ -388,6 +419,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_cpu = (sum_total - sum_io_wait) / Q;
     m.avg_probe = sum_probe / Q;
     m.avg_rerank_cpu = sum_rerank_cpu / Q;
+    m.avg_uring_prep = sum_uring_prep / Q;
+    m.avg_uring_submit = sum_uring_submit / Q;
+    m.avg_parse_cluster = sum_parse_cluster / Q;
+    m.avg_fetch_missing = sum_fetch_missing / Q;
+    m.avg_submit_calls = sum_submit_calls / Q;
     m.avg_probed = sum_probed / Q;
     m.avg_safe_in = sum_si / Q;
     m.avg_safe_out = sum_so / Q;
@@ -408,6 +444,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         m.avg_query_ms, m.p50, m.p95, m.p99);
     Log("  %s: io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms  rerank_cpu=%.3f ms\n", label,
         m.avg_io_wait, m.avg_cpu, m.avg_probe, m.avg_rerank_cpu);
+    Log("  %s: uring_prep=%.3f ms  uring_submit=%.3f ms  parse_cluster=%.3f ms  fetch_missing=%.3f ms\n",
+        label, m.avg_uring_prep, m.avg_uring_submit, m.avg_parse_cluster, m.avg_fetch_missing);
+    Log("  %s: submit_calls=%.1f\n", label, m.avg_submit_calls);
     Log("  %s: safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n", label,
         m.avg_safe_in, m.avg_safe_out, m.avg_uncertain);
     Log("  %s: s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n", label,
@@ -441,10 +480,49 @@ int main(int argc, char* argv[]) {
     int arg_seed       = GetIntArg(argc, argv, "--seed", 42);
     int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
     int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
+    int arg_io_queue_depth = GetIntArg(argc, argv, "--io-queue-depth", 64);
+    int arg_cluster_submit_reserve =
+        GetIntArg(argc, argv, "--cluster-submit-reserve", 8);
+    std::string arg_submission_mode =
+        GetStringArg(argc, argv, "--submission-mode", "shared");
 
     bool arg_cold = HasFlag(argc, argv, "--cold");
     bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
     bool arg_iopoll = HasFlag(argc, argv, "--iopoll");
+    bool arg_sqpoll = HasFlag(argc, argv, "--sqpoll");
+
+    if (arg_submission_mode != "shared" &&
+        arg_submission_mode != "isolated") {
+        std::fprintf(stderr,
+                     "Error: unsupported --submission-mode=%s (expected 'shared' or 'isolated')\n",
+                     arg_submission_mode.c_str());
+        return 1;
+    }
+
+    // nprobe sweep: --nprobe-sweep 50,100,150,200 (mutually exclusive with --nprobe)
+    std::string arg_nprobe_sweep_str = GetStringArg(argc, argv, "--nprobe-sweep", "");
+    std::vector<int> nprobe_sweep_list;
+    if (!arg_nprobe_sweep_str.empty()) {
+        // Check mutual exclusion with explicit --nprobe
+        for (int i = 1; i < argc - 1; ++i) {
+            if (std::strcmp(argv[i], "--nprobe") == 0) {
+                std::fprintf(stderr, "Error: --nprobe and --nprobe-sweep are mutually exclusive\n");
+                return 1;
+            }
+        }
+        // Parse comma-separated list
+        std::istringstream ss(arg_nprobe_sweep_str);
+        std::string token;
+        while (std::getline(ss, token, ',')) {
+            if (!token.empty()) {
+                nprobe_sweep_list.push_back(std::stoi(token));
+            }
+        }
+        if (nprobe_sweep_list.empty()) {
+            std::fprintf(stderr, "Error: --nprobe-sweep requires at least one value\n");
+            return 1;
+        }
+    }
 
     // Precomputed clustering (skip KMeans if both provided)
     std::string arg_centroids = GetStringArg(argc, argv, "--centroids", "");
@@ -769,18 +847,44 @@ int main(int argc, char* argv[]) {
     // ================================================================
     // Phase D: Query
     // ================================================================
-    IoUringReader reader;
-    auto init_status = reader.Init(64, 4096, arg_iopoll);
+    IoUringReader cluster_reader;
+    auto init_status = cluster_reader.Init(
+        static_cast<uint32_t>(arg_io_queue_depth), 4096, arg_iopoll, arg_sqpoll);
     if (!init_status.ok()) {
         std::fprintf(stderr, "IoUring init failed: %s\n", init_status.ToString().c_str());
         return 1;
     }
 
+    std::unique_ptr<IoUringReader> data_reader;
+    if (arg_submission_mode == "isolated") {
+        data_reader = std::make_unique<IoUringReader>();
+        auto data_status = data_reader->Init(
+            static_cast<uint32_t>(arg_io_queue_depth), 4096, arg_iopoll, arg_sqpoll);
+        if (!data_status.ok()) {
+            std::fprintf(stderr, "Data IoUring init failed: %s\n",
+                         data_status.ToString().c_str());
+            return 1;
+        }
+    }
+
     // Register file descriptors for IOSQE_FIXED_FILE optimization
-    {
+    if (arg_submission_mode == "isolated") {
+        int clu_fd = index.segment().clu_fd();
+        auto reg_status = cluster_reader.RegisterFiles(&clu_fd, 1);
+        if (!reg_status.ok()) {
+            Log("  Warning: RegisterFiles(cluster) failed: %s (continuing without)\n",
+                reg_status.ToString().c_str());
+        }
+        int dat_fd = index.segment().data_reader().fd();
+        auto data_reg_status = data_reader->RegisterFiles(&dat_fd, 1);
+        if (!data_reg_status.ok()) {
+            Log("  Warning: RegisterFiles(data) failed: %s (continuing without)\n",
+                data_reg_status.ToString().c_str());
+        }
+    } else {
         int fds[2] = {index.segment().clu_fd(),
                       index.segment().data_reader().fd()};
-        auto reg_status = reader.RegisterFiles(fds, 2);
+        auto reg_status = cluster_reader.RegisterFiles(fds, 2);
         if (!reg_status.ok()) {
             Log("  Warning: RegisterFiles failed: %s (continuing without)\n",
                 reg_status.ToString().c_str());
@@ -791,14 +895,21 @@ int main(int argc, char* argv[]) {
     std::vector<int64_t> qry_ids_vec(qry_ids.data.begin(),
                                       qry_ids.data.begin() + Q);
 
-    // Single round: CRC early stop + dynamic SafeOut
+    // Base search config (shared across single run and sweep)
     SearchConfig search_cfg;
     search_cfg.top_k = GT_K;
     search_cfg.nprobe = static_cast<uint32_t>(arg_nprobe);
     search_cfg.early_stop = (arg_early_stop != 0);
     search_cfg.prefetch_depth = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--prefetch-depth", 16));
-    search_cfg.io_queue_depth = 64;
+    search_cfg.io_queue_depth = static_cast<uint32_t>(arg_io_queue_depth);
+    search_cfg.cluster_submit_reserve = static_cast<uint32_t>(
+        std::max(arg_cluster_submit_reserve, 1));
+    search_cfg.use_sqpoll = arg_sqpoll;
+    search_cfg.submission_mode =
+        (arg_submission_mode == "isolated")
+            ? SubmissionMode::Isolated
+            : SubmissionMode::Shared;
     search_cfg.crc_params = &calib_results;
     search_cfg.initial_prefetch = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--initial-prefetch", 16));
@@ -806,9 +917,72 @@ int main(int argc, char* argv[]) {
         GetIntArg(argc, argv, "--refill-threshold", 4));
     search_cfg.refill_count = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--refill-count", 8));
+    search_cfg.submit_batch_size = static_cast<uint32_t>(
+        GetIntArg(argc, argv, "--submit-batch", 8));
 
+    // ================================================================
+    // nprobe sweep mode (tasks 3.2–3.4)
+    // ================================================================
+    if (!nprobe_sweep_list.empty()) {
+        Log("\n[Sweep] nprobe sweep: %s\n", arg_nprobe_sweep_str.c_str());
+
+        // Prepare CSV
+        fs::create_directories(output_dir);
+        std::string sweep_csv_path = output_dir + "/nprobe_sweep.csv";
+        bool write_header = !fs::exists(sweep_csv_path);
+        std::ofstream sweep_csv(sweep_csv_path, std::ios::app);
+        if (write_header) {
+            sweep_csv << "nprobe,recall@1,recall@10,avg_ms,p50_ms,p99_ms,"
+                         "avg_probe_ms,avg_io_wait_ms,avg_uring_submit_ms,"
+                         "avg_submit_calls,avg_safe_out_rate,io_queue_depth,"
+                         "sqpoll_enabled,cluster_submit_reserve,submission_mode\n";
+        }
+
+        // Warmup query count for sweep (100 or all if Q < 100)
+        uint32_t sw_warmup = std::min(100u, Q);
+        uint32_t sw_measure = Q;
+
+        for (int np : nprobe_sweep_list) {
+            Log("\n[Sweep] nprobe=%d ...\n", np);
+            search_cfg.nprobe = static_cast<uint32_t>(np);
+
+            // Warmup round (discard results)
+            {
+                auto [wq, wm] = RunQueryRound(
+                    "SWEEP-WARMUP", index, cluster_reader, data_reader.get(), search_cfg,
+                    qry_emb.data.data(), sw_warmup, dim, qry_ids_vec, gt_topk, gt_dists);
+                (void)wq; (void)wm;
+            }
+
+            // Measurement round
+            auto [sq, sm] = RunQueryRound(
+                "SWEEP-MEASURE", index, cluster_reader, data_reader.get(), search_cfg,
+                qry_emb.data.data(), sw_measure, dim, qry_ids_vec, gt_topk, gt_dists);
+
+            double safe_out_rate = (sm.avg_probed > 0)
+                ? sm.avg_safe_out / sm.avg_probed * 100.0 : 0.0;
+
+            Log("[sweep] nprobe=%d  recall@10=%.4f  avg=%.3fms  probe=%.3fms  safe_out_rate=%.1f%%\n",
+                np, sm.recall_at[2], sm.avg_query_ms, sm.avg_probe, safe_out_rate);
+
+            sweep_csv << np << "," << sm.recall_at[0] << "," << sm.recall_at[2] << ","
+                      << sm.avg_query_ms << "," << sm.p50 << "," << sm.p99 << ","
+                      << sm.avg_probe << "," << sm.avg_io_wait << ","
+                      << sm.avg_uring_submit << "," << sm.avg_submit_calls << ","
+                      << safe_out_rate << "," << search_cfg.io_queue_depth << ","
+                      << (cluster_reader.sqpoll_enabled() ? 1 : 0) << ","
+                      << search_cfg.cluster_submit_reserve << ","
+                      << arg_submission_mode << "\n";
+            sweep_csv.flush();
+        }
+
+        Log("\n[Sweep] Results written to %s\n", sweep_csv_path.c_str());
+        return 0;
+    }
+
+    // Single round: CRC early stop + dynamic SafeOut
     auto [qresults, metrics] = RunQueryRound(
-        arg_cold ? "HOT" : "CRC", index, reader, search_cfg,
+        arg_cold ? "HOT" : "CRC", index, cluster_reader, data_reader.get(), search_cfg,
         qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
 
     // ================================================================
@@ -836,7 +1010,7 @@ int main(int argc, char* argv[]) {
         }
 
         auto [cold_qresults, cm] = RunQueryRound(
-            "COLD", index, reader, search_cfg,
+            "COLD", index, cluster_reader, data_reader.get(), search_cfg,
             qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
         cold_metrics = cm;
 
@@ -922,7 +1096,12 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("nprobe", search_cfg.nprobe) << ",\n";
         f << "    " << JBool("early_stop", search_cfg.early_stop) << ",\n";
         f << "    " << JInt("prefetch_depth", search_cfg.prefetch_depth) << ",\n";
-        f << "    " << JInt("io_queue_depth", search_cfg.io_queue_depth) << "\n";
+        f << "    " << JInt("io_queue_depth", search_cfg.io_queue_depth) << ",\n";
+        f << "    " << JInt("cluster_submit_reserve", search_cfg.cluster_submit_reserve) << ",\n";
+        f << "    " << JBool("iopoll_requested", arg_iopoll) << ",\n";
+        f << "    " << JBool("sqpoll_requested", arg_sqpoll) << ",\n";
+        f << "    " << JBool("sqpoll_effective", cluster_reader.sqpoll_enabled()) << ",\n";
+        f << "    " << JStr("submission_mode", arg_submission_mode) << "\n";
         f << "  },\n";
         f << "  \"crc_config\": {\n";
         f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
@@ -967,6 +1146,11 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_cpu_time_ms", metrics.avg_cpu) << ",\n";
         f << "    " << JNum("avg_probe_time_ms", metrics.avg_probe) << ",\n";
         f << "    " << JNum("avg_rerank_cpu_ms", metrics.avg_rerank_cpu) << ",\n";
+        f << "    " << JNum("avg_uring_prep_ms", metrics.avg_uring_prep) << ",\n";
+        f << "    " << JNum("avg_uring_submit_ms", metrics.avg_uring_submit) << ",\n";
+        f << "    " << JNum("avg_parse_cluster_ms", metrics.avg_parse_cluster) << ",\n";
+        f << "    " << JNum("avg_fetch_missing_ms", metrics.avg_fetch_missing) << ",\n";
+        f << "    " << JNum("avg_submit_calls", metrics.avg_submit_calls) << ",\n";
         f << "    " << JNum("early_stopped_pct", metrics.early_pct) << ",\n";
         f << "    " << JNum("avg_clusters_skipped", metrics.avg_skipped) << ",\n";
         f << "    " << JNum("overlap_ratio", metrics.overlap_ratio) << "\n";

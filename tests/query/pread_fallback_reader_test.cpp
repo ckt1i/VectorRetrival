@@ -94,6 +94,21 @@ TEST_F(PreadFallbackTest, WaitAndPollWorks) {
     EXPECT_EQ(buf[0], 10);
 }
 
+TEST_F(PreadFallbackTest, TaggedReadPreservesUserData) {
+    PreadFallbackReader reader;
+
+    uint8_t buf[8];
+    constexpr uint64_t kTag = 0x1234ULL;
+    ASSERT_TRUE(reader.PrepReadTagged(fd_, buf, 8, 32, kTag).ok());
+    EXPECT_EQ(reader.Submit(), 1u);
+
+    IoCompletion comp;
+    EXPECT_EQ(reader.Poll(&comp, 1), 1u);
+    EXPECT_EQ(comp.user_data, kTag);
+    EXPECT_EQ(comp.buffer, buf);
+    EXPECT_EQ(comp.result, 8);
+}
+
 TEST_F(PreadFallbackTest, EmptySubmit) {
     PreadFallbackReader reader;
     EXPECT_EQ(reader.Submit(), 0u);

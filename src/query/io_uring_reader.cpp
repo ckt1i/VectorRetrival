@@ -4,6 +4,7 @@
 #include <cerrno>
 #include <cstring>
 #include <algorithm>
+#include <vector>
 
 namespace vdb {
 namespace query {
@@ -13,6 +14,7 @@ struct IoUringReader::Impl {
     bool initialized = false;
     bool defer_taskrun = false;
     bool files_registered = false;
+    bool buffers_registered = false;
     // fd → registered index mapping (small, typically 2 entries)
     static constexpr int kMaxRegisteredFds = 8;
     int registered_fds[kMaxRegisteredFds] = {};
@@ -36,20 +38,36 @@ IoUringReader::~IoUringReader() {
 }
 
 Status IoUringReader::Init(uint32_t queue_depth, uint32_t cq_entries,
-                            bool use_iopoll) {
+                            bool use_iopoll, bool use_sqpoll) {
     struct io_uring_params params;
     std::memset(&params, 0, sizeof(params));
     params.flags = IORING_SETUP_CQSIZE
                  | IORING_SETUP_SINGLE_ISSUER
                  | IORING_SETUP_DEFER_TASKRUN;
+    if (use_sqpoll) params.flags |= IORING_SETUP_SQPOLL;
     if (use_iopoll) params.flags |= IORING_SETUP_IOPOLL;
     params.cq_entries = cq_entries;
 
     int ret = io_uring_queue_init_params(queue_depth, &impl_->ring, &params);
     if (ret < 0) {
-        // Fallback: kernel may not support DEFER_TASKRUN / SINGLE_ISSUER.
+        // First fallback: drop SQPOLL while keeping the existing single-issuer
+        // fast path. This keeps the old warm-path behavior when SQPOLL is not
+        // supported or blocked by environment constraints.
+        if (use_sqpoll) {
+            std::memset(&params, 0, sizeof(params));
+            params.flags = IORING_SETUP_CQSIZE
+                         | IORING_SETUP_SINGLE_ISSUER
+                         | IORING_SETUP_DEFER_TASKRUN;
+            if (use_iopoll) params.flags |= IORING_SETUP_IOPOLL;
+            params.cq_entries = cq_entries;
+            ret = io_uring_queue_init_params(queue_depth, &impl_->ring, &params);
+        }
+    }
+    if (ret < 0) {
+        // Final fallback: kernel may not support DEFER_TASKRUN / SINGLE_ISSUER.
         std::memset(&params, 0, sizeof(params));
         params.flags = IORING_SETUP_CQSIZE;
+        if (use_iopoll) params.flags |= IORING_SETUP_IOPOLL;
         params.cq_entries = cq_entries;
         ret = io_uring_queue_init_params(queue_depth, &impl_->ring, &params);
         if (ret < 0) {
@@ -61,6 +79,11 @@ Status IoUringReader::Init(uint32_t queue_depth, uint32_t cq_entries,
         impl_->defer_taskrun = true;
     }
     impl_->initialized = true;
+    queue_depth_ = queue_depth;
+    cq_entries_ = cq_entries;
+    defer_taskrun_enabled_ = impl_->defer_taskrun;
+    iopoll_enabled_ = (params.flags & IORING_SETUP_IOPOLL) != 0;
+    sqpoll_enabled_ = (params.flags & IORING_SETUP_SQPOLL) != 0;
     return Status::OK();
 }
 
@@ -81,8 +104,27 @@ Status IoUringReader::RegisterFiles(const int* fds, uint32_t count) {
     return Status::OK();
 }
 
-Status IoUringReader::PrepReadFixed(int fd_index, uint8_t* buf,
-                                     uint32_t len, uint64_t offset) {
+Status IoUringReader::RegisterBuffers(const uint8_t* const* bufs,
+                                      const uint32_t* capacities,
+                                      uint32_t count) {
+    std::vector<struct iovec> iovecs(count);
+    for (uint32_t i = 0; i < count; ++i) {
+        iovecs[i].iov_base = const_cast<uint8_t*>(bufs[i]);
+        iovecs[i].iov_len = capacities[i];
+    }
+    int ret = io_uring_register_buffers(&impl_->ring, iovecs.data(), count);
+    if (ret < 0) {
+        return Status::IOError(
+            std::string("io_uring_register_buffers failed: ") + strerror(-ret));
+    }
+    impl_->buffers_registered = true;
+    registered_buffers_enabled_ = true;
+    return Status::OK();
+}
+
+Status IoUringReader::PrepReadFixedTagged(int fd_index, uint8_t* buf,
+                                          uint32_t len, uint64_t offset,
+                                          uint64_t user_data) {
     struct io_uring_sqe* sqe = io_uring_get_sqe(&impl_->ring);
     if (!sqe) {
         int ret = io_uring_submit(&impl_->ring);
@@ -101,13 +143,57 @@ Status IoUringReader::PrepReadFixed(int fd_index, uint8_t* buf,
     }
     io_uring_prep_read(sqe, fd_index, buf, len, offset);
     sqe->flags |= IOSQE_FIXED_FILE;
-    io_uring_sqe_set_data(sqe, buf);
+    io_uring_sqe_set_data64(sqe, user_data);
     ++prepped_;
     return Status::OK();
 }
 
-Status IoUringReader::PrepRead(int fd, uint8_t* buf,
-                                uint32_t len, uint64_t offset) {
+Status IoUringReader::PrepReadFixed(int fd_index, uint8_t* buf,
+                                    uint32_t len, uint64_t offset) {
+    return PrepReadFixedTagged(fd_index, buf, len, offset,
+                               reinterpret_cast<uint64_t>(buf));
+}
+
+Status IoUringReader::PrepReadRegisteredBufferTagged(int fd, uint8_t* buf,
+                                                     uint16_t buf_index,
+                                                     uint32_t len,
+                                                     uint64_t offset,
+                                                     uint64_t user_data) {
+    if (!impl_->buffers_registered) {
+        return Status::InvalidArgument("registered buffer requested before registration");
+    }
+    struct io_uring_sqe* sqe = io_uring_get_sqe(&impl_->ring);
+    if (!sqe) {
+        int ret = io_uring_submit(&impl_->ring);
+        if (ret < 0) {
+            return Status::IOError(
+                std::string("io_uring auto-flush submit failed: ") +
+                strerror(-ret));
+        }
+        in_flight_ += prepped_;
+        prepped_ = 0;
+
+        sqe = io_uring_get_sqe(&impl_->ring);
+        if (!sqe) {
+            return Status::IOError("io_uring SQ full after auto-flush");
+        }
+    }
+
+    int fd_idx = impl_->files_registered ? impl_->FindFdIndex(fd) : -1;
+    if (fd_idx >= 0) {
+        io_uring_prep_read_fixed(sqe, fd_idx, buf, len, offset, buf_index);
+        sqe->flags |= IOSQE_FIXED_FILE;
+    } else {
+        io_uring_prep_read_fixed(sqe, fd, buf, len, offset, buf_index);
+    }
+    io_uring_sqe_set_data64(sqe, user_data);
+    ++prepped_;
+    return Status::OK();
+}
+
+Status IoUringReader::PrepReadTagged(int fd, uint8_t* buf,
+                                     uint32_t len, uint64_t offset,
+                                     uint64_t user_data) {
     struct io_uring_sqe* sqe = io_uring_get_sqe(&impl_->ring);
     if (!sqe) {
         // SQ full — flush current SQEs to kernel, then retry.
@@ -134,7 +220,7 @@ Status IoUringReader::PrepRead(int fd, uint8_t* buf,
     } else {
         io_uring_prep_read(sqe, fd, buf, len, offset);
     }
-    io_uring_sqe_set_data(sqe, buf);
+    io_uring_sqe_set_data64(sqe, user_data);
     ++prepped_;
     return Status::OK();
 }
@@ -164,7 +250,8 @@ uint32_t IoUringReader::Poll(IoCompletion* out, uint32_t max_count) {
         int ret = io_uring_peek_cqe(&impl_->ring, &cqe);
         if (ret != 0) break;  // No more completions
 
-        out[count].buffer = static_cast<uint8_t*>(io_uring_cqe_get_data(cqe));
+        out[count].user_data = io_uring_cqe_get_data64(cqe);
+        out[count].buffer = reinterpret_cast<uint8_t*>(out[count].user_data);
         out[count].result = cqe->res;
         io_uring_cqe_seen(&impl_->ring, cqe);
         ++count;
@@ -182,7 +269,8 @@ uint32_t IoUringReader::WaitAndPoll(IoCompletion* out, uint32_t max_count) {
     if (ret < 0) return 0;
 
     // Consume this one
-    out[0].buffer = static_cast<uint8_t*>(io_uring_cqe_get_data(cqe));
+    out[0].user_data = io_uring_cqe_get_data64(cqe);
+    out[0].buffer = reinterpret_cast<uint8_t*>(out[0].user_data);
     out[0].result = cqe->res;
     io_uring_cqe_seen(&impl_->ring, cqe);
     --in_flight_;
@@ -193,7 +281,8 @@ uint32_t IoUringReader::WaitAndPoll(IoCompletion* out, uint32_t max_count) {
         ret = io_uring_peek_cqe(&impl_->ring, &cqe);
         if (ret != 0) break;
 
-        out[count].buffer = static_cast<uint8_t*>(io_uring_cqe_get_data(cqe));
+        out[count].user_data = io_uring_cqe_get_data64(cqe);
+        out[count].buffer = reinterpret_cast<uint8_t*>(out[count].user_data);
         out[count].result = cqe->res;
         io_uring_cqe_seen(&impl_->ring, cqe);
         ++count;

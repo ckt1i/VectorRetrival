@@ -219,3 +219,82 @@ TEST_F(OverlapSchedulerTest, MultipleQueries_StateReset) {
         }
     }
 }
+
+TEST_F(OverlapSchedulerTest, MultipleQueriesWithEarlyStopEnabled) {
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 4;
+    config.refill_threshold = 2;
+    config.refill_count = 2;
+    config.early_stop = true;
+
+    OverlapScheduler scheduler(*index_, reader, config);
+
+    for (uint32_t q = 0; q < 6; ++q) {
+        const float* query = vectors_.data() + static_cast<size_t>(q) * kDim;
+        auto results = scheduler.Search(query);
+        ASSERT_GT(results.size(), 0u) << "Query " << q;
+        EXPECT_GT(results.stats().total_submit_calls, 0u);
+    }
+}
+
+TEST_F(OverlapSchedulerTest, SubmitBatchingAndReservePopulateStats) {
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 4;
+    config.refill_threshold = 2;
+    config.refill_count = 2;
+    config.io_queue_depth = 32;
+    config.cluster_submit_reserve = 4;
+    config.submit_batch_size = 8;
+    config.early_stop = false;
+
+    OverlapScheduler scheduler(*index_, reader, config);
+
+    std::vector<float> query(kDim, 0.0f);
+    query[0] = 1.0f;
+
+    auto results = scheduler.Search(query.data());
+    EXPECT_GT(results.size(), 0u);
+    EXPECT_GT(results.stats().total_submit_calls, 0u);
+    EXPECT_GE(results.stats().uring_submit_ms, 0.0);
+
+    for (uint32_t i = 1; i < results.size(); ++i) {
+        EXPECT_LE(results[i - 1].distance, results[i].distance);
+    }
+}
+
+TEST_F(OverlapSchedulerTest, SharedAndIsolatedModesProduceSameResults) {
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 4;
+    config.refill_threshold = 2;
+    config.refill_count = 2;
+    config.io_queue_depth = 32;
+    config.cluster_submit_reserve = 4;
+    config.submit_batch_size = 8;
+    config.early_stop = false;
+
+    std::vector<float> query(kDim, 0.0f);
+    query[0] = 1.0f;
+
+    PreadFallbackReader shared_reader;
+    OverlapScheduler shared_scheduler(*index_, shared_reader, config);
+    auto shared_results = shared_scheduler.Search(query.data());
+
+    PreadFallbackReader cluster_reader;
+    PreadFallbackReader data_reader;
+    config.submission_mode = SubmissionMode::Isolated;
+    OverlapScheduler isolated_scheduler(*index_, cluster_reader, data_reader, config);
+    auto isolated_results = isolated_scheduler.Search(query.data());
+
+    ASSERT_EQ(shared_results.size(), isolated_results.size());
+    for (uint32_t i = 0; i < shared_results.size(); ++i) {
+        EXPECT_FLOAT_EQ(shared_results[i].distance, isolated_results[i].distance);
+    }
+}

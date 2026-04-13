@@ -40,5 +40,20 @@ void BufferPool::Release(uint8_t* buf) {
     pool_.push_back({buf, cap});
 }
 
+void BufferPool::Prime(uint32_t size, uint32_t count) {
+    uint32_t aligned_size = (size + 4095u) & ~4095u;
+    for (uint32_t i = 0; i < count; ++i) {
+        uint8_t* raw = static_cast<uint8_t*>(
+            std::aligned_alloc(4096, aligned_size));
+        if (!raw) {
+            std::fprintf(stderr,
+                         "FATAL: aligned_alloc failed in BufferPool::Prime (%u bytes)\n",
+                         aligned_size);
+            std::abort();
+        }
+        pool_.push_back({raw, aligned_size});
+    }
+}
+
 }  // namespace query
 }  // namespace vdb
