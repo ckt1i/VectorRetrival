@@ -1,15 +1,15 @@
 ./bench_vector_search \
   --base /home/zcq/VDB/data/coco_100k/image_embeddings.fvecs \
   --query /home/zcq/VDB/data/coco_100k/query_embeddings.fvecs \
-  --nlist 2048 --nprobe 150 --topk 10 --bits 4 --queries 200 --crc 1 \
-  --tmp-dir /tmp/bench_vs_coco
+  --nlist 2048 --nprobe 150 --topk 10 --bits 4 --queries 1000 --crc 1 \
+  --tmp-dir /tmp/bench_vs_coco --epsilon-samples 500 --epsilon-percentile 0.95 --crc-alpha 0.01
 
 ./bench_vector_search \
   --base /home/zcq/VDB/data/deep1m/deep1m_base.fvecs \
   --query  /home/zcq/VDB/data/deep1m/deep1m_query.fvecs \
   --gt --gt /home/zcq/VDB/data/deep1m/deep1m_groundtruth.ivecs \
-  --nlist 4096 --nprobe 256 --topk 10 --bits 4 --queries 200 --crc 1 --pad-to-pow2 1 \
-  --tmp-dir /tmp/bench_vs_coco
+  --nlist 4096 --nprobe 256 --topk 10 --bits 4 --queries 1000 --crc 1 --pad-to-pow2 1 \
+  --tmp-dir /tmp/bench_vs_coco --epsilon-samples 500 --epsilon-percentile 0.95
 # 激活环境
 cd /home/zcq/VDB/baselines
 
@@ -45,3 +45,6 @@ PYTHONUNBUFFERED=1 /home/zcq/anaconda3/envs/labnew/bin/python \
   --protocol warm \
   --save-ids --save-L 200 \
   2>&1 | tee /tmp/diskann_deep8m_warm.log
+
+./bench_e2e --dataset /home/zcq/VDB/data/coco_100k --index-dir /home/zcq/VDB/test/data/COCO100k/index_fkmeans_1024 --output /home/zcq/VDB/test/tmp --nlist 1024 --bits 4 --topk 10 --nprobe 500 --queries 1000 --io-queue-depth 64 --submission-mode shared --sqpoll --epsilon-percentile 0.9 --crc-alpha 0.05
+./bench_e2e --dataset /home/zcq/VDB/data/coco_100k --index-dir /home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048 --output /home/zcq/VDB/test/tmp --nlist 2048 --bits 4 --topk 10 --nprobe 500 --queries 1000 --io-queue-depth 64 --submission-mode shared --sqpoll --epsilon-percentile 0.9 --crc-alpha 0.05

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 560">
+  <style>
+    .axis-label { font-family: Arial, sans-serif; font-size: 12px; }
+    .title { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; }
+    .legend { font-family: Arial, sans-serif; font-size: 11px; }
+  </style>
+  <rect width="800" height="560" fill="white"/>
+  <text x="400" y="30" text-anchor="middle" class="title">Warm Steady-State: Recall@10 vs QPS</text>
+  <text x="400" y="48" text-anchor="middle" class="axis-label" fill="#666">coco_100k, queries=1000, topk=10</text>
+  <g stroke="#e0e0e0" stroke-width="1">
+    <line x1="100" y1="500" x2="750" y2="500"/>
+    <line x1="100" y1="450" x2="750" y2="450"/>
+    <line x1="100" y1="400" x2="750" y2="400"/>
+    <line x1="100" y1="350" x2="750" y2="350"/>
+    <line x1="100" y1="300" x2="750" y2="300"/>
+    <line x1="100" y1="250" x2="750" y2="250"/>
+    <line x1="100" y1="200" x2="750" y2="200"/>
+    <line x1="100" y1="150" x2="750" y2="150"/>
+    <line x1="100" y1="100" x2="750" y2="100"/>
+  </g>
+  <text x="95" y="505" text-anchor="end" class="axis-label">0</text>
+  <text x="95" y="455" text-anchor="end" class="axis-label">200</text>
+  <text x="95" y="405" text-anchor="end" class="axis-label">400</text>
+  <text x="95" y="355" text-anchor="end" class="axis-label">600</text>
+  <text x="95" y="305" text-anchor="end" class="axis-label">800</text>
+  <text x="95" y="255" text-anchor="end" class="axis-label">1000</text>
+  <text x="30" y="300" text-anchor="middle" transform="rotate(-90, 30, 300)" class="axis-label">QPS</text>
+  <text x="100" y="525" text-anchor="middle" class="axis-label">0.70</text>
+  <text x="225" y="525" text-anchor="middle" class="axis-label">0.80</text>
+  <text x="350" y="525" text-anchor="middle" class="axis-label">0.90</text>
+  <text x="475" y="525" text-anchor="middle" class="axis-label">0.95</text>
+  <text x="600" y="525" text-anchor="middle" class="axis-label">0.99</text>
+  <text x="725" y="525" text-anchor="middle" class="axis-label">1.00</text>
+  <text x="425" y="550" text-anchor="middle" class="axis-label">Recall@10</text>
+  <polyline fill="none" stroke="#2196F3" stroke-width="2" points="133,50 187,387 195,313 198,50 200,245 202,158 206,193"/>
+  <rect x="126.50000000000003" y="44.0" width="12" height="12" fill="#2196F3"/>
+  <rect x="180.66666666666674" y="380.83800231353416" width="12" height="12" fill="#2196F3"/>
+  <rect x="189.33333333333343" y="306.60931123511284" width="12" height="12" fill="#2196F3"/>
+  <rect x="191.5000000000001" y="44.0" width="12" height="12" fill="#2196F3"/>
+  <rect x="193.66666666666677" y="238.72430224642613" width="12" height="12" fill="#2196F3"/>
+  <rect x="195.83333333333343" y="152.23650034176353" width="12" height="12" fill="#2196F3"/>
+  <rect x="200.16666666666677" y="187.12602291325692" width="12" height="12" fill="#2196F3"/>
+  <polyline fill="none" stroke="#4CAF50" stroke-width="2" points="735,172 735,112 735,98 735,94 739,177 744,266 746,318 748,376 748,353"/>
+  <circle cx="734.8333333333335" cy="172.44140340660937" r="6" fill="#4CAF50"/>
+  <circle cx="734.8333333333335" cy="111.56668105308592" r="6" fill="#4CAF50"/>
+  <circle cx="734.8333333333335" cy="97.81928679953523" r="6" fill="#4CAF50"/>
+  <circle cx="734.8333333333335" cy="94.22903516681691" r="6" fill="#4CAF50"/>
+  <circle cx="739.1666666666669" cy="177.4887121049237" r="6" fill="#4CAF50"/>
+  <circle cx="743.5000000000002" cy="266.25805111157285" r="6" fill="#4CAF50"/>
+  <circle cx="745.6666666666669" cy="318.2772685054315" r="6" fill="#4CAF50"/>
+  <circle cx="747.8333333333335" cy="375.65625863498207" r="6" fill="#4CAF50"/>
+  <circle cx="747.8333333333335" cy="353.40109460516027" r="6" fill="#4CAF50"/>
+  <circle cx="331.40000000000003" cy="50.0" r="6" fill="#90CAF9"/>
+  <circle cx="485.88333333333344" cy="97.13518352730529" r="6" fill="#90CAF9"/>
+  <circle cx="529.8666666666668" cy="163.17365269461078" r="6" fill="#90CAF9"/>
+  <circle cx="537.8833333333334" cy="180.624556422995" r="6" fill="#90CAF9"/>
+  <circle cx="538.5333333333335" cy="177.88117394416605" r="6" fill="#90CAF9"/>
+  <circle cx="538.7500000000001" cy="176.9562096195262" r="6" fill="#90CAF9"/>
+  <circle cx="538.7500000000001" cy="179.25873129009267" r="6" fill="#90CAF9"/>
+  <polygon points="608.3000000000002,194.1839841164791 615.3000000000002,202.1839841164791 615.3000000000002,208.1839841164791 608.3000000000002,210.1839841164791 601.3000000000002,208.1839841164791 601.3000000000002,202.1839841164791" fill="red" stroke="darkred" stroke-width="1"/>
+  <circle cx="672.0000000000001" cy="300.08884940026655" r="6" fill="#1565C0"/>
+  <circle cx="695.8333333333335" cy="338.1877022653722" r="6" fill="#1565C0"/>
+  <circle cx="708.4000000000002" cy="364.00725294650954" r="6" fill="#1565C0"/>
+  <circle cx="718.1500000000001" cy="381.2038014783527" r="6" fill="#1565C0"/>
+  <rect x="550" y="60" width="200" height="130" fill="#f9f9f9" stroke="#ccc"/>
+  <text x="560" y="78" class="legend" font-weight="bold">Legend</text>
+  <circle cx="565" cy="95" r="5" fill="#90CAF9"/>
+  <text x="580" y="98" class="legend">BoundFetch (alpha=0.1)</text>
+  <polygon points="565,118 569,128 580,128 572,135 575,146 565,139 555,146 558,135 550,128 561,128" fill="red"/>
+  <text x="580" y="138" class="legend">BoundFetch (alpha=0.05)</text>
+  <circle cx="565" cy="158" r="5" fill="#1565C0"/>
+  <text x="580" y="161" class="legend">BoundFetch (alpha=0.01)</text>
+  <circle cx="565" cy="178" r="5" fill="#4CAF50"/>
+  <text x="580" y="181" class="legend">DiskANN+FlatStor</text>
+  <rect x="560" y="190" width="10" height="10" fill="#2196F3"/>
+  <text x="580" y="199" class="legend">FAISS-IVFPQ+FlatStor</text>
+  <text x="608.3000000000002" y="187.1839841164791" class="legend" fill="red" text-anchor="middle">Optimal: 662 QPS @ 0.935</text>
+</svg>

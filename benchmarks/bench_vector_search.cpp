@@ -118,6 +118,8 @@ int main(int argc, char* argv[]) {
     std::string outdir = GetArg(argc, argv, "--outdir", "");
     int q_limit      = GetIntArg(argc, argv, "--queries", 0);
     uint8_t bits     = static_cast<uint8_t>(GetIntArg(argc, argv, "--bits", 1));
+    uint32_t epsilon_samples = static_cast<uint32_t>(GetIntArg(argc, argv, "--epsilon-samples", 100));
+    float epsilon_percentile = GetFloatArg(argc, argv, "--epsilon-percentile", 0.99f);
     std::string centroids_path   = GetArg(argc, argv, "--centroids", "");
     std::string assignments_path = GetArg(argc, argv, "--assignments", "");
     bool pad_to_pow2 = GetIntArg(argc, argv, "--pad-to-pow2", 0) != 0;
@@ -284,8 +286,8 @@ int main(int argc, char* argv[]) {
         cfg.seed = seed;
         cfg.rabitq = {bits, 64, 5.75f};
         cfg.calibration_samples = std::min(100u, N);
-        cfg.epsilon_samples = 100;
-        cfg.epsilon_percentile = 0.99f;
+        cfg.epsilon_samples = epsilon_samples;
+        cfg.epsilon_percentile = epsilon_percentile;
         cfg.calibration_topk = top_k;
         cfg.calibration_percentile = 0.99f;
         cfg.centroids_path = centroids_path;

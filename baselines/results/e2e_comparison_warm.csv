@@ -1,0 +1,29 @@
+system,dataset,topk,param,recall@10,e2e_ms,p99_ms,notes,protocol
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=50,alpha=0.1",0.8068,0.743,1.001,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=100,alpha=0.1",0.8781,1.117,1.513,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=150,alpha=0.1",0.8984,1.336,2.000,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.1",0.9021,1.409,2.493,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=250,alpha=0.1",0.9024,1.397,2.744,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=300,alpha=0.1",0.9025,1.393,2.824,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.1",0.9025,1.403,2.773,alpha=0.1 baseline,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.05",0.9346,1.511,1.855,OPTIMAL,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.01",0.9640,2.251,2.648,highest recall at nprobe=200,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=250,alpha=0.01",0.9750,2.781,3.234,high recall,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=300,alpha=0.01",0.9808,3.309,3.819,very high recall,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.01",0.9853,3.788,4.313,highest recall overall,warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=1",0.9930,1.1090,1.8078,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=2",0.9930,1.1189,1.8073,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=5",0.9930,1.1585,1.9010,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=10",0.9930,1.3738,2.1865,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=15",0.9950,1.3953,2.2225,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=20",0.9970,1.9252,2.9748,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=30",0.9980,2.4763,3.5780,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=40",0.9990,3.0696,4.0966,"R=32,L_build=50,warmup=100,queries=1000",warm
+DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=50",0.9990,3.6190,4.6523,"R=32,L_build=50,warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=8,0.7150,0.3327,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=16,0.7450,0.6571,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=32,0.7470,1.3167,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=64,0.7490,1.4664,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=128,0.7460,1.7628,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=256,0.7440,2.4014,,"warmup=100,queries=1000",warm
+FAISS-IVFPQ+FlatStor,coco_100k,10,nprobe=512,0.7400,3.9766,,"warmup=100,queries=1000",warm

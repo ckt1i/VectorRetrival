@@ -1,179 +1,234 @@
 # Experiment Plan
 
-**Problem**: BoundFetch should be validated as a warm steady-state integrated search+payload system.  
-**Method Thesis**: The main value of BoundFetch is end-to-end warm-serving integration, and the next meaningful improvement target is recall at roughly the current latency.  
-**Date**: 2026-04-13
+**Problem**: After synchronized warm-serving tuning, BoundFetch is clearly stronger than the IVF+PQ+FlatStor family but is still dominated by tuned DiskANN+FlatStor on COCO 100K.  
+**Method Thesis**: The smallest next optimization worth doing is to preload `.clu` quantized vectors and raw address metadata before query execution, then re-evaluate BoundFetch under a layered baseline strategy that keeps DiskANN as a strong reference and separates storage-format effects from search-core effects.  
+**Date**: 2026-04-14
 
 ## Claim Map
 
 | Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
 |-------|----------------|-----------------------------|---------------|
-| C1 | BoundFetch is a strong warm-serving E2E system, not just a search core. | A recall-latency Pareto curve showing at least one practically useful operating region where BoundFetch beats strong separated baselines on E2E latency. | B1 |
-| C2 | The current remaining bottleneck is submit/probe CPU, so the next major gain should come from recall tuning rather than more kernel-style micro-optimization. | Compact mechanism attribution plus a small recall-improvement ablation showing movement in recall without large latency regression. | B2, B3 |
+| C1 | Warm-resident preload of `.clu` cluster-side state is the highest-value next BoundFetch optimization. | `preload=off`, `preload_codes`, and `preload_codes_and_addr` move the BoundFetch frontier in the right direction without changing recall semantics. | B1, B2 |
+| C2 | DiskANN must remain in the evaluation, but the comparison should be layered rather than expanded into a full `search x storage` matrix. | One credible main search-core table, one storage-backend ablation, and one build-cost table together explain the tradeoff better than a large benchmark grid. | B3, B4, B5 |
 
 ## Paper Storyline
 - Main paper must prove:
-  - BoundFetch should be judged in warm steady-state E2E mode.
-  - The integrated design gives a favorable latency-recall tradeoff against strong separated baselines.
-  - The current bottleneck and next engineering target are understood.
+  - warm steady-state E2E serving remains the correct evaluation target
+  - the next meaningful BoundFetch optimization is cluster-side preload, not more blind `io_uring` micro-tuning
+  - BoundFetch remains clearly stronger than IVF-family baselines
+  - DiskANN remains the strong upper baseline and should not be removed
 - Appendix can support:
-  - queue-depth sensitivity
-  - shared vs isolated mode
-  - SQPOLL fallback observation
+  - additional storage-backend variants
+  - residual queue-depth or mode sensitivity checks
+  - generality on Deep1M / Deep8M
 - Experiments intentionally cut:
   - cold-start / drop-cache protocol
-  - giant dataset sweep before the core story is stable
-  - additional low-level tuning that does not affect recall-latency tradeoff
+  - full `IVF+PQ/RQ/(DiskANN) x Lance/Parquet/(FlatStor)` Cartesian benchmarking
+  - another round of submit-path tuning before preload results are known
+
+## Baseline Comparison Policy
+
+The new baseline policy is intentionally layered.
+
+- Keep `DiskANN` in the reported comparisons even if it currently dominates the warm frontier.
+- Do not treat `FlatStor` as the only storage backend in the final story.
+- Do not attempt the full search-backend Cartesian product unless automation makes it nearly free.
+- Use three comparison layers instead:
+  - **Layer A: main search-core comparison**
+    - BoundFetch
+    - IVF+PQ or IVF+RQ
+    - DiskANN
+    - one chosen storage backend or one clearly documented backend policy
+  - **Layer B: storage-backend ablation**
+    - one or two representative search cores
+    - `FlatStor`, `Lance`, and optionally `Parquet`
+  - **Layer C: build / preload cost table**
+    - build time
+    - index size
+    - resident preload size
+    - startup preload time
+
+Recommended interpretation:
+- If aligned `Lance` integration is feasible for all compared systems, prefer `Lance` as the production-facing main backend.
+- If aligned backend integration is too expensive, keep `DiskANN+FlatStor` as the strong warm-serving upper-bound reference and move backend-format comparisons into Layer B.
+- `Parquet` should be added only if the engineering cost is small; otherwise it belongs in appendix or future work.
 
 ## Experiment Blocks
 
-### Block 1: Warm E2E Pareto on COCO 100K
+### Block 1: Warm-Resident Cluster Preload
 - Claim tested: C1
-- Why this block exists: This is the main anchor result that aligns with the actual deployment target.
-- Dataset / split / task: `coco_100k`, top-k=10, warm steady-state serving.
+- Why this block exists: This is the smallest structural change that directly targets the current gap to DiskANN.
+- Dataset / split / task: `coco_100k`, top-k=10, warm steady-state serving, `queries=1000`
 - Compared systems:
-  - BoundFetch with `nprobe` sweep
-  - DiskANN-disk + FlatStor-sim
-  - FAISS-IVFPQ-disk + FlatStor-sim
+  - BoundFetch `preload=off`
+  - BoundFetch `preload_codes`
+  - BoundFetch `preload_codes_and_addr`
 - Metrics:
   - primary: `recall@10`, `e2e_ms`, `p99_ms`
-  - secondary: `vec_search_ms`, `payload_ms`
+  - secondary: `uring_submit_ms`, `probe_ms`, resident RSS, preload time
 - Setup details:
-  - BoundFetch `nprobe={50,100,150,200,250,300,500}` if available
-  - keep `io_qd=64`, `mode=shared` as default
-  - use the existing warm protocol and 500-query setting unless there is a strong reason to change
+  - start from current best known operating point: `nlist=2048, nprobe=200, crc-alpha=0.05, epsilon=0.99`
+  - payload bodies are not preloaded
+  - record resident memory growth and startup preload duration
 - Success criterion:
-  - produce a clear Pareto curve
-  - BoundFetch dominates DiskANN in latency and improves on its own current operating-point characterization
+  - preload reduces E2E latency or cluster-side time enough to move the BoundFetch frontier toward DiskANN
+  - recall remains unchanged for the same search settings
 - Failure interpretation:
-  - if no useful Pareto region appears, the paper story weakens and may need to pivot toward a narrower systems-mechanism paper
+  - if preload has little effect, the remaining gap is probably search-quality or algorithmic rather than hot-path metadata access
 - Table / figure target:
-  - Main Figure: warm recall-latency Pareto
-  - Main Table: selected operating points
+  - Main or Appendix ablation table
+  - Breakdown figure showing what moved after preload
 - Priority: MUST-RUN
 
-### Block 2: Mechanism Attribution at the Best Warm Operating Point
-- Claim tested: C2
-- Why this block exists: Reviewers need to see why BoundFetch is fast and why more queue/kernel tuning is not the primary next lever.
-- Dataset / split / task: `coco_100k`, best current BoundFetch configuration and 1-2 nearby points.
+### Block 2: Refreshed BoundFetch Pareto After Preload
+- Claim tested: C1
+- Why this block exists: One preload ablation is not enough; we need to see whether the whole BoundFetch frontier shifts.
+- Dataset / split / task: `coco_100k`, top-k=10, warm steady-state serving, `queries=1000`
 - Compared systems:
-  - BoundFetch best point
-  - optional nearby `nprobe` point for contrast
-- Metrics:
-  - `uring_submit_ms`
-  - `probe_ms`
-  - `parse_cluster_ms`
-  - `rerank_ms`
-  - `io_wait_ms`
-  - `submit_calls`
-- Setup details:
-  - reuse the internal stats already available from the benchmark
-  - summarize only the components that materially contribute
-- Success criterion:
-  - show that device I/O wait is negligible
-  - show that submit/probe CPU dominates the remaining cost
-- Failure interpretation:
-  - if attribution is unstable or noisy, reduce the claim and keep only qualitative mechanism discussion
-- Table / figure target:
-  - Main or Appendix stacked breakdown figure
-- Priority: MUST-RUN
-
-### Block 3: Recall-Improvement Minimal Ablation
-- Claim tested: C2
-- Why this block exists: This decides whether more code optimization is worth doing and where.
-- Dataset / split / task: `coco_100k`, warm steady-state.
-- Compared systems:
-  - current best config
-  - 2-3 nearby settings over `CRC_alpha` / pruning threshold / optional rerank or fetch policy
-  - one simplified variant if needed, such as relaxed pruning
+  - BoundFetch current frontier
+  - BoundFetch with preload enabled
 - Metrics:
   - `recall@10`
   - `e2e_ms`
   - `p99_ms`
-  - `uring_submit_ms`
-  - `submit_calls`
 - Setup details:
-  - keep `io_qd=64`, `mode=shared`
-  - change one mechanism family at a time
+  - rerun a compact grid over `crc-alpha={0.01,0.02,0.05,0.08,0.1}` at `nprobe={200,500}`
+  - only add `nlist` or `epsilon` refinement if preload materially changes the frontier shape
 - Success criterion:
-  - find at least one point with higher recall and acceptable latency regression
-  - or conclude clearly that the current recall ceiling is structural, not due to missing micro-tuning
+  - at least one new non-dominated BoundFetch point appears
 - Failure interpretation:
-  - if recall does not move without large latency loss, stop optimizing and reposition the paper around the current operating region
+  - if the refreshed frontier is still fully dominated by DiskANN, stop low-level tuning and reposition the paper around build-time / integration tradeoffs
 - Table / figure target:
-  - Appendix ablation table
+  - Updated main Pareto figure
 - Priority: MUST-RUN
 
-### Block 4: Generality Check on Deep1M / Deep8M
-- Claim tested: Supporting generality only
-- Why this block exists: Prevent the paper from looking COCO-only without exploding the run budget.
-- Dataset / split / task:
-  - `deep1m` or `deep8m`, whichever is quicker to iterate and already instrumented
+### Block 3: Main Search-Core Comparison
+- Claim tested: C2
+- Why this block exists: The paper needs one clean main-table comparison that reviewers can trust.
+- Dataset / split / task: `coco_100k`, top-k=10, warm steady-state serving, `queries=1000`
 - Compared systems:
-  - BoundFetch only, or BoundFetch plus one baseline point if cheap
+  - BoundFetch with the best preload setting
+  - IVF+PQ or IVF+RQ baseline
+  - DiskANN
 - Metrics:
-  - latency trend
-  - recall trend
-  - attribution consistency
+  - `recall@10`
+  - `e2e_ms`
+  - `p99_ms`
+  - build time
 - Setup details:
-  - no full sweep unless Block 1 and 3 already look strong
+  - prefer one shared backend for all three if feasible
+  - if not feasible, use a clearly documented backend policy and keep DiskANN+FlatStor as an upper-bound reference
+  - main goal is interpretability, not maximal benchmark coverage
 - Success criterion:
-  - show the mechanism is not a one-dataset artifact
+  - the main table clearly shows where BoundFetch sits relative to a weaker classical baseline and the strong graph baseline
 - Failure interpretation:
-  - keep this in appendix or cut if it delays the main story
+  - if the table is still ambiguous, reduce scope and keep only the most defensible pairings
 - Table / figure target:
-  - Appendix support
-- Priority: NICE-TO-HAVE
+  - Main Table: search-core comparison
+- Priority: MUST-RUN
 
-### Block 5: Legacy Tuning Checks to Freeze
-- Claim tested: None directly; this block exists to stop over-optimizing the wrong axis.
-- Why this block exists: Formalize that qd sweep / submission mode / SQPOLL are now validation checks, not main future work.
+### Block 4: Storage-Backend Ablation
+- Claim tested: C2
+- Why this block exists: Search-core and backend-format effects must be separated or the story will look confounded.
+- Dataset / split / task: `coco_100k`, representative warm-serving operating points
+- Compared systems:
+  - one or two representative search cores across `FlatStor`, `Lance`, and optionally `Parquet`
+- Metrics:
+  - `recall@10`
+  - `e2e_ms`
+  - startup time
+  - file size
+- Setup details:
+  - do not run the full matrix by default
+  - start with BoundFetch and one IVF-family baseline
+  - add DiskANN only if backend integration is already available
+- Success criterion:
+  - storage-format contribution is visible without overwhelming the main story
+- Failure interpretation:
+  - if this block becomes too expensive, keep it in appendix or reduce it to `FlatStor` vs `Lance`
+- Table / figure target:
+  - Appendix storage-backend table
+- Priority: MUST-RUN
+
+### Block 5: Build and Preload Cost Table
+- Claim tested: C2
+- Why this block exists: If DiskANN stays stronger on serving latency, BoundFetch still needs a credible systems tradeoff axis.
 - Dataset / split / task: `coco_100k`
 - Compared systems:
-  - qd sweep results already collected
-  - shared vs isolated
-  - SQPOLL requested/effective fallback
+  - BoundFetch
+  - DiskANN
+  - one IVF-family baseline
 - Metrics:
-  - `e2e_ms`
-  - `submit_calls`
-  - effective SQPOLL flag
+  - build time
+  - peak RSS during build
+  - index bytes
+  - preload bytes
+  - preload time
+- Setup details:
+  - report these metrics separately from query latency
+  - treat build and preload cost as first-class evidence, not as a footnote
 - Success criterion:
-  - freeze these choices and move on
+  - produce a clear table showing whether BoundFetch occupies a better build-time / startup / simplicity point
 - Failure interpretation:
-  - only revisit if a future environment materially changes effective SQPOLL behavior
+  - if BoundFetch also loses on build and startup cost, the paper scope must narrow again
 - Table / figure target:
-  - Appendix note
+  - Main or Appendix cost table
+- Priority: MUST-RUN
+
+### Block 6: Generality Check on Deep1M / Deep8M
+- Claim tested: supporting evidence only
+- Why this block exists: prevent the paper from looking COCO-only if the main story stabilizes
+- Dataset / split / task:
+  - `deep1m` or `deep8m`
+- Compared systems:
+  - BoundFetch best point
+  - optional DiskANN reference point
+- Metrics:
+  - recall trend
+  - latency trend
+- Setup details:
+  - run only after Blocks 1-5 are stable
+- Success criterion:
+  - show the direction is not a COCO-only artifact
+- Failure interpretation:
+  - keep as appendix or cut if it delays the main story
+- Table / figure target:
+  - Appendix support
 - Priority: NICE-TO-HAVE
 
 ## Run Order and Milestones
 
 | Milestone | Goal | Runs | Decision Gate | Cost | Risk |
 |-----------|------|------|---------------|------|------|
-| M0 | Freeze protocol and paper scope | Update docs and lock warm-only protocol | All future runs use warm-only and the same reporting fields | 0.5 day | Low |
-| M1 | Establish main Pareto curve | Block 1 | If no useful Pareto region appears, stop and reassess the paper story before more runs | 1-2 days | Medium |
-| M2 | Explain the current bottleneck | Block 2 | If attribution is stable, keep mechanism story; otherwise reduce the mechanism claim | 0.5-1 day | Low |
-| M3 | Decide whether more code optimization is still worth it | Block 3 | If recall can improve at similar latency, continue tuning; else freeze code and move to writeup | 1-2 days | Medium |
-| M4 | Add light generality / appendix support | Block 4 and optional Block 5 | Only run if M1-M3 support the main paper | 1-2 days | Medium |
+| M0 | Re-anchor the docs after synchronized baseline tuning | Update proposal, report, plan, and tracker | All future runs use the new layered-baseline policy | 0.5 day | Low |
+| M1 | Implement and validate preload | Block 1 | Do not run more micro-optimization before this result is known | 1-2 days | Medium |
+| M2 | Refresh the BoundFetch frontier | Block 2 | If no new non-dominated point appears, stop low-level optimization | 1-2 days | Medium |
+| M3 | Produce the main search-core comparison | Block 3 | DiskANN stays in scope unless integration is impossible | 1-3 days | Medium |
+| M4 | Separate backend and build-time effects | Blocks 4 and 5 | If these blocks become too large, reduce them rather than expanding the main table | 2-4 days | Medium |
+| M5 | Add light generality support | Block 6 | Run only if M1-M4 already support the paper | 1-2 days | Medium |
 
 ## Compute and Data Budget
 - Total estimated GPU-hours: 0
 - Data preparation needs:
-  - none for COCO main path
-  - optional re-use of Deep1M / Deep8M existing artifacts
+  - no new COCO preparation
+  - optional backend conversion work for `Lance` or `Parquet`
 - Human evaluation needs: none
-- Biggest bottleneck: not compute, but choosing a convincing recall-latency operating point
+- Biggest bottleneck: engineering time, not compute
+- Biggest coordination rule: keep the experiment suite layered; do not let the search-backend matrix explode
 
 ## Risks and Mitigations
-- Risk: BoundFetch remains faster but clearly lower-recall than the strongest baseline.
-  - Mitigation: prioritize the recall-improvement ablation before any more systems tuning.
-- Risk: The paper looks like a profile log instead of a systems result.
-  - Mitigation: keep attribution compact and subordinate to the main Pareto result.
-- Risk: The plan grows again into a giant benchmark suite.
-  - Mitigation: cut anything that does not directly change a reviewer's belief about C1 or C2.
+- Risk: preload changes little and the BoundFetch frontier remains fully dominated by DiskANN.
+  - Mitigation: stop low-level tuning quickly and elevate build-time / simplicity / integration tradeoffs into the explicit paper story.
+- Risk: reviewers question fairness if DiskANN uses `FlatStor` while other systems use another backend.
+  - Mitigation: either align the backend in Layer A or explicitly label DiskANN+FlatStor as an upper-bound reference and show backend ablations separately.
+- Risk: the baseline space becomes too large to execute cleanly.
+  - Mitigation: freeze the layered baseline policy and reject full Cartesian expansion.
+- Risk: `Parquet` becomes a sink for engineering time without changing conclusions.
+  - Mitigation: add `Parquet` only after `FlatStor` vs `Lance` is already stable.
 
 ## Final Checklist
 - [x] Main paper tables are covered
-- [x] Novelty is isolated
-- [x] Simplicity is defended
-- [x] Frontier contribution is explicitly not claimed
+- [x] DiskANN remains in scope as a strong baseline
+- [x] Search-core and storage-backend effects are separated
 - [x] Nice-to-have runs are separated from must-run runs
+- [x] Cold-start remains explicitly out of scope

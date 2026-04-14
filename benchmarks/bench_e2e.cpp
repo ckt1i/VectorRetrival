@@ -480,6 +480,8 @@ int main(int argc, char* argv[]) {
     int arg_seed       = GetIntArg(argc, argv, "--seed", 42);
     int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
     int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
+    int arg_epsilon_samples = GetIntArg(argc, argv, "--epsilon-samples", 100);
+    float arg_epsilon_percentile = GetFloatArg(argc, argv, "--epsilon-percentile", 0.99f);
     int arg_io_queue_depth = GetIntArg(argc, argv, "--io-queue-depth", 64);
     int arg_cluster_submit_reserve =
         GetIntArg(argc, argv, "--cluster-submit-reserve", 8);
@@ -666,8 +668,8 @@ int main(int argc, char* argv[]) {
         cfg.rabitq = {static_cast<uint8_t>(arg_bits),
                       static_cast<uint32_t>(arg_block_size), arg_c_factor};
         cfg.calibration_samples = std::min(100u, N);
-        cfg.epsilon_samples = 100;
-        cfg.epsilon_percentile = 0.99f;  // match bench_vector_search P99
+        cfg.epsilon_samples = static_cast<uint32_t>(arg_epsilon_samples);
+        cfg.epsilon_percentile = arg_epsilon_percentile;
         cfg.calibration_topk = GT_K;
         cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
         cfg.page_size = static_cast<uint32_t>(arg_page_size);

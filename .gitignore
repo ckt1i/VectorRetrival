@@ -14,6 +14,7 @@ build-bench-only
 **/CXXFLAGS*
 **/CXX.includecache
 **/*.includecache
+**/*.o.d
 
 # Benchmarks build artifacts
 benchmarks/*.cmake

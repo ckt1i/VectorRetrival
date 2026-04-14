@@ -1,156 +1,197 @@
-# Final Proposal: Warm-Steady-State Integrated Vector Search and Payload Co-Retrieval
+# Final Proposal: Warm-Resident BoundFetch and Layered Baseline Evaluation
 
-**Date**: 2026-04-13  
-**Status**: READY  
+**Date**: 2026-04-14  
+**Status**: UPDATED AFTER SYNCHRONIZED BASELINE TUNING  
 **Target Venue**: SIGMOD / VLDB / systems-data crossover
 
 ## Problem Anchor
 - Bottom-line problem: In production vector retrieval, the query path should be evaluated as `search + payload delivery`, not vector search in isolation.
-- Must-solve bottleneck: Existing separated pipelines either pay a second-stage payload retrieval cost after search, or waste work on candidates that do not survive to the final Top-K. Under the current deployment setting, the remaining latency bottleneck is no longer block-device wait, but the CPU path around integrated probing, submission, and candidate verification.
-- Non-goals: This project does not target cold-start latency, strict drop-cache protocols, or first-query cache-miss behavior. It also does not try to win pure vector-search latency against graph indexes without payload delivery.
-- Constraints: The server does not provide `sudo`; warm steady-state is the only required protocol. The codebase should remain single-node, modest in complexity, and focused on one dominant mechanism rather than many parallel contributions.
-- Success condition: Show that under warm steady-state serving, BoundFetch delivers a better or more favorable recall-latency end-to-end tradeoff than strong separated baselines, and explain the gain with a compact mechanism-level analysis.
+- Must-solve bottleneck: After synchronized warm-serving tuning, BoundFetch clearly outperforms the IVF+PQ+FlatStor baseline family but is still dominated by tuned DiskANN+FlatStor on COCO 100K. The next step is to determine whether a minimal warm-resident preload of `.clu` quantized vectors and raw address metadata can close enough of that serving gap to recover a useful system position.
+- Non-goals:
+  - cold-start latency or drop-cache protocols
+  - removing DiskANN from comparison just because it is currently stronger
+  - benchmarking every `search x storage` combination in a full Cartesian grid
+  - preloading full payload bodies into memory and then calling the result a disk-serving system
+- Constraints:
+  - the server does not provide `sudo`
+  - warm steady-state is the only required serving protocol
+  - the codebase should remain single-node and modest in complexity
+  - payload data should remain on the normal serving path; only lightweight cluster-side metadata may be promoted into memory
+- Success condition: Either show that BoundFetch with warm-resident cluster metadata reaches a useful non-dominated region relative to DiskANN while remaining clearly stronger than IVF-family baselines, or show an explicit build-time / simplicity / serving tradeoff where DiskANN remains the search upper bound but not the full-system winner on all axes.
 
 ## Technical Gap
-The earlier proposal over-emphasized cold I/O and a broad three-class scheduling story. The current experimental evidence says something sharper:
+The latest synchronized baseline results change the story in an important way:
 
-1. The meaningful setting is warm steady-state serving.
-2. `io_wait` is already almost fully hidden; the practical bottleneck is submit-side CPU plus fixed probe-side cost.
-3. The strongest available competitive comparison is not "who is best at cold-start", but "who gives the best end-to-end search+payload result under production-like steady state".
-4. SafeIn is structurally interesting but not currently the center of evidence; SafeOut plus integrated submission/path design is the stronger dominant story.
+1. The old thesis that BoundFetch simply beats strong separated baselines on warm E2E latency is no longer accurate.
+2. The current BoundFetch frontier is clearly above FAISS-IVFPQ+FlatStor, but tuned DiskANN+FlatStor now defines the strongest observed warm frontier.
+3. The remaining gap is unlikely to be closed by more queue-depth or submit-path micro-tuning alone; the current evidence points to structural per-query work in the `.clu` path.
+4. Search-core effects and storage-format effects are now entangled. If we compare `BoundFetch + FlatStor` against `DiskANN + FlatStor`, we still do not know how much comes from the search strategy versus the backend format.
 
-So the paper should not widen into a generic disk I/O paper. It should narrow into a systems paper about integrated search+payload retrieval under warm serving conditions.
+So the next paper-quality move is not to widen the system. It is to make one small structural improvement to BoundFetch and to redesign the baseline logic so that strong comparisons remain fair and interpretable.
 
 ## Method Thesis
-- One-sentence thesis: BoundFetch wins in warm steady-state because it integrates candidate filtering, payload access, and asynchronous submission into one retrieval path, reducing end-to-end work relative to separated search-then-fetch baselines.
-- Why this is the smallest adequate intervention: The winning mechanism is already in the codebase; the next meaningful step is not adding more subsystems, but tightening recall at roughly the current latency and validating the mechanism with cleaner evidence.
-- Why this route is timely: Production vector systems increasingly care about full serving latency rather than search-only latency, especially once payload delivery and metadata access are included.
+- One-sentence thesis: The smallest next intervention is a warm-resident cluster cache that preloads `.clu` quantized vectors and raw address blocks before query execution, so BoundFetch can remove repeated cluster-side read/parse work from the hot path without preloading payload bodies.
+- Why this is the smallest adequate intervention: It directly targets the current structural disadvantage against DiskANN, which already benefits from having its compressed search-side representation resident in memory.
+- Why the evaluation plan must change too: The baseline story should separate two axes, search-core quality and storage-backend quality, instead of exploding into a large matrix that is expensive to build and hard to interpret.
 
 ## Contribution Focus
-- Dominant contribution: A warm-serving integrated retrieval path that combines vector probing and payload co-retrieval into one end-to-end system and outperforms strong separated baselines on E2E latency.
-- Optional supporting contribution: Submit-path optimization and mechanism attribution that explain where the remaining latency goes and why additional queue-depth or SQPOLL tuning is not the main next lever.
+- Dominant contribution: A warm-resident BoundFetch serving path that caches cluster-side quantized vectors and address metadata before queries, while keeping payload access on the normal integrated path.
+- Optional supporting contribution: A layered baseline methodology that keeps DiskANN as a required strong reference, keeps IVF+PQ/RQ as lower search baselines, and isolates storage-format effects in a separate comparison block.
 - Explicit non-contributions:
-  - cold-start superiority
-  - graph-search supremacy in pure ANN
-  - large-scale kernel or OS tuning claims
-  - SafeIn as the main claimed source of gain
+  - claiming pure ANN superiority over tuned graph indexes
+  - claiming FlatStor is the only meaningful storage backend
+  - claiming every search family must be paired with every storage backend in the main paper
 
 ## Proposed Method
 ### Complexity Budget
 - Frozen / reused backbone:
   - Existing IVF-based BoundFetch retrieval framework
-  - Existing dual-file / integrated storage format
-  - Existing warm benchmark harness and baseline pipeline
+  - Existing `.clu` / payload storage pipeline
+  - Existing warm benchmark harness and synchronized baseline scripts
 - New trainable components: none
-- New system components to avoid:
-  - new indexing families
-  - new concurrency models
-  - GPU / distributed / learned controllers
+- New system changes:
+  - one warm-resident cluster cache for `.clu` quantized vectors
+  - one warm-resident cache for raw address blocks or decode-ready address metadata
+- Tempting additions intentionally not used:
+  - full payload preloading
+  - new index families inside BoundFetch
+  - large scheduler redesign
+  - a full `search x storage` combinational benchmark
 
 ### System Overview
-1. Probe IVF clusters and compute candidate scores.
-2. Use the current filtering path to suppress obviously unneeded candidate work.
-3. Submit payload/vector reads through the optimized `io_uring` path.
-4. Parse, rerank, and complete Top-K delivery inside the same integrated pipeline.
-5. Measure the system as one E2E serving path under warm steady-state.
+1. During index open or benchmark warmup, preload cluster-side quantized vectors from the `.clu` file.
+2. In the same warmup phase, preload raw address blocks or decode-ready address metadata needed to map cluster hits to payload locations.
+3. Keep payload bytes themselves on the original integrated retrieval path.
+4. During query execution, reuse the resident cluster cache, run the same BoundFetch candidate filtering logic, and only issue payload-side I/O for the surviving path.
+5. Measure the resulting system as one warm steady-state `search + payload` pipeline.
 
 ### Core Mechanism
 - Input / output:
-  - Input: query vector, index state, payload-backed data file
-  - Output: Top-K retrieval results plus payload access in one E2E latency measurement
+  - Input: query vector, IVF state, resident `.clu` cache, payload-backed data file
+  - Output: Top-K results plus payload access in one E2E latency measurement
 - Architecture or policy:
-  - integrated probing + async submission + on-demand verification
-  - shared submission mode as the default warm-serving path
-- Training signal / loss: not applicable; this is a systems mechanism, not a learned model
+  - resident cluster-side metadata
+  - integrated payload fetch for the surviving candidates only
+  - no change to the warm-serving protocol
+- Two implementation levels:
+  - `preload_codes`: cache quantized vectors only
+  - `preload_codes_and_addr`: cache quantized vectors plus raw address blocks or decoded address metadata
 - Why this is the main novelty:
-  - the contribution is not just "use io_uring"
-  - the contribution is that the search path and payload path are no longer evaluated or executed as separate stages
+  - it is not a generic cache story
+  - it specifically rebalances what must remain on the hot path in an integrated vector-plus-payload system
 
-### Optional Supporting Component
-- Component: submit-path optimization and batching
-- Role: reduce per-query submission overhead so integrated retrieval remains competitive at low-millisecond latency
-- Why it does not create contribution sprawl: it is evidence and engineering support for the dominant integrated-path claim, not a second independent paper
-
-### Modern Primitive Usage
-- Frontier primitive usage: absent
-- Reason: this work does not benefit from forcing an LLM/VLM/RL component; the strongest story is an intentionally simple systems contribution
+### Baseline Philosophy
+- Keep DiskANN in the paper as the strong serving upper baseline even if it currently wins.
+- Do not let FlatStor be the only backend used in the final comparison story.
+- Use a layered baseline structure:
+  - Main search-core comparison: BoundFetch vs IVF+PQ/RQ vs DiskANN under one chosen serving backend or one clearly documented backend policy
+  - Storage-backend comparison: compare `FlatStor`, `Lance`, and optionally `Parquet` for one or two representative search cores
+  - Build/index comparison: compare build time, index size, and resident preload size separately from query latency
 
 ### Integration into the Downstream Pipeline
-- BoundFetch should be positioned as a serving-path system, not a standalone ANN core.
-- The evaluation target is the application-visible latency of returning usable results, including payload access.
-- The baseline comparison must therefore remain end-to-end and warm-only.
+- BoundFetch should still be positioned as a serving-path system, not a standalone ANN core.
+- The warm-resident cache should be loaded at startup or benchmark warmup and then reused across queries.
+- The paper should explicitly report the preload memory footprint and preload time so this optimization remains honest.
 
 ### Execution-Facing Plan
-- Keep the current optimized submission path.
-- Spend additional optimization budget only if it clearly increases recall at roughly fixed latency.
-- Prefer parameter-level and threshold-level tuning over structural redesign.
+- Implement cluster-side preload first; do not start with a new round of low-level `io_uring` tuning.
+- Measure the latency breakdown before and after preload to verify that the removed work is actually on the critical path.
+- Only after the preload results are known should we decide whether further BoundFetch tuning is worthwhile.
+- Rework the baseline suite into a staged plan:
+  - keep DiskANN as a must-report reference
+  - keep IVF+PQ or IVF+RQ as the weaker classical family
+  - move backend-format comparisons into a separate supporting block instead of a full matrix
 
 ### Failure Modes and Diagnostics
-- Failure mode: BoundFetch remains faster than DiskANN+FlatStor but stays materially below the target recall range.
-  - Detect via recall-latency Pareto curve.
-  - Mitigation: tune `CRC_alpha`, pruning thresholds, and lightweight rerank/fetch policy.
-- Failure mode: further submit-path work yields negligible gains.
-  - Detect via unchanged `uring_submit_ms`, `submit_calls`, and E2E latency.
-  - Mitigation: stop systems micro-optimization and switch effort to recall improvement and evidence tightening.
-- Failure mode: reviewers see the gain as recall tradeoff rather than a true systems win.
-  - Detect via lack of near-iso-recall comparison points.
-  - Mitigation: run a compact recall-improvement ablation and report Pareto curves instead of a single point.
+- Failure mode: preloading `.clu` metadata changes little.
+  - Detect via unchanged `e2e_ms`, unchanged `uring_submit_ms`, and unchanged cluster-side timing.
+  - Mitigation: stop structural caching work and conclude that BoundFetch is currently limited by search quality rather than hot-path metadata access.
+- Failure mode: preload improves latency but memory cost is too large.
+  - Detect via resident set size and startup preload time.
+  - Mitigation: downgrade to partial cache mode or cluster-on-demand caching, and report the memory tradeoff explicitly.
+- Failure mode: reviewers interpret backend choices as cherry-picking.
+  - Detect via inability to explain why DiskANN uses one backend and BoundFetch another.
+  - Mitigation: either align on one backend where feasible, or keep DiskANN+FlatStor as an explicit upper-bound reference and separate storage-backend ablations into another table.
+- Failure mode: the experiment suite explodes into too many combinations.
+  - Detect via a growing `search x storage` matrix with no clear main table.
+  - Mitigation: freeze a two-stage baseline policy and treat any extra pairings as appendix-only.
 
 ### Novelty and Elegance Argument
-The strongest paper version is not "we built many components for disk ANN." It is:
+The strongest updated paper story is no longer "BoundFetch already beats all strong warm baselines." The stronger and more defensible version is:
 
-"Once the serving target is correctly defined as warm steady-state `search + payload`, an integrated retrieval path can beat separated baselines end-to-end, and the remaining bottleneck is submit/probe CPU rather than device I/O."
+"In warm integrated serving, the remaining gap to graph-based search comes from what cluster-side state stays on the hot path. By preloading only the compressed cluster representation and address metadata, BoundFetch can move closer to the graph frontier without abandoning its simpler build path or integrated payload design."
 
-That is a tighter and more defensible contribution than a broader cold-I/O or universal-ANN claim.
+This is still a focused systems contribution. It keeps the method small, preserves the production-style warm-serving anchor, and stays honest about the existence of a stronger graph baseline.
 
 ## Claim-Driven Validation Sketch
-### Claim 1: BoundFetch provides a better warm E2E Pareto than strong separated baselines.
-- Minimal experiment: COCO 100K warm-only end-to-end comparison using BoundFetch sweep versus DiskANN+FlatStor and FAISS-disk+FlatStor.
+### Claim 1: Warm-resident cluster preload is the highest-value next BoundFetch optimization.
+- Minimal experiment: `preload=off`, `preload_codes`, and `preload_codes_and_addr` on the best current BoundFetch settings.
 - Baselines / ablations:
-  - BoundFetch `nprobe` sweep
-  - strongest separated baseline points already available
-- Metric:
+  - current BoundFetch best point
+  - two preload modes
+- Metrics:
   - `recall@10`
   - `e2e_ms`
   - `p99_ms`
+  - `uring_submit_ms`
+  - resident memory
+  - preload time
 - Expected evidence:
-  - BoundFetch dominates at least one practically relevant operating region
-  - BoundFetch clearly beats DiskANN+FlatStor on latency
-  - FAISS-IVFPQ-disk is documented as recall-limited on COCO
+  - reduced E2E latency and cluster-side overhead without changing recall
+  - a meaningful movement of the BoundFetch Pareto frontier toward DiskANN
 
-### Claim 2: The remaining engineering value lies in recall improvement, not more submission-path micro-tuning.
-- Minimal experiment: compact ablation over `CRC_alpha` / pruning policy / optional rerank behavior at fixed warm protocol.
+### Claim 2: DiskANN should remain in the paper, but the baseline story must be layered.
+- Minimal experiment: one main search-core comparison and one storage-backend ablation, instead of a full Cartesian product.
 - Baselines / ablations:
-  - current best config
-  - 2-3 nearby threshold settings
-  - optional pruning-off or relaxed-threshold variant
-- Metric:
-  - recall improvement at comparable latency
-  - `uring_submit_ms`, `submit_calls`, `probe_ms`
+  - BoundFetch + selected backend
+  - IVF+PQ or IVF+RQ + same backend
+  - DiskANN + same backend if feasible, otherwise DiskANN+FlatStor as an upper-bound reference
+  - one representative storage-backend ablation over `FlatStor`, `Lance`, and optionally `Parquet`
+- Metrics:
+  - `recall@10`
+  - `e2e_ms`
+  - build time
+  - index size
 - Expected evidence:
-  - recall can move meaningfully while E2E stays close
-  - queue-depth / SQPOLL / submission-mode sweeps remain secondary validation, not main future work
+  - strong main-table comparison remains credible because DiskANN is retained
+  - storage-format contributions become separately interpretable
+
+### Claim 3: Build-time and system simplicity are now part of the paper's fallback value.
+- Minimal experiment: compare build time, peak memory during build, startup preload time, and resident search-side memory.
+- Baselines / ablations:
+  - BoundFetch
+  - DiskANN
+  - one IVF-family baseline
+- Metrics:
+  - build time
+  - peak RSS
+  - index bytes
+  - preload bytes
+- Expected evidence:
+  - even if DiskANN remains the serving upper bound, BoundFetch may still occupy a better build-time / integration / storage-efficiency point
 
 ## Experiment Handoff Inputs
 - Must-prove claims:
-  - BoundFetch should be evaluated as a warm-serving integrated E2E system
-  - the paper's next gains should come from better recall-latency tradeoff, not lower raw submit overhead
+  - the next meaningful BoundFetch improvement is warm-resident `.clu` preload, not more blind submit-path tuning
+  - DiskANN must stay as a strong reported reference
+  - search-core and storage-format effects should be disentangled in the final comparison
 - Must-run ablations:
-  - recall-latency Pareto sweep
-  - mechanism attribution
-  - minimal recall-improvement ablation
+  - preload off vs preload codes vs preload codes+address metadata
+  - refreshed BoundFetch Pareto after preload
+  - layered baseline comparison
+  - build-time and preload-footprint table
 - Critical datasets / metrics:
-  - COCO 100K as primary warm serving benchmark
-  - Deep1M / Deep8M only if needed for supporting trend or ablation generality
-  - `recall@10`, `e2e_ms`, `p99_ms`, `uring_submit_ms`, `probe_ms`, `submit_calls`
+  - COCO 100K as the primary warm-serving benchmark
+  - `recall@10`, `e2e_ms`, `p99_ms`, `uring_submit_ms`, resident RSS, build time, preload time
 - Highest-risk assumptions:
-  - current recall ceiling may still be too low for a convincing main-paper comparison
-  - the story weakens if no better near-iso-recall operating point is found
+  - preload may not be enough to recover a useful frontier region
+  - a full backend-aligned DiskANN comparison may be expensive to implement
+  - storage-format comparisons can explode unless explicitly staged
 
 ## Compute & Timeline Estimate
 - Estimated GPU-hours: 0
 - Data / annotation cost: none for the next stage
 - Timeline:
-  - 1-2 days for warm-only documentation cleanup and Pareto-ready planning
-  - 2-4 days for compact recall-improvement and ablation runs
-  - 1-2 days for result consolidation and figure generation
+  - 1-2 days to implement and validate cluster-side preload
+  - 1-2 days to rerun the BoundFetch frontier with preload enabled
+  - 2-4 days for layered baseline comparison and build-time reporting
