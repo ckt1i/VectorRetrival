@@ -4,7 +4,7 @@ cmake-build-*/
 out/
 build-bench-only/
 build-bench-nomkl/
-build-bench-only
+build-local/
 *.cmake
 
 # CMake stage & dependency files (build-*/**)

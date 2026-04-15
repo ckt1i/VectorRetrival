@@ -1,0 +1,13 @@
+mode,nprobe,alpha,recall@10,e2e_ms,p99_ms,preload_time_ms,preload_bytes,output_dir
+full_preload,200,0.01,0.9640,2.3660,2.8300,68.091,120459264,/home/zcq/VDB/test/lowload_rerun_full_a001/coco_100k_20260415T113401
+full_preload,200,0.02,0.9551,2.3440,2.8340,68.215,120459264,/home/zcq/VDB/test/lowload_rerun_full_a002/coco_100k_20260415T113413
+full_preload,200,0.05,0.9346,1.6090,1.9460,68.014,120459264,/home/zcq/VDB/test/lowload_rerun_full_a005/coco_100k_20260415T113427
+full_preload,200,0.10,0.9021,1.4580,2.7170,68.569,120459264,/home/zcq/VDB/test/lowload_rerun_full_a010/coco_100k_20260415T113440
+full_preload,200,0.15,0.8180,0.8310,1.0180,68.268,120459264,/home/zcq/VDB/test/lowload_rerun_full_a015/coco_100k_20260415T113452
+full_preload,200,0.20,0.7578,0.6790,0.8460,67.825,120459264,/home/zcq/VDB/test/lowload_rerun_full_a020/coco_100k_20260415T113504
+window,200,0.01,0.9640,3.9670,4.8430,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a001/coco_100k_20260414T232407
+window,200,0.02,0.9551,3.8560,4.9230,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a002/coco_100k_20260414T232427
+window,200,0.05,0.9346,2.4750,3.2250,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a005/coco_100k_20260414T232447
+window,200,0.10,0.9021,2.3390,4.2840,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a010/coco_100k_20260414T232506
+window,200,0.15,0.8180,1.2780,1.8430,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a015/coco_100k_20260414T232523
+window,200,0.20,0.7578,1.0420,1.4880,0,0,/home/zcq/VDB/test/bf_alpha_compare_window_a020/coco_100k_20260414T232541

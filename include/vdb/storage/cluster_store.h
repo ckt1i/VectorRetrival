@@ -182,6 +182,32 @@ class ClusterStoreWriter {
 ///
 class ClusterStoreReader {
  public:
+    struct ResidentClusterView {
+        const uint8_t* fastscan_blocks = nullptr;
+        uint32_t fastscan_block_size = 0;
+        uint32_t num_fastscan_blocks = 0;
+        const uint8_t* exrabitq_entries = nullptr;
+        uint32_t exrabitq_entry_size = 0;
+        uint32_t num_records = 0;
+        float epsilon = 0.0f;
+        std::vector<AddressEntry> decoded_addresses;
+
+        query::ParsedCluster ToParsedCluster() const {
+            query::ParsedCluster pc;
+            pc.fastscan_blocks = fastscan_blocks;
+            pc.fastscan_block_size = fastscan_block_size;
+            pc.num_fastscan_blocks = num_fastscan_blocks;
+            pc.exrabitq_entries = exrabitq_entries;
+            pc.exrabitq_entry_size = exrabitq_entry_size;
+            pc.num_records = num_records;
+            pc.epsilon = epsilon;
+            pc.decoded_addresses = decoded_addresses;
+            pc.codes_start = fastscan_blocks;
+            pc.code_entry_size = 0;
+            return pc;
+        }
+    };
+
     ClusterStoreReader();
     ~ClusterStoreReader();
 
@@ -285,6 +311,22 @@ class ClusterStoreReader {
                               uint64_t block_size,
                               query::ParsedCluster& out);
 
+    /// Preload the entire .clu file and materialize resident per-cluster views.
+    Status PreloadAllClusters();
+
+    /// Whether resident full-file preload has completed.
+    bool resident_preload_enabled() const { return resident_preload_ready_; }
+
+    /// Total bytes held by the resident preload buffer.
+    uint64_t resident_preload_bytes() const { return resident_preload_bytes_; }
+
+    /// Wall-clock time spent building the resident preload state.
+    double resident_preload_time_ms() const { return resident_preload_time_ms_; }
+
+    /// Get a resident cluster view when full preload is enabled.
+    const ResidentClusterView* GetResidentClusterView(
+        uint32_t cluster_id) const;
+
     /// Whether the file is open.
     bool is_open() const { return fd_ >= 0; }
 
@@ -313,6 +355,11 @@ class ClusterStoreReader {
     };
 
     std::map<uint32_t, ClusterData> loaded_clusters_;
+    std::vector<uint8_t> resident_file_buffer_;
+    std::map<uint32_t, ResidentClusterView> resident_clusters_;
+    bool resident_preload_ready_ = false;
+    uint64_t resident_preload_bytes_ = 0;
+    double resident_preload_time_ms_ = 0.0;
 
     /// Number of uint64_t words per code (1-bit sign plane only)
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }
@@ -330,6 +377,11 @@ class ClusterStoreReader {
         if (info_.rabitq_config.bits <= 1) return 0;
         return 2 * info_.dim + sizeof(float);
     }
+
+    Status ParseClusterBlockView(uint32_t cluster_id,
+                                 const uint8_t* block_ptr,
+                                 uint64_t block_size,
+                                 query::ParsedCluster& out) const;
 };
 
 }  // namespace storage

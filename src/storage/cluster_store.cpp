@@ -1,5 +1,6 @@
 #include "vdb/storage/cluster_store.h"
 
+#include <chrono>
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
@@ -464,8 +465,16 @@ ClusterStoreReader::ClusterStoreReader(ClusterStoreReader&& other) noexcept
     : fd_(other.fd_),
       info_(std::move(other.info_)),
       cluster_index_(std::move(other.cluster_index_)),
-      loaded_clusters_(std::move(other.loaded_clusters_)) {
+      loaded_clusters_(std::move(other.loaded_clusters_)),
+      resident_file_buffer_(std::move(other.resident_file_buffer_)),
+      resident_clusters_(std::move(other.resident_clusters_)),
+      resident_preload_ready_(other.resident_preload_ready_),
+      resident_preload_bytes_(other.resident_preload_bytes_),
+      resident_preload_time_ms_(other.resident_preload_time_ms_) {
     other.fd_ = -1;
+    other.resident_preload_ready_ = false;
+    other.resident_preload_bytes_ = 0;
+    other.resident_preload_time_ms_ = 0.0;
 }
 
 ClusterStoreReader& ClusterStoreReader::operator=(
@@ -476,7 +485,15 @@ ClusterStoreReader& ClusterStoreReader::operator=(
         info_ = std::move(other.info_);
         cluster_index_ = std::move(other.cluster_index_);
         loaded_clusters_ = std::move(other.loaded_clusters_);
+        resident_file_buffer_ = std::move(other.resident_file_buffer_);
+        resident_clusters_ = std::move(other.resident_clusters_);
+        resident_preload_ready_ = other.resident_preload_ready_;
+        resident_preload_bytes_ = other.resident_preload_bytes_;
+        resident_preload_time_ms_ = other.resident_preload_time_ms_;
         other.fd_ = -1;
+        other.resident_preload_ready_ = false;
+        other.resident_preload_bytes_ = 0;
+        other.resident_preload_time_ms_ = 0.0;
     }
     return *this;
 }
@@ -487,6 +504,11 @@ void ClusterStoreReader::Close() {
         fd_ = -1;
     }
     loaded_clusters_.clear();
+    resident_clusters_.clear();
+    resident_file_buffer_.clear();
+    resident_preload_ready_ = false;
+    resident_preload_bytes_ = 0;
+    resident_preload_time_ms_ = 0.0;
     cluster_index_.clear();
 }
 
@@ -820,12 +842,11 @@ ClusterStoreReader::GetBlockLocation(uint32_t cluster_id) const {
         entry.block_offset, entry.block_size, entry.num_records};
 }
 
-Status ClusterStoreReader::ParseClusterBlock(
+Status ClusterStoreReader::ParseClusterBlockView(
     uint32_t cluster_id,
-    query::AlignedBufPtr block_buf,
+    const uint8_t* block_ptr,
     uint64_t block_size,
-    query::ParsedCluster& out) {
-
+    query::ParsedCluster& out) const {
     auto idx_it = cluster_index_.find(cluster_id);
     if (idx_it == cluster_index_.end()) {
         return Status::InvalidArgument(
@@ -833,19 +854,21 @@ Status ClusterStoreReader::ParseClusterBlock(
     }
     const auto& entry = info_.lookup_table[idx_it->second];
 
+    if (block_ptr == nullptr) {
+        return Status::InvalidArgument("block_ptr is null");
+    }
     if (block_size != entry.block_size) {
         return Status::InvalidArgument("block_size mismatch");
     }
 
-    // --- Read mini-trailer from buffer (last 8 bytes = trailer_size + magic) ---
     if (block_size < 8) {
         return Status::Corruption("Block too small for trailer footer");
     }
 
     uint32_t mini_trailer_size = 0, block_magic = 0;
-    std::memcpy(&mini_trailer_size, block_buf.get() + block_size - 8,
+    std::memcpy(&mini_trailer_size, block_ptr + block_size - 8,
                 sizeof(uint32_t));
-    std::memcpy(&block_magic, block_buf.get() + block_size - 4,
+    std::memcpy(&block_magic, block_ptr + block_size - 4,
                 sizeof(uint32_t));
     if (block_magic != kBlockMagic) {
         return Status::Corruption("Invalid block magic");
@@ -854,10 +877,8 @@ Status ClusterStoreReader::ParseClusterBlock(
         return Status::Corruption("Mini-trailer size exceeds block");
     }
 
-    // Read entire mini-trailer from buffer
-    const uint8_t* trailer_ptr = block_buf.get() + block_size - mini_trailer_size;
+    const uint8_t* trailer_ptr = block_ptr + block_size - mini_trailer_size;
 
-    // Parse mini-trailer
     size_t tpos = 0;
     auto ReadT = [&](auto& val) -> bool {
         if (tpos + sizeof(val) > mini_trailer_size) return false;
@@ -878,11 +899,9 @@ Status ClusterStoreReader::ParseClusterBlock(
     }
 
     const uint32_t num_blocks = address_layout.num_address_blocks;
-
     if (entry.num_records == 0) {
         if (num_blocks != 0 || address_layout.last_packed_size != 0) {
-            return Status::Corruption(
-                "Empty cluster has invalid address layout");
+            return Status::Corruption("Empty cluster has invalid address layout");
         }
     } else if (num_blocks == 0) {
         return Status::Corruption("Non-empty cluster has zero address blocks");
@@ -913,18 +932,15 @@ Status ClusterStoreReader::ParseClusterBlock(
         return Status::Corruption("Invalid address block granularity");
     }
 
-    // --- v7: Compute region sizes ---
     const uint32_t fb_size = fastscan_block_bytes();
     const uint32_t region1_size = entry.num_fastscan_blocks * fb_size;
     const uint32_t ex_entry_size = exrabitq_entry_size();
     const uint32_t region2_size = entry.num_records * ex_entry_size;
     const uint32_t codes_length = region1_size + region2_size;
-
-    // --- Validate address payload region ---
     if (codes_length > block_size) {
-        return Status::Corruption(
-            "Cluster block shorter than code regions");
+        return Status::Corruption("Cluster block shorter than code regions");
     }
+
     uint64_t expected_payload_bytes = 0;
     if (num_blocks > 0) {
         expected_payload_bytes =
@@ -942,42 +958,109 @@ Status ClusterStoreReader::ParseClusterBlock(
         return Status::Corruption("Address payload size mismatch");
     }
 
-    // --- Read address block packed data from buffer ---
     uint64_t addr_offset = codes_length;
     for (uint32_t i = 0; i < num_blocks; ++i) {
         auto& block = address_blocks[i];
         const uint32_t packed_size =
             AddressColumn::BlockPackedSize(address_layout, i);
         if (packed_size > 0) {
-            block.packed.assign(block_buf.get() + addr_offset,
-                                block_buf.get() + addr_offset + packed_size);
+            block.packed.assign(block_ptr + addr_offset,
+                                block_ptr + addr_offset + packed_size);
         }
         addr_offset += packed_size;
     }
 
-    // --- SIMD decode all addresses ---
     std::vector<AddressEntry> decoded;
     VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
         address_layout, address_blocks, entry.num_records, decoded));
 
-    // --- Fill output (v7 dual-region) ---
-    out.fastscan_blocks = block_buf.get();
+    out.fastscan_blocks = block_ptr;
     out.fastscan_block_size = fb_size;
     out.num_fastscan_blocks = entry.num_fastscan_blocks;
     out.exrabitq_entries = (ex_entry_size > 0)
-        ? block_buf.get() + region1_size
+        ? block_ptr + region1_size
         : nullptr;
     out.exrabitq_entry_size = ex_entry_size;
     out.num_records = entry.num_records;
     out.epsilon = entry.epsilon;
     out.decoded_addresses = std::move(decoded);
-    out.block_buf = std::move(block_buf);
-
-    // Legacy fields (for backward compat during transition)
     out.codes_start = out.fastscan_blocks;
-    out.code_entry_size = 0;  // Not meaningful in v7
-
+    out.code_entry_size = 0;
     return Status::OK();
+}
+
+Status ClusterStoreReader::ParseClusterBlock(
+    uint32_t cluster_id,
+    query::AlignedBufPtr block_buf,
+    uint64_t block_size,
+    query::ParsedCluster& out) {
+    VDB_RETURN_IF_ERROR(
+        ParseClusterBlockView(cluster_id, block_buf.get(), block_size, out));
+    out.block_buf = std::move(block_buf);
+    return Status::OK();
+}
+
+Status ClusterStoreReader::PreloadAllClusters() {
+    if (fd_ < 0) {
+        return Status::InvalidArgument("ClusterStoreReader not open");
+    }
+    if (resident_preload_ready_) {
+        return Status::OK();
+    }
+
+    auto t0 = std::chrono::steady_clock::now();
+    off_t file_size = ::lseek(fd_, 0, SEEK_END);
+    if (file_size < 0) {
+        return Status::IOError("Failed to determine .clu file size");
+    }
+
+    resident_file_buffer_.resize(static_cast<size_t>(file_size));
+    if (file_size > 0 &&
+        !PreadBytes(fd_, 0, resident_file_buffer_.data(),
+                    resident_file_buffer_.size())) {
+        resident_file_buffer_.clear();
+        return Status::IOError("Failed to preload .clu file");
+    }
+
+    std::map<uint32_t, ResidentClusterView> resident_clusters;
+    for (const auto& entry : info_.lookup_table) {
+        if (entry.block_offset + entry.block_size >
+            static_cast<uint64_t>(resident_file_buffer_.size())) {
+            resident_file_buffer_.clear();
+            return Status::Corruption("Cluster block exceeds resident .clu buffer");
+        }
+
+        query::ParsedCluster parsed;
+        const uint8_t* block_ptr =
+            resident_file_buffer_.data() + static_cast<size_t>(entry.block_offset);
+        VDB_RETURN_IF_ERROR(
+            ParseClusterBlockView(entry.cluster_id, block_ptr, entry.block_size, parsed));
+
+        ResidentClusterView view;
+        view.fastscan_blocks = parsed.fastscan_blocks;
+        view.fastscan_block_size = parsed.fastscan_block_size;
+        view.num_fastscan_blocks = parsed.num_fastscan_blocks;
+        view.exrabitq_entries = parsed.exrabitq_entries;
+        view.exrabitq_entry_size = parsed.exrabitq_entry_size;
+        view.num_records = parsed.num_records;
+        view.epsilon = parsed.epsilon;
+        view.decoded_addresses = std::move(parsed.decoded_addresses);
+        resident_clusters[entry.cluster_id] = std::move(view);
+    }
+
+    resident_clusters_ = std::move(resident_clusters);
+    resident_preload_ready_ = true;
+    resident_preload_bytes_ = static_cast<uint64_t>(resident_file_buffer_.size());
+    resident_preload_time_ms_ = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - t0).count();
+    return Status::OK();
+}
+
+const ClusterStoreReader::ResidentClusterView*
+ClusterStoreReader::GetResidentClusterView(uint32_t cluster_id) const {
+    auto it = resident_clusters_.find(cluster_id);
+    if (it == resident_clusters_.end()) return nullptr;
+    return &it->second;
 }
 
 // ============================================================================

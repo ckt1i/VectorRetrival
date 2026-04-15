@@ -298,3 +298,36 @@ TEST_F(OverlapSchedulerTest, SharedAndIsolatedModesProduceSameResults) {
         EXPECT_FLOAT_EQ(shared_results[i].distance, isolated_results[i].distance);
     }
 }
+
+TEST_F(OverlapSchedulerTest, WindowAndFullPreloadModesProduceSameResults) {
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.prefetch_depth = 4;
+    config.refill_threshold = 2;
+    config.refill_count = 2;
+    config.io_queue_depth = 32;
+    config.cluster_submit_reserve = 4;
+    config.submit_batch_size = 8;
+    config.early_stop = false;
+
+    std::vector<float> query(kDim, 0.0f);
+    query[0] = 1.0f;
+
+    PreadFallbackReader window_reader;
+    OverlapScheduler window_scheduler(*index_, window_reader, config);
+    auto window_results = window_scheduler.Search(query.data());
+
+    PreadFallbackReader preload_reader;
+    config.clu_read_mode = CluReadMode::FullPreload;
+    OverlapScheduler preload_scheduler(*index_, preload_reader, config);
+    auto preload_results = preload_scheduler.Search(query.data());
+
+    ASSERT_EQ(window_results.size(), preload_results.size());
+    for (uint32_t i = 0; i < window_results.size(); ++i) {
+        EXPECT_FLOAT_EQ(window_results[i].distance, preload_results[i].distance);
+    }
+    EXPECT_EQ(preload_results.stats().parse_cluster_ms, 0.0);
+    EXPECT_TRUE(index_->segment().resident_preload_enabled());
+    EXPECT_GT(index_->segment().resident_preload_bytes(), 0u);
+}

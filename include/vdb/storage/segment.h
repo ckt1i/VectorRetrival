@@ -128,6 +128,27 @@ class Segment {
             cluster_id, std::move(block_buf), block_size, out);
     }
 
+    Status PreloadAllClusters() {
+        return clu_reader_.PreloadAllClusters();
+    }
+
+    bool resident_preload_enabled() const {
+        return clu_reader_.resident_preload_enabled();
+    }
+
+    uint64_t resident_preload_bytes() const {
+        return clu_reader_.resident_preload_bytes();
+    }
+
+    double resident_preload_time_ms() const {
+        return clu_reader_.resident_preload_time_ms();
+    }
+
+    const ClusterStoreReader::ResidentClusterView* GetResidentClusterView(
+        uint32_t cluster_id) const {
+        return clu_reader_.GetResidentClusterView(cluster_id);
+    }
+
     // ---- DataFileReader forwarding ----
 
     /// Read a raw vector from a record.

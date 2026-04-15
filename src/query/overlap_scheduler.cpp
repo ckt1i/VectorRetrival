@@ -21,6 +21,16 @@ inline void CheckPrepRead(const Status& s, const char* context) {
         std::abort();
     }
 }
+
+inline const char* CluReadModeName(CluReadMode mode) {
+    switch (mode) {
+        case CluReadMode::Window:
+            return "window";
+        case CluReadMode::FullPreload:
+            return "full_preload";
+    }
+    return "unknown";
+}
 }  // namespace
 
 OverlapScheduler::OverlapScheduler(index::IvfIndex& index,
@@ -71,12 +81,25 @@ OverlapScheduler::~OverlapScheduler() {
 SearchResults OverlapScheduler::Search(const float* query_vec) {
     // Reset per-query state
     ready_clusters_.clear();
+    resident_query_clusters_.clear();
     CleanupPendingSlots();
     next_to_submit_ = 0;
     inflight_clusters_ = 0;
     est_heap_.clear();
 
     auto t_search_start = std::chrono::steady_clock::now();
+
+    if (config_.clu_read_mode == CluReadMode::FullPreload &&
+        !index_.segment().resident_preload_enabled()) {
+        Status s = index_.segment().PreloadAllClusters();
+        if (!s.ok()) {
+            std::fprintf(stderr,
+                         "FATAL: failed to enable %s mode: %s\n",
+                         CluReadModeName(config_.clu_read_mode),
+                         s.ToString().c_str());
+            std::abort();
+        }
+    }
 
     // Phase 1.3: precompute P^T × query once when Hadamard rotation is used
     if (index_.used_hadamard()) {
@@ -279,6 +302,12 @@ void OverlapScheduler::SubmitClusterRead(uint32_t cluster_id) {
 void OverlapScheduler::PrefetchClusters(
     SearchContext& ctx,
     const std::vector<ClusterID>& sorted_clusters) {
+    if (config_.clu_read_mode == CluReadMode::FullPreload) {
+        next_to_submit_ = static_cast<uint32_t>(sorted_clusters.size());
+        inflight_clusters_ = 0;
+        (void)ctx;
+        return;
+    }
     uint32_t initial = std::min(
         use_crc_ ? config_.initial_prefetch : config_.prefetch_depth,
         static_cast<uint32_t>(sorted_clusters.size()));
@@ -297,6 +326,21 @@ void OverlapScheduler::PrefetchClusters(
             ctx.stats().total_submit_calls++;
         }
     }
+}
+
+const ParsedCluster* OverlapScheduler::GetResidentParsedCluster(
+    uint32_t cluster_id) {
+    auto it = resident_query_clusters_.find(cluster_id);
+    if (it != resident_query_clusters_.end()) {
+        return &it->second;
+    }
+    const auto* resident = index_.segment().GetResidentClusterView(cluster_id);
+    if (resident == nullptr) {
+        return nullptr;
+    }
+    auto [inserted_it, _] = resident_query_clusters_.emplace(
+        cluster_id, resident->ToParsedCluster());
+    return &inserted_it->second;
 }
 
 // ============================================================================
@@ -587,35 +631,47 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
     for (size_t i = 0; i < sorted_clusters.size(); ++i) {
         uint32_t cid = sorted_clusters[i];
 
-        // 1. Wait until target cluster is ready (consuming other CQEs meanwhile).
-        while (ready_clusters_.find(cid) == ready_clusters_.end()) {
-            if (isolated_submission_mode_) {
-                flush_isolated_readers(/*force=*/true,
-                                       /*prioritize_cluster_reads=*/false,
-                                       /*vec_batch_ready=*/true);
-                if (cluster_reader_.InFlight() > 0) {
-                    drain_completions(cluster_reader_, /*wait_for_one=*/true);
-                } else {
-                    drain_completions(cluster_reader_, /*wait_for_one=*/false);
-                }
-                drain_completions(data_reader_, /*wait_for_one=*/false);
-            } else {
-                flush_shared_reader(/*force=*/true,
-                                    /*prioritize_cluster_reads=*/false);
-                drain_completions(cluster_reader_, /*wait_for_one=*/true);
+        const ParsedCluster* cluster_to_probe = nullptr;
+        if (config_.clu_read_mode == CluReadMode::FullPreload) {
+            cluster_to_probe = GetResidentParsedCluster(cid);
+            if (cluster_to_probe == nullptr) {
+                std::fprintf(stderr,
+                             "FATAL: resident cluster view missing for cluster %u\n",
+                             cid);
+                std::abort();
             }
+        } else {
+            // 1. Wait until target cluster is ready (consuming other CQEs meanwhile).
+            while (ready_clusters_.find(cid) == ready_clusters_.end()) {
+                if (isolated_submission_mode_) {
+                    flush_isolated_readers(/*force=*/true,
+                                           /*prioritize_cluster_reads=*/false,
+                                           /*vec_batch_ready=*/true);
+                    if (cluster_reader_.InFlight() > 0) {
+                        drain_completions(cluster_reader_, /*wait_for_one=*/true);
+                    } else {
+                        drain_completions(cluster_reader_, /*wait_for_one=*/false);
+                    }
+                    drain_completions(data_reader_, /*wait_for_one=*/false);
+                } else {
+                    flush_shared_reader(/*force=*/true,
+                                        /*prioritize_cluster_reads=*/false);
+                    drain_completions(cluster_reader_, /*wait_for_one=*/true);
+                }
+            }
+            cluster_to_probe = &ready_clusters_[cid];
         }
 
-        // 2. Probe this cluster
         {
             auto tp0 = std::chrono::steady_clock::now();
-            ProbeCluster(ready_clusters_[cid], cid, ctx, reranker);
+            ProbeCluster(*cluster_to_probe, cid, ctx, reranker);
             ctx.stats().probe_time_ms += std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - tp0).count();
         }
 
-        // 3. Release ParsedCluster memory
-        ready_clusters_.erase(cid);
+        if (config_.clu_read_mode != CluReadMode::FullPreload) {
+            ready_clusters_.erase(cid);
+        }
 
         // Early stop
         if (config_.early_stop) {
@@ -664,19 +720,21 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
         // 4. Sliding window refill — cluster reads are prepared first, then
         // coalesced with vec reads into a single submit when possible.
         bool prepared_cluster_reads = false;
-        if (inflight_clusters_ < config_.refill_threshold &&
-            next_to_submit_ < sorted_clusters.size()) {
-            uint32_t refill = std::min(
-                config_.refill_count,
-                static_cast<uint32_t>(sorted_clusters.size()) -
-                    next_to_submit_);
-            if (reserve_slots > 0) {
-                refill = std::min(refill, reserve_slots);
+        if (config_.clu_read_mode != CluReadMode::FullPreload) {
+            if (inflight_clusters_ < config_.refill_threshold &&
+                next_to_submit_ < sorted_clusters.size()) {
+                uint32_t refill = std::min(
+                    config_.refill_count,
+                    static_cast<uint32_t>(sorted_clusters.size()) -
+                        next_to_submit_);
+                if (reserve_slots > 0) {
+                    refill = std::min(refill, reserve_slots);
+                }
+                for (uint32_t r = 0; r < refill; ++r) {
+                    SubmitClusterRead(sorted_clusters[next_to_submit_++]);
+                }
+                prepared_cluster_reads = refill > 0;
             }
-            for (uint32_t r = 0; r < refill; ++r) {
-                SubmitClusterRead(sorted_clusters[next_to_submit_++]);
-            }
-            prepared_cluster_reads = refill > 0;
         }
 
         if (isolated_submission_mode_) {

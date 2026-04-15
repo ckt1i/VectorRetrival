@@ -7,10 +7,31 @@ BoundFetch,coco_100k,10,"nlist=2048,nprobe=250,alpha=0.1",0.9024,1.397,2.744,alp
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=300,alpha=0.1",0.9025,1.393,2.824,alpha=0.1 baseline,warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.1",0.9025,1.403,2.773,alpha=0.1 baseline,warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.05",0.9346,1.511,1.855,OPTIMAL,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.01,clu_mode=window",0.9640,3.9670,4.8430,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.01,clu_mode=full_preload",0.9640,2.3660,2.8300,"low-load retest; preload_time_ms=68.091; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.02,clu_mode=window",0.9551,3.8560,4.9230,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.02,clu_mode=full_preload",0.9551,2.3440,2.8340,"low-load retest; preload_time_ms=68.215; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.05,clu_mode=window",0.9346,2.4750,3.2250,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.05,clu_mode=full_preload",0.9346,1.6090,1.9460,"low-load retest; preload_time_ms=68.014; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.10,clu_mode=window",0.9021,2.3390,4.2840,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.10,clu_mode=full_preload",0.9021,1.4580,2.7170,"low-load retest; preload_time_ms=68.569; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.15,clu_mode=window",0.8180,1.2780,1.8430,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.15,clu_mode=full_preload",0.8180,0.8310,1.0180,"low-load retest; preload_time_ms=68.268; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.20,clu_mode=window",0.7578,1.0420,1.4880,"low-load retest; preload_time_ms=0; preload_bytes=0",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.20,clu_mode=full_preload",0.7578,0.6790,0.8460,"low-load retest; preload_time_ms=67.825; preload_bytes=120459264",warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.01",0.9640,2.251,2.648,highest recall at nprobe=200,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.01,clu_mode=full_preload",0.9640,2.9930,4.4790,"preload-on sweep; preload_time_ms=87.561; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.02,clu_mode=full_preload",0.9551,2.7660,4.2230,"preload-on sweep; preload_time_ms=84.559; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.08,clu_mode=full_preload",0.9163,1.8250,3.5830,"preload-on sweep; preload_time_ms=84.815; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.10,clu_mode=full_preload",0.9021,1.7560,3.5680,"preload-on sweep; preload_time_ms=83.042; preload_bytes=120459264",warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=250,alpha=0.01",0.9750,2.781,3.234,high recall,warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=300,alpha=0.01",0.9808,3.309,3.819,very high recall,warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.01",0.9853,3.788,4.313,highest recall overall,warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.01,clu_mode=full_preload",0.9853,4.6650,7.0140,"preload-on sweep; preload_time_ms=87.598; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.02,clu_mode=full_preload",0.9843,6.1040,8.7120,"preload-on sweep; preload_time_ms=85.259; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.05,clu_mode=full_preload",0.9346,1.6950,2.5640,"preload-on sweep; preload_time_ms=70.843; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.08,clu_mode=full_preload",0.9171,1.8320,3.7680,"preload-on sweep; preload_time_ms=82.701; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.10,clu_mode=full_preload",0.9025,1.7560,3.8500,"preload-on sweep; preload_time_ms=82.203; preload_bytes=120459264",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=1",0.9930,1.1090,1.8078,"R=32,L_build=50,warmup=100,queries=1000",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=2",0.9930,1.1189,1.8073,"R=32,L_build=50,warmup=100,queries=1000",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=5",0.9930,1.1585,1.9010,"R=32,L_build=50,warmup=100,queries=1000",warm

@@ -14,6 +14,11 @@ enum class SubmissionMode : uint8_t {
     Isolated = 1,
 };
 
+enum class CluReadMode : uint8_t {
+    Window = 0,
+    FullPreload = 1,
+};
+
 struct SearchConfig {
     uint32_t top_k = 10;
     uint32_t nprobe = 8;
@@ -34,6 +39,7 @@ struct SearchConfig {
     uint32_t initial_prefetch = 4;     // CRC mode: initial cluster prefetch count
     uint32_t refill_threshold = 2;     // Refill when inflight_clusters drops below
     uint32_t refill_count = 2;         // Number of clusters to refill per check
+    CluReadMode clu_read_mode = CluReadMode::Window;
 
     // CRC early stop parameters (nullptr = use legacy d_k early stop)
     const index::CalibrationResults* crc_params = nullptr;

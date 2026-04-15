@@ -72,6 +72,7 @@ class OverlapScheduler {
     void DispatchCompletion(uint64_t slot_token, SearchContext& ctx,
                             class RerankConsumer& reranker);
     void SubmitClusterRead(uint32_t cluster_id);
+    const ParsedCluster* GetResidentParsedCluster(uint32_t cluster_id);
     void ProbeCluster(const ParsedCluster& pc, uint32_t cluster_id,
                       SearchContext& ctx, class RerankConsumer& reranker);
     void FetchMissingPayloads(SearchContext& ctx,
@@ -111,6 +112,7 @@ class OverlapScheduler {
 
     // Sliding window state (reset per Search() call)
     std::unordered_map<uint32_t, ParsedCluster> ready_clusters_;
+    std::unordered_map<uint32_t, ParsedCluster> resident_query_clusters_;
     uint32_t next_to_submit_ = 0;
     uint32_t inflight_clusters_ = 0;
 

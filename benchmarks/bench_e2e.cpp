@@ -278,6 +278,8 @@ struct RoundMetrics {
     double early_pct = 0;
     double avg_skipped = 0;
     double overlap_ratio = 0;
+    double preload_time_ms = 0;
+    double preload_bytes = 0;
 };
 
 // ============================================================================
@@ -294,6 +296,17 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     const std::vector<std::vector<float>>& gt_dists) {
 
     Log("\n[%s] Querying %u vectors...\n", label, Q);
+
+    if (search_cfg.clu_read_mode == CluReadMode::FullPreload &&
+        !index.segment().resident_preload_enabled()) {
+        auto preload_status = index.segment().PreloadAllClusters();
+        if (!preload_status.ok()) {
+            std::fprintf(stderr,
+                         "Failed to preload .clu before benchmark round: %s\n",
+                         preload_status.ToString().c_str());
+            std::abort();
+        }
+    }
 
     std::unique_ptr<OverlapScheduler> scheduler;
     if (data_reader != nullptr) {
@@ -437,6 +450,8 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.early_pct = static_cast<double>(early_count) / Q;
     m.avg_skipped = early_count > 0 ? sum_skipped / early_count : 0;
     m.overlap_ratio = (sum_total > 0) ? 1.0 - sum_io_wait / sum_total : 0.0;
+    m.preload_time_ms = index.segment().resident_preload_time_ms();
+    m.preload_bytes = static_cast<double>(index.segment().resident_preload_bytes());
 
     Log("  %s: recall@1=%.4f @5=%.4f @10=%.4f\n", label,
         m.recall_at[0], m.recall_at[1], m.recall_at[2]);
@@ -487,6 +502,8 @@ int main(int argc, char* argv[]) {
         GetIntArg(argc, argv, "--cluster-submit-reserve", 8);
     std::string arg_submission_mode =
         GetStringArg(argc, argv, "--submission-mode", "shared");
+    std::string arg_clu_read_mode =
+        GetStringArg(argc, argv, "--clu-read-mode", "window");
 
     bool arg_cold = HasFlag(argc, argv, "--cold");
     bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
@@ -498,6 +515,13 @@ int main(int argc, char* argv[]) {
         std::fprintf(stderr,
                      "Error: unsupported --submission-mode=%s (expected 'shared' or 'isolated')\n",
                      arg_submission_mode.c_str());
+        return 1;
+    }
+    if (arg_clu_read_mode != "window" &&
+        arg_clu_read_mode != "full_preload") {
+        std::fprintf(stderr,
+                     "Invalid --clu-read-mode: %s (expected window or full_preload)\n",
+                     arg_clu_read_mode.c_str());
         return 1;
     }
 
@@ -912,6 +936,10 @@ int main(int argc, char* argv[]) {
         (arg_submission_mode == "isolated")
             ? SubmissionMode::Isolated
             : SubmissionMode::Shared;
+    search_cfg.clu_read_mode =
+        (arg_clu_read_mode == "full_preload")
+            ? CluReadMode::FullPreload
+            : CluReadMode::Window;
     search_cfg.crc_params = &calib_results;
     search_cfg.initial_prefetch = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--initial-prefetch", 16));
@@ -937,7 +965,8 @@ int main(int argc, char* argv[]) {
             sweep_csv << "nprobe,recall@1,recall@10,avg_ms,p50_ms,p99_ms,"
                          "avg_probe_ms,avg_io_wait_ms,avg_uring_submit_ms,"
                          "avg_submit_calls,avg_safe_out_rate,io_queue_depth,"
-                         "sqpoll_enabled,cluster_submit_reserve,submission_mode\n";
+                         "sqpoll_enabled,cluster_submit_reserve,submission_mode,"
+                         "clu_read_mode,preload_time_ms,preload_bytes\n";
         }
 
         // Warmup query count for sweep (100 or all if Q < 100)
@@ -974,7 +1003,10 @@ int main(int argc, char* argv[]) {
                       << safe_out_rate << "," << search_cfg.io_queue_depth << ","
                       << (cluster_reader.sqpoll_enabled() ? 1 : 0) << ","
                       << search_cfg.cluster_submit_reserve << ","
-                      << arg_submission_mode << "\n";
+                      << arg_submission_mode << ","
+                      << arg_clu_read_mode << ","
+                      << sm.preload_time_ms << ","
+                      << sm.preload_bytes << "\n";
             sweep_csv.flush();
         }
 
@@ -1057,6 +1089,8 @@ int main(int argc, char* argv[]) {
         training_time_ms, brute_force_time_ms);
     Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
         metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
+    Log("  clu_mode=%s  preload_time=%.3f ms  preload_bytes=%.0f\n",
+        arg_clu_read_mode.c_str(), metrics.preload_time_ms, metrics.preload_bytes);
     Log("  safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n",
         metrics.avg_safe_in, metrics.avg_safe_out, metrics.avg_uncertain);
     Log("  s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n",
@@ -1103,7 +1137,8 @@ int main(int argc, char* argv[]) {
         f << "    " << JBool("iopoll_requested", arg_iopoll) << ",\n";
         f << "    " << JBool("sqpoll_requested", arg_sqpoll) << ",\n";
         f << "    " << JBool("sqpoll_effective", cluster_reader.sqpoll_enabled()) << ",\n";
-        f << "    " << JStr("submission_mode", arg_submission_mode) << "\n";
+        f << "    " << JStr("submission_mode", arg_submission_mode) << ",\n";
+        f << "    " << JStr("clu_read_mode", arg_clu_read_mode) << "\n";
         f << "  },\n";
         f << "  \"crc_config\": {\n";
         f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
@@ -1129,6 +1164,8 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("p50_query_time_ms", metrics.p50) << ",\n";
         f << "    " << JNum("p95_query_time_ms", metrics.p95) << ",\n";
         f << "    " << JNum("p99_query_time_ms", metrics.p99) << ",\n";
+        f << "    " << JNum("preload_time_ms", metrics.preload_time_ms) << ",\n";
+        f << "    " << JNum("preload_bytes", metrics.preload_bytes) << ",\n";
         f << "    " << JInt("num_queries", Q) << "\n";
         f << "  },\n";
 
