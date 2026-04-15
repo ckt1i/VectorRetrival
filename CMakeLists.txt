@@ -24,13 +24,10 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -funroll-loops -fno-math-errno")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 
 if(VDB_USE_AVX512)
-    # Note: -mprefer-vector-width=512 tested twice (dim=96 and dim=512) and
-    # both regressed. dim=512 perf stat showed: cycles +4%, instructions -10%,
-    # but task-clock +12% — caused by AVX-512 frequency throttling on Ice
-    # Lake-SP (2.878→2.689 GHz, -7%) plus GCC zmm setup overhead outweighing
-    # the 16-vs-8 lane benefit. Hand-written _mm512_* intrinsics in src/simd/
-    # still kick in independently. Keep GCC's 256-bit auto-vec default.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -march=icelake-server -mtune=icelake-server")
+    # Use feature flags instead of an Intel-specific -march target.
+    # This keeps AVX-512 builds valid on non-Intel AVX-512 machines such as
+    # AMD EPYC Genoa while still enabling the hand-written intrinsics in src/simd/.
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd -mavx512vpopcntdq -mavx2 -mfma")
     add_compile_definitions(VDB_USE_AVX512=1 VDB_USE_AVX2=1)
 elseif(VDB_USE_AVX2)
     set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
@@ -170,8 +167,8 @@ target_link_libraries(vdb_columns PUBLIC vdb_common Threads::Threads)
 
 # =============================================================================
 # VDB SIMD Library (Phase 3)
-# Only AVX2 + scalar paths are implemented. AVX-512 is deferred.
-# See UNDO.txt [PHASE3-001] for the AVX-512 implementation plan.
+# AVX-512, AVX2, and scalar paths coexist; runtime selection is compile-time
+# through VDB_USE_AVX512 / VDB_USE_AVX2.
 # =============================================================================
 add_library(vdb_simd STATIC
     src/simd/distance_l2.cpp
@@ -181,6 +178,7 @@ add_library(vdb_simd STATIC
     src/simd/transpose.cpp
     src/simd/ip_exrabitq.cpp
     src/simd/fastscan.cpp
+    src/simd/prepare_query.cpp
     src/simd/hadamard.cpp
     src/simd/signed_dot.cpp
 )
@@ -383,6 +381,10 @@ if(VDB_BUILD_TESTS)
     add_executable(test_transpose tests/simd/transpose_test.cpp)
     target_link_libraries(test_transpose PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
     add_test(NAME test_transpose COMMAND test_transpose)
+
+    add_executable(test_prepare_query tests/simd/prepare_query_test.cpp)
+    target_link_libraries(test_prepare_query PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_prepare_query COMMAND test_prepare_query)
 
     # -------------------------------------------------------------------------
     # Codec tests (Phase 3)

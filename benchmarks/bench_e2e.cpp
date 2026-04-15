@@ -23,6 +23,7 @@
 #include <fcntl.h>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -96,6 +97,38 @@ static std::string Timestamp() {
 
 static std::string DatasetName(const std::string& path) {
     return fs::path(path).filename().string();
+}
+
+static std::string FormatEpsilonTag(float epsilon_percentile) {
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(2) << epsilon_percentile;
+    return oss.str();
+}
+
+static std::string ResolveBenchIndexDir(const std::string& dataset_name,
+                                        const std::string& output_dir,
+                                        int nlist,
+                                        int bits,
+                                        float epsilon_percentile,
+                                        const std::string& requested_index_dir) {
+    if (!requested_index_dir.empty()) {
+        return requested_index_dir;
+    }
+    if (dataset_name == "coco_100k" && nlist == 2048) {
+        return "/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits" +
+               std::to_string(bits) + "_eps" +
+               FormatEpsilonTag(epsilon_percentile);
+    }
+    return output_dir + "/index";
+}
+
+static std::string NormalizePath(const std::string& path) {
+    std::error_code ec;
+    fs::path normalized = fs::absolute(fs::path(path), ec);
+    if (ec) {
+        return path;
+    }
+    return normalized.lexically_normal().string();
 }
 
 // ============================================================================
@@ -677,8 +710,12 @@ int main(int argc, char* argv[]) {
     // Phase C: Build Index (skipped when --index-dir is provided)
     // ================================================================
     std::string output_dir = output_base + "/" + ds_name + "_" + ts;
-    std::string index_dir = !arg_index_dir.empty() ? arg_index_dir
-                                                    : output_dir + "/index";
+    std::string index_dir = ResolveBenchIndexDir(
+        ds_name, output_dir, arg_nlist, arg_bits,
+        arg_epsilon_percentile, arg_index_dir);
+    const std::string index_source =
+        arg_index_dir.empty() ? "rebuilt" : "reused";
+    const std::string resolved_index_dir = NormalizePath(index_dir);
     double training_time_ms = 0.0;
 
     if (arg_index_dir.empty()) {
@@ -748,6 +785,8 @@ int main(int argc, char* argv[]) {
 
     Log("  Index params: eps_ip=%.6f  d_k=%.6f\n",
         index.conann().epsilon(), index.conann().d_k());
+    Log("  Index source: %s  resolved_index_dir=%s\n",
+        index_source.c_str(), resolved_index_dir.c_str());
 
     CalibrationResults calib_results;
     {
@@ -966,7 +1005,8 @@ int main(int argc, char* argv[]) {
                          "avg_probe_ms,avg_io_wait_ms,avg_uring_submit_ms,"
                          "avg_submit_calls,avg_safe_out_rate,io_queue_depth,"
                          "sqpoll_enabled,cluster_submit_reserve,submission_mode,"
-                         "clu_read_mode,preload_time_ms,preload_bytes\n";
+                         "clu_read_mode,index_source,resolved_index_dir,"
+                         "loaded_eps_ip,loaded_d_k,preload_time_ms,preload_bytes\n";
         }
 
         // Warmup query count for sweep (100 or all if Q < 100)
@@ -1005,6 +1045,10 @@ int main(int argc, char* argv[]) {
                       << search_cfg.cluster_submit_reserve << ","
                       << arg_submission_mode << ","
                       << arg_clu_read_mode << ","
+                      << index_source << ","
+                      << "\"" << resolved_index_dir << "\"" << ","
+                      << index.conann().epsilon() << ","
+                      << index.conann().d_k() << ","
                       << sm.preload_time_ms << ","
                       << sm.preload_bytes << "\n";
             sweep_csv.flush();
@@ -1087,6 +1131,10 @@ int main(int argc, char* argv[]) {
         metrics.avg_query_ms, metrics.p50, metrics.p95, metrics.p99);
     Log("  build_time=%.1f ms  brute_force=%.1f ms\n",
         training_time_ms, brute_force_time_ms);
+    Log("  index_source=%s  resolved_index_dir=%s\n",
+        index_source.c_str(), resolved_index_dir.c_str());
+    Log("  loaded_eps_ip=%.6f  loaded_d_k=%.6f\n",
+        index.conann().epsilon(), index.conann().d_k());
     Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
         metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
     Log("  clu_mode=%s  preload_time=%.3f ms  preload_bytes=%.0f\n",
@@ -1114,6 +1162,8 @@ int main(int argc, char* argv[]) {
         f << "  " << JStr("dataset", ds_name) << ",\n";
         f << "  " << JStr("dataset_path", data_dir) << ",\n";
         f << "  " << JStr("timestamp", ts) << ",\n";
+        f << "  " << JStr("index_source", index_source) << ",\n";
+        f << "  " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
         f << "  " << JInt("num_images", N) << ",\n";
         f << "  " << JInt("num_queries", Q) << ",\n";
         f << "  " << JInt("dimension", dim) << ",\n";
@@ -1125,7 +1175,10 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("rabitq_block_size", arg_block_size) << ",\n";
         f << "    " << JNum("rabitq_c_factor", arg_c_factor) << ",\n";
         f << "    " << JInt("page_size", arg_page_size) << ",\n";
-        f << "    " << JStr("index_dir", arg_index_dir) << "\n";
+        f << "    " << JInt("epsilon_samples", arg_epsilon_samples) << ",\n";
+        f << "    " << JNum("epsilon_percentile", arg_epsilon_percentile) << ",\n";
+        f << "    " << JStr("requested_index_dir", arg_index_dir) << ",\n";
+        f << "    " << JStr("resolved_index_dir", resolved_index_dir) << "\n";
         f << "  },\n";
         f << "  \"search_config\": {\n";
         f << "    " << JInt("top_k", search_cfg.top_k) << ",\n";
@@ -1144,6 +1197,10 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
         f << "    " << JNum("calib_ratio", arg_crc_calib) << ",\n";
         f << "    " << JNum("tune_ratio", arg_crc_tune) << "\n";
+        f << "  },\n";
+        f << "  \"runtime_index\": {\n";
+        f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
+        f << "    " << JNum("loaded_d_k", index.conann().d_k()) << "\n";
         f << "  }\n";
         f << "}\n";
     }
@@ -1157,6 +1214,10 @@ int main(int argc, char* argv[]) {
         f << "  \"metrics\": {\n";
         f << "    " << JNum("training_time_ms", training_time_ms) << ",\n";
         f << "    " << JNum("brute_force_time_ms", brute_force_time_ms) << ",\n";
+        f << "    " << JStr("index_source", index_source) << ",\n";
+        f << "    " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
+        f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
+        f << "    " << JNum("loaded_d_k", index.conann().d_k()) << ",\n";
         f << "    " << JNum("recall_at_1", metrics.recall_at[0]) << ",\n";
         f << "    " << JNum("recall_at_5", metrics.recall_at[1]) << ",\n";
         f << "    " << JNum("recall_at_10", metrics.recall_at[2]) << ",\n";

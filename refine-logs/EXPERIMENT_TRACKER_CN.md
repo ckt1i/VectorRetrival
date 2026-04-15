@@ -122,7 +122,7 @@
 
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
-| R067 | M9 | 热路径重新剖析 | BoundFetch `full_preload`, `alpha=0.02` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | 必须 | 待运行 | 在改代码前重新锚定 `recall@10 >= 0.95` 区间 |
+| R067 | M9 | 热路径重新剖析 | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | 必须 | 已完成 | 新主锚点：`0.9519 / 1.772ms / 2.078ms`；`perf` 显示 query 侧 CPU 主要耗在 `QuantizeQuery14Bit` 和 `PrepareQueryRotatedInto`，整段 benchmark 的头号样本仍是 GT `L2Sqr` |
 | R068 | M9 | CPU 优化 pass 1 | BoundFetch + 减少重复 decode / check | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 保持搜索语义不变 |
 | R069 | M9 | CPU 优化 pass 2 | BoundFetch + 更适合 SIMD 的 probe 数据布局 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 仅在 R068 方向正确时继续 |
 | R070 | M9 | CPU 优化 pass 3 | BoundFetch + 降低 candidate materialization / rerank 成本 | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | 必须 | 待运行 | 若收益微弱则停止 |
@@ -142,10 +142,29 @@
 | R074 | M11 | 规模扩展检查 | `deep1m` 或 `deep8m` 上的 BoundFetch 最佳点 | deep* | recall@10, e2e_ms, build_time | 可选 | 待运行 | 仅在 M9-M10 稳定后运行 |
 | R075 | M11 | 真实数据检查 | `MS MARCO Passage` 或 `Amazon Products` 上的 BoundFetch + 最强 IVF 家族基线 | real-data | recall@10, e2e_ms, build_time | 可选 | 待运行 | 检查 payload 异质性与真实 schema |
 
+## M12: FastScan epsilon 重建验证
+
+| 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
+|--------|--------|------|----------|--------|------|--------|------|------|
+| R076 | M12 | 对照验证 | 复用 `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048` 并传入 CLI `epsilon=0.90` | coco_100k | loaded_eps_ip, resolved_index_dir | 必须 | 已完成 | `loaded_eps_ip` 仍为 `0.0995`；确认 CLI epsilon 不会覆盖复用索引中的元数据 |
+| R077 | M12 | 聚类工件导出 | 从历史索引导出可复用 `fkmeans` clustering 工件 | coco_100k | centroids.fvecs, assignments.ivecs | 必须 | 已完成 | 已导出到 `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048/{centroids.fvecs,assignments.ivecs}` |
+| R078 | M12 | 重建验证 | 在导出的 `fkmeans` clustering 上重建 `epsilon=0.90` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | 必须 | 已完成 | 已降级为调试记录：自动重建时误用了 `bits=1`，因此 Stage 2 未激活 |
+| R079 | M12 | 重建验证 | 在导出的 `fkmeans` clustering 上重建 `epsilon=0.95` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | 必须 | 已完成 | 已降级为调试记录：自动重建时误用了 `bits=1`，因此 Stage 2 未激活 |
+| R080 | M12 | 重建验证 | 在导出的 `fkmeans` clustering 上重建 `epsilon=0.99` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | 必须 | 已完成 | 已降级为调试记录：自动重建时误用了 `bits=1`，因此 Stage 2 未激活 |
+| R081 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.99` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.99`；`0.0994 / 0.9563 / 2.364ms / 2.865ms`；`safe_out=3994.6`，`s2_safe_out=4375.5` |
+| R082 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.95` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.95`；`0.0753 / 0.9561 / 2.050ms / 2.580ms`；`safe_out=6134.9`，`s2_safe_out=2251.8` |
+| R083 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.90` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90`；`0.0631 / 0.9561 / 1.925ms / 2.411ms`；`safe_out=6951.7`，`s2_safe_out=1449.8` |
+| R084 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.85` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.85`；`0.0553 / 0.9556 / 1.857ms / 2.259ms`；`safe_out=7369.1`，`s2_safe_out=1044.7` |
+| R085 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.80` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.80`；`0.0492 / 0.9541 / 1.814ms / 2.269ms`；`safe_out=7626.3`，`s2_safe_out=790.2` |
+| R086 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.75` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75`；`0.0442 / 0.9519 / 1.772ms / 2.078ms`；`safe_out=7803.1`，`s2_safe_out=615.7` |
+| R087 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.70` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.70`；`0.0398 / 0.9500 / 1.743ms / 2.018ms`；`safe_out=7940.9`，`s2_safe_out=487.5` |
+| R088 | M12B | 修正重建 | 在导出的 `fkmeans` clustering 上以 `bits=4` 重建 `epsilon=0.60` | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | 必须 | 已完成 | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.60`；`0.0324 / 0.9409 / 1.706ms / 1.911ms`；`safe_out=8116.8`，`s2_safe_out=315.0` |
+
 ## 当前解读
 
 - 当前最实用的 BoundFetch preload-on 权衡点：`nprobe=200, alpha=0.05`，`0.9346 / 1.609ms / 1.946ms`
-- 当前最实用的 BoundFetch preload-on 高召回点：`nprobe=200, alpha=0.02`，`0.9551 / 2.344ms / 2.834ms`
+- 当前主表 / Pareto 锚点：修正后的 `bits=4`、`nprobe=200`、`alpha=0.02`、`epsilon=0.75`，`0.9519 / 1.772ms / 2.078ms`
+- 当前最实用的 BoundFetch preload-on 高召回点：修正后的 `bits=4`、`nprobe=200`、`alpha=0.02`、`epsilon=0.85`，`0.9556 / 1.857ms / 2.259ms`
 - 当前更高召回的 preload-on 点：`nprobe=200, alpha=0.01`，`0.9640 / 2.366ms / 2.830ms`
 - 当前低延迟区域最强 DiskANN 点：`L_search=5`，`0.993 / 1.159ms / 1.901ms`
 - 当前实际结论：
@@ -153,6 +172,11 @@
   - `full_preload` 值得保留，但它没有消除与 DiskANN 的高召回差距
   - 下一步底层杠杆是 CPU 搜索成本，而不是更多 cluster 侧 I/O 路径工作
   - 同步 IVF 家族调参现在比更大规模的数据集扩展更优先
+  - 运行时 FastScan epsilon 已确认是索引构建阶段写入的属性，而不是查询阶段可覆盖的参数
+  - 先前的 `index_fkmeans_2048_eps*` sweep 实际误建成了 `bits=1`，因此只能作为定位问题的调试记录，不能作为最终服务结论
+  - 修正后的 `bits=4` sweep 表明，epsilon 不仅影响 Stage 1 `safe_out`，也会真实减少 Stage 2 负载
+  - 在新的 `epsilon=0.75` 锚点下，查询瓶颈仍然是 CPU：`probe_ms=1.500`、`uring_submit_ms=0.089`、`rerank_cpu_ms=0.012`；query 热点主要落在每查询预处理 (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`)，而不是 `.clu` I/O
+  - 历史 `index_fkmeans_2048` 的 clustering 工件已经导出，因此下一轮 epsilon Pareto 刷新可以保持在同一份 `fkmeans` clustering 和目标 `bits=4` 路径上
 
 ## 决策约束
 

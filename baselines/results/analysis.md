@@ -99,8 +99,9 @@ This analysis covers the warm steady-state evaluation of BoundFetch on COCO 100K
    - Smaller alpha → more clusters explored → higher recall, higher latency
    - The tradeoff is monotonic and controllable
 
-3. **epsilon-percentile has no effect at nprobe≥200**:
-   - Already fully exploring clusters; boundary tightens don't help
+3. **Query-time `epsilon-percentile` does not affect reused indexes**:
+   - The earlier "no effect" observation at `nprobe>=200` came from runs that reused a pre-built `--index-dir`
+   - In that mode, changing the benchmark CLI flag alone does not change the runtime FastScan bound because `loaded_eps_ip` still comes from the existing `segment.meta`
 
 4. **alpha=0.01 achieves highest recall (~0.98) but at significant latency cost**
 
@@ -216,6 +217,97 @@ To rule out environment drift, we reran the representative operating point under
 
 ---
 
+## 6. FastScan Epsilon Rebuild Validation
+
+### Validation Protocol
+
+The epsilon validation was rerun under one fixed warm point:
+
+- dataset: `coco_100k`
+- queries: `1000`
+- topk: `10`
+- `nlist=2048`
+- `nprobe=200`
+- `crc_alpha=0.02`
+- `clu_mode=full_preload`
+
+The benchmark now records:
+
+- `index_source` (`rebuilt` or `reused`)
+- `resolved_index_dir`
+- `loaded_eps_ip`
+- `loaded_d_k`
+
+### Control Check: Reused Index Ignores Query-Time Override
+
+A control run reused `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048` while passing `--epsilon-percentile=0.90` on the benchmark CLI.
+
+| run type | requested epsilon | resolved index | loaded_eps_ip | conclusion |
+|----------|-------------------|----------------|---------------|------------|
+| reused control | 0.90 | `index_fkmeans_2048` | 0.0995 | runtime epsilon did **not** change |
+
+This confirms that query-time CLI epsilon is only recorded as experiment metadata when `--index-dir` is reused.
+
+### Rebuilt Index Sweep: Corrected `bits=4` Stage 2 Path
+
+To make the sweep strictly apples-to-apples against the historical `index_fkmeans_2048`, we first exported reusable clustering artifacts from that index:
+
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048/centroids.fvecs`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048/assignments.ivecs`
+
+During follow-up validation, we found that the earlier standardized `index_fkmeans_2048_eps*` rebuilds had been created with `--bits=1`, while the historical serving index uses `bits=4`. That disabled Region 2 ExRaBitQ entries in `cluster.clu`, made Stage 2 inactive, and therefore cannot represent the intended final serving path.
+
+The corrected sweep now rebuilds every epsilon point explicitly with `--bits=4`, and the standardized directory naming is also made explicit:
+
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.99`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.95`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.85`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.80`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.70`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.60`
+
+Every corrected rebuilt index reports `bits=4` in the `cluster.clu` global header, and every run shows non-zero Stage 2 counts, confirming that the intended `1-bit FastScan + multi-bit ExRaBitQ Stage 2` path is active again.
+
+| epsilon_percentile | loaded_eps_ip | recall@10 | avg_ms | p99_ms | avg_safe_out | avg_uncertain | avg_s2_safe_out | avg_s2_uncertain | avg_probe_ms | avg_rerank_cpu_ms |
+|--------------------|---------------|-----------|--------|--------|--------------|---------------|-----------------|------------------|--------------|-------------------|
+| 0.99 | 0.0994 | 0.9563 | 2.3644 | 2.8647 | 3994.6 | 130.8 | 4375.5 | 130.8 | 2.0212 | 0.0163 |
+| 0.95 | 0.0753 | 0.9561 | 2.0497 | 2.5800 | 6134.9 | 117.0 | 2251.8 | 117.0 | 1.7376 | 0.0143 |
+| 0.90 | 0.0631 | 0.9561 | 1.9251 | 2.4109 | 6951.7 | 111.2 | 1449.8 | 111.2 | 1.6266 | 0.0133 |
+| 0.85 | 0.0553 | 0.9556 | 1.8570 | 2.2594 | 7369.1 | 107.5 | 1044.7 | 107.5 | 1.5642 | 0.0132 |
+| 0.80 | 0.0492 | 0.9541 | 1.8137 | 2.2692 | 7626.3 | 104.8 | 790.2 | 104.8 | 1.5216 | 0.0127 |
+| 0.75 | 0.0442 | 0.9519 | 1.7718 | 2.0775 | 7803.1 | 102.5 | 615.7 | 102.5 | 1.4905 | 0.0126 |
+| 0.70 | 0.0398 | 0.9500 | 1.7433 | 2.0178 | 7940.9 | 100.7 | 487.5 | 100.7 | 1.4638 | 0.0122 |
+| 0.60 | 0.0324 | 0.9409 | 1.7056 | 1.9106 | 8116.8 | 97.3 | 315.0 | 97.3 | 1.4322 | 0.0117 |
+
+### Interpretation
+
+1. Rebuilding the index clearly changes runtime FastScan bounds:
+   - `loaded_eps_ip` increases monotonically from `0.0324` to `0.0994`
+   - the direction still matches the configured build-time `epsilon-percentile`
+2. On the corrected `bits=4` serving path, Stage 2 is active throughout the sweep:
+   - `avg_s2_safe_out` stays strongly non-zero
+   - `avg_s2_uncertain` tracks the Stage 1 uncertain stream
+   - the earlier `avg_s2_safe_out=0` observation was caused by mistakenly rebuilding `bits=1` indexes
+3. Lowering epsilon now has the intended two-stage effect:
+   - Stage 1 `SafeOut` increases
+   - Stage 2 input shrinks from `4375.5` at `0.99` down to `315.0` at `0.60`
+   - total query time drops accordingly from `2.3644ms` to `1.7056ms`
+4. The useful operating region is now much clearer:
+   - for the refreshed main table and Pareto figure, the new anchor is `epsilon=0.75` at `0.9519 / 1.7718ms / 2.0775ms`
+   - if the target is `recall@10 >= 0.955`, `epsilon=0.85` is currently the best point at `0.9556 / 1.8570ms / 2.2594ms`
+   - if the target is roughly `recall@10 ~= 0.95`, `epsilon=0.70` is the best observed point at `0.9500 / 1.7433ms / 2.0178ms`
+5. This corrected sweep supports continuing epsilon tuning on the true final path:
+   - the benefit is not limited to a `bits=1` Stage 1-only artifact
+   - tighter FastScan bounds reduce real Stage 2 load on the deployed `bits=4` pipeline
+
+### Status After Export
+
+The corrected epsilon sweep is now on the historical `fkmeans` clustering and the intended `bits=4` serving path, so it supersedes the earlier `index_fkmeans_2048_eps*` `bits=1` rebuilds for all final conclusions. Those earlier runs remain useful only as a debugging record that exposed the path-mismatch issue.
+
+---
+
 ## Appendix: Experiment Output Locations
 
 - nprobe=200, alpha=0.05: `/home/zcq/VDB/test/coco_100k_20260414T132114`
@@ -223,3 +315,13 @@ To rule out environment drift, we reran the representative operating point under
 - preload comparison, `window`: `/home/zcq/VDB/test/clu_preload_compare_window/coco_100k_20260414T225702`
 - preload comparison, `full_preload`: `/home/zcq/VDB/test/clu_preload_compare_full_round2/coco_100k_20260414T230041`
 - Full matrix outputs: `/home/zcq/VDB/test/coco_100k_20260414*`
+- exported clustering artifacts: `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048/{centroids.fvecs,assignments.ivecs}`
+- corrected bits=4 epsilon rebuild sweep (`0.99`): `/tmp/epsilon_bits4_stage2_sweep/eps099/coco_100k_20260415T185116`
+- corrected bits=4 epsilon rebuild sweep (`0.95`): `/tmp/epsilon_bits4_stage2_sweep/eps095/coco_100k_20260415T185151`
+- corrected bits=4 epsilon rebuild sweep (`0.90`): `/tmp/epsilon_bits4_stage2_sweep/eps090/coco_100k_20260415T185217`
+- corrected bits=4 epsilon rebuild sweep (`0.85`): `/tmp/epsilon_bits4_stage2_sweep/eps085/coco_100k_20260415T185227`
+- corrected bits=4 epsilon rebuild sweep (`0.80`): `/tmp/epsilon_bits4_stage2_sweep/eps080/coco_100k_20260415T185238`
+- corrected bits=4 epsilon rebuild sweep (`0.75`): `/tmp/epsilon_bits4_stage2_sweep/eps075/coco_100k_20260415T185248`
+- corrected bits=4 epsilon rebuild sweep (`0.70`): `/tmp/epsilon_bits4_stage2_sweep/eps070/coco_100k_20260415T185259`
+- corrected bits=4 epsilon rebuild sweep (`0.60`): `/tmp/epsilon_bits4_stage2_sweep/eps060/coco_100k_20260415T185309`
+- reused-index control (`requested epsilon=0.90`): `/tmp/epsilon_prebuilt_p090/coco_100k_20260415T162649`

@@ -32,6 +32,7 @@ BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.02,clu_mode=full_preload"
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.05,clu_mode=full_preload",0.9346,1.6950,2.5640,"preload-on sweep; preload_time_ms=70.843; preload_bytes=120459264",warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.08,clu_mode=full_preload",0.9171,1.8320,3.7680,"preload-on sweep; preload_time_ms=82.701; preload_bytes=120459264",warm
 BoundFetch,coco_100k,10,"nlist=2048,nprobe=500,alpha=0.10,clu_mode=full_preload",0.9025,1.7560,3.8500,"preload-on sweep; preload_time_ms=82.203; preload_bytes=120459264",warm
+BoundFetch,coco_100k,10,"nlist=2048,nprobe=200,alpha=0.02,epsilon=0.75,bits=4,clu_mode=full_preload",0.9519,1.7718,2.0775,"corrected bits=4 + Stage2 epsilon sweep; loaded_eps_ip=0.0442; preload_bytes=120459264",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=1",0.9930,1.1090,1.8078,"R=32,L_build=50,warmup=100,queries=1000",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=2",0.9930,1.1189,1.8073,"R=32,L_build=50,warmup=100,queries=1000",warm
 DiskANN+FlatStor,coco_100k,10,"R=32,L_build=50,L_search=5",0.9930,1.1585,1.9010,"R=32,L_build=50,warmup=100,queries=1000",warm

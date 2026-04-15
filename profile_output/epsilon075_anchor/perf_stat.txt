@@ -1,0 +1,22 @@
+# started on Wed Apr 15 19:07:20 2026
+
+
+ Performance counter stats for '/home/zcq/VDB/VectorRetrival/build-local/benchmarks/bench_e2e --dataset /home/zcq/VDB/data/coco_100k --index-dir /home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75 --output /tmp/profile_e075_anchor_stat --nlist 2048 --bits 4 --topk 10 --nprobe 200 --queries 1000 --io-queue-depth 64 --submission-mode shared --crc-alpha 0.02 --crc-calib 0.5 --crc-tune 0.1 --prefetch-depth 16 --initial-prefetch 16 --refill-threshold 4 --refill-count 8 --submit-batch 8 --clu-read-mode full_preload --epsilon-percentile 0.75' (3 runs):
+
+           9676.94 msec task-clock                       #    0.998 CPUs utilized               ( +-  2.35% )
+                30      context-switches                 #    3.100 /sec                        ( +- 15.56% )
+                 1      cpu-migrations                   #    0.103 /sec                        ( +- 88.19% )
+            208377      page-faults                      #   21.533 K/sec                       ( +-  0.00% )
+       39866851502      cycles                           #    4.120 GHz                         ( +-  2.33% )  (71.42%)
+        2810964820      stalled-cycles-frontend          #    7.05% frontend cycles idle        ( +-  1.51% )  (71.42%)
+       72476444676      instructions                     #    1.82  insn per cycle            
+                                                  #    0.04  stalled cycles per insn     ( +-  0.01% )  (71.42%)
+        9748444426      branches                         #    1.007 G/sec                       ( +-  0.06% )  (71.43%)
+         194513985      branch-misses                    #    2.00% of all branches             ( +-  0.13% )  (71.44%)
+       33813905780      L1-dcache-loads                  #    3.494 G/sec                       ( +-  0.04% )  (71.44%)
+        3570902700      L1-dcache-load-misses            #   10.56% of all L1-dcache accesses   ( +-  0.06% )  (71.43%)
+   <not supported>      LLC-loads                                                             
+   <not supported>      LLC-load-misses                                                       
+
+             9.698 +- 0.227 seconds time elapsed  ( +-  2.34% )
+

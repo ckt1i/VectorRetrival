@@ -11,6 +11,34 @@
 namespace vdb {
 namespace simd {
 
+namespace {
+
+#if defined(VDB_USE_AVX512)
+VDB_FORCE_INLINE float ReduceMax512(__m512 v) {
+    alignas(64) float lanes[16];
+    _mm512_store_ps(lanes, v);
+    float vmax = lanes[0];
+    for (int i = 1; i < 16; ++i) {
+        vmax = std::max(vmax, lanes[i]);
+    }
+    return vmax;
+}
+#endif
+
+#if defined(VDB_USE_AVX2)
+VDB_FORCE_INLINE float ReduceMax256(__m256 v) {
+    alignas(32) float lanes[8];
+    _mm256_store_ps(lanes, v);
+    float vmax = lanes[0];
+    for (int i = 1; i < 8; ++i) {
+        vmax = std::max(vmax, lanes[i]);
+    }
+    return vmax;
+}
+#endif
+
+}  // namespace
+
 // ============================================================================
 // QuantizeQuery14Bit — 14-bit symmetric quantization
 // ============================================================================
@@ -23,22 +51,107 @@ float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
 
     // Find max absolute value
     float vmax = 0.0f;
+#if defined(VDB_USE_AVX512)
+    {
+        const __m512 sign_mask = _mm512_set1_ps(-0.0f);
+        __m512 vmax_v = _mm512_setzero_ps();
+        uint32_t i = 0;
+        for (; i + 16 <= dim; i += 16) {
+            __m512 q = _mm512_loadu_ps(query + i);
+            __m512 abs_q = _mm512_andnot_ps(sign_mask, q);
+            vmax_v = _mm512_max_ps(vmax_v, abs_q);
+        }
+        vmax = ReduceMax512(vmax_v);
+        for (; i < dim; ++i) {
+            vmax = std::max(vmax, std::abs(query[i]));
+        }
+    }
+#elif defined(VDB_USE_AVX2)
+    {
+        const __m256 sign_mask = _mm256_set1_ps(-0.0f);
+        __m256 vmax_v = _mm256_setzero_ps();
+        uint32_t i = 0;
+        for (; i + 8 <= dim; i += 8) {
+            __m256 q = _mm256_loadu_ps(query + i);
+            __m256 abs_q = _mm256_andnot_ps(sign_mask, q);
+            vmax_v = _mm256_max_ps(vmax_v, abs_q);
+        }
+        vmax = ReduceMax256(vmax_v);
+        for (; i < dim; ++i) {
+            vmax = std::max(vmax, std::abs(query[i]));
+        }
+    }
+#else
     for (uint32_t i = 0; i < dim; ++i) {
         vmax = std::max(vmax, std::abs(query[i]));
     }
+#endif
 
     if (vmax < 1e-10f) {
-        std::memset(quant_out, 0, dim * sizeof(int16_t));
+        std::memset(quant_out, 0, static_cast<size_t>(dim) * sizeof(int16_t));
         return 1.0f;
     }
 
     float width = vmax / max_val;
+    const float inv_width = 1.0f / width;
 
+#if defined(VDB_USE_AVX512)
+    {
+        const __m512 v_inv_width = _mm512_set1_ps(inv_width);
+        const __m512 v_pos_bias = _mm512_set1_ps(0.5f);
+        const __m512 v_neg_bias = _mm512_set1_ps(-0.5f);
+        const __m512 v_zero = _mm512_setzero_ps();
+        alignas(64) int32_t tmp32[16];
+        uint32_t i = 0;
+        for (; i + 16 <= dim; i += 16) {
+            __m512 v = _mm512_loadu_ps(query + i);
+            v = _mm512_mul_ps(v, v_inv_width);
+            __mmask16 neg_mask = _mm512_cmp_ps_mask(v, v_zero, _CMP_LT_OQ);
+            __m512 bias = _mm512_mask_blend_ps(neg_mask, v_pos_bias, v_neg_bias);
+            __m512 adjusted = _mm512_add_ps(v, bias);
+            __m512i q32 = _mm512_cvttps_epi32(adjusted);
+            _mm512_store_si512(tmp32, q32);
+            for (uint32_t j = 0; j < 16; ++j) {
+                quant_out[i + j] = static_cast<int16_t>(tmp32[j]);
+            }
+        }
+        for (; i < dim; ++i) {
+            float tmp = query[i] * inv_width;
+            quant_out[i] = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
+        }
+    }
+#elif defined(VDB_USE_AVX2)
+    {
+        const __m256 v_inv_width = _mm256_set1_ps(inv_width);
+        const __m256 v_pos_bias = _mm256_set1_ps(0.5f);
+        const __m256 v_neg_bias = _mm256_set1_ps(-0.5f);
+        const __m256 v_zero = _mm256_setzero_ps();
+        alignas(32) int32_t tmp32[8];
+        uint32_t i = 0;
+        for (; i + 8 <= dim; i += 8) {
+            __m256 v = _mm256_loadu_ps(query + i);
+            v = _mm256_mul_ps(v, v_inv_width);
+            __m256 neg_mask = _mm256_cmp_ps(v, v_zero, _CMP_LT_OQ);
+            __m256 bias = _mm256_blendv_ps(v_pos_bias, v_neg_bias, neg_mask);
+            __m256 adjusted = _mm256_add_ps(v, bias);
+            __m256i q32 = _mm256_cvttps_epi32(adjusted);
+            _mm256_store_si256(reinterpret_cast<__m256i*>(tmp32), q32);
+            for (uint32_t j = 0; j < 8; ++j) {
+                quant_out[i + j] = static_cast<int16_t>(tmp32[j]);
+            }
+        }
+        for (; i < dim; ++i) {
+            float tmp = query[i] * inv_width;
+            quant_out[i] = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
+        }
+    }
+#else
     for (uint32_t i = 0; i < dim; ++i) {
         float tmp = query[i] / width;
         // Round to nearest integer (toward-zero for negative)
         quant_out[i] = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
     }
+#endif
 
     return width;
 }
@@ -46,16 +159,6 @@ float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
 // ============================================================================
 // BuildFastScanLUT — build VPSHUFB LUT from quantized query
 // ============================================================================
-
-// lowbit(x) = x & (-x): isolate lowest set bit
-static inline int lowbit(int x) { return x & (-x); }
-
-// pos[j] maps nibble j to which of the 4 dims in the group to use in the
-// recurrence LUT[j] = LUT[j - lowbit(j)] + quant[group*4 + pos[j]].
-// This generates the cumulative sum over all subsets of 4 dims.
-static constexpr int kLutPos[16] = {
-    3, 3, 2, 3, 1, 3, 2, 3, 0, 3, 2, 3, 1, 3, 2, 3
-};
 
 int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
                           uint8_t* VDB_RESTRICT lut_out,
@@ -80,24 +183,72 @@ int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
 
     const int16_t* qq = quant_query;
     for (uint32_t i = 0; i < M; ++i) {
-        int LUT[16];
-        int v_min = 0;
+        const int q0 = qq[0];
+        const int q1 = qq[1];
+        const int q2 = qq[2];
+        const int q3 = qq[3];
 
-        LUT[0] = 0;
-        for (int j = 1; j < 16; ++j) {
-            LUT[j] = LUT[j - lowbit(j)] + qq[kLutPos[j]];
-            v_min = std::min(v_min, LUT[j]);
-        }
+        // Minimum subset sum over {q0,q1,q2,q3}: include all negative values,
+        // exclude all positive values.
+        const int v_min =
+            std::min(q0, 0) + std::min(q1, 0) +
+            std::min(q2, 0) + std::min(q3, 0);
+        const int bias = -v_min;
+
+        const uint16_t lut0  = static_cast<uint16_t>(bias);
+        const uint16_t lut1  = static_cast<uint16_t>(bias + q3);
+        const uint16_t lut2  = static_cast<uint16_t>(bias + q2);
+        const uint16_t lut3  = static_cast<uint16_t>(bias + q2 + q3);
+        const uint16_t lut4  = static_cast<uint16_t>(bias + q1);
+        const uint16_t lut5  = static_cast<uint16_t>(bias + q1 + q3);
+        const uint16_t lut6  = static_cast<uint16_t>(bias + q1 + q2);
+        const uint16_t lut7  = static_cast<uint16_t>(bias + q1 + q2 + q3);
+        const uint16_t lut8  = static_cast<uint16_t>(bias + q0);
+        const uint16_t lut9  = static_cast<uint16_t>(bias + q0 + q3);
+        const uint16_t lut10 = static_cast<uint16_t>(bias + q0 + q2);
+        const uint16_t lut11 = static_cast<uint16_t>(bias + q0 + q2 + q3);
+        const uint16_t lut12 = static_cast<uint16_t>(bias + q0 + q1);
+        const uint16_t lut13 = static_cast<uint16_t>(bias + q0 + q1 + q3);
+        const uint16_t lut14 = static_cast<uint16_t>(bias + q0 + q1 + q2);
+        const uint16_t lut15 = static_cast<uint16_t>(bias + q0 + q1 + q2 + q3);
 
         uint8_t* fill_lo = lut_out + (i / n_lut_per_iter) * n_code_per_iter +
                            (i % n_lut_per_iter) * n_code_per_lane;
         uint8_t* fill_hi = fill_lo + hi_offset;
 
-        for (int j = 0; j < 16; ++j) {
-            uint32_t val = static_cast<uint32_t>(LUT[j] - v_min);
-            fill_lo[j] = static_cast<uint8_t>(val & 0xFF);
-            fill_hi[j] = static_cast<uint8_t>((val >> 8) & 0xFF);
-        }
+        fill_lo[0]  = static_cast<uint8_t>(lut0 & 0xFF);
+        fill_lo[1]  = static_cast<uint8_t>(lut1 & 0xFF);
+        fill_lo[2]  = static_cast<uint8_t>(lut2 & 0xFF);
+        fill_lo[3]  = static_cast<uint8_t>(lut3 & 0xFF);
+        fill_lo[4]  = static_cast<uint8_t>(lut4 & 0xFF);
+        fill_lo[5]  = static_cast<uint8_t>(lut5 & 0xFF);
+        fill_lo[6]  = static_cast<uint8_t>(lut6 & 0xFF);
+        fill_lo[7]  = static_cast<uint8_t>(lut7 & 0xFF);
+        fill_lo[8]  = static_cast<uint8_t>(lut8 & 0xFF);
+        fill_lo[9]  = static_cast<uint8_t>(lut9 & 0xFF);
+        fill_lo[10] = static_cast<uint8_t>(lut10 & 0xFF);
+        fill_lo[11] = static_cast<uint8_t>(lut11 & 0xFF);
+        fill_lo[12] = static_cast<uint8_t>(lut12 & 0xFF);
+        fill_lo[13] = static_cast<uint8_t>(lut13 & 0xFF);
+        fill_lo[14] = static_cast<uint8_t>(lut14 & 0xFF);
+        fill_lo[15] = static_cast<uint8_t>(lut15 & 0xFF);
+
+        fill_hi[0]  = static_cast<uint8_t>(lut0 >> 8);
+        fill_hi[1]  = static_cast<uint8_t>(lut1 >> 8);
+        fill_hi[2]  = static_cast<uint8_t>(lut2 >> 8);
+        fill_hi[3]  = static_cast<uint8_t>(lut3 >> 8);
+        fill_hi[4]  = static_cast<uint8_t>(lut4 >> 8);
+        fill_hi[5]  = static_cast<uint8_t>(lut5 >> 8);
+        fill_hi[6]  = static_cast<uint8_t>(lut6 >> 8);
+        fill_hi[7]  = static_cast<uint8_t>(lut7 >> 8);
+        fill_hi[8]  = static_cast<uint8_t>(lut8 >> 8);
+        fill_hi[9]  = static_cast<uint8_t>(lut9 >> 8);
+        fill_hi[10] = static_cast<uint8_t>(lut10 >> 8);
+        fill_hi[11] = static_cast<uint8_t>(lut11 >> 8);
+        fill_hi[12] = static_cast<uint8_t>(lut12 >> 8);
+        fill_hi[13] = static_cast<uint8_t>(lut13 >> 8);
+        fill_hi[14] = static_cast<uint8_t>(lut14 >> 8);
+        fill_hi[15] = static_cast<uint8_t>(lut15 >> 8);
 
         total_shift += v_min;
         qq += 4;

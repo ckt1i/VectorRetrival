@@ -122,7 +122,7 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R067 | M9 | Hot-path profiling refresh | BoundFetch `full_preload`, `alpha=0.02` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | MUST | TODO | Re-anchor the `recall@10 >= 0.95` region before code changes |
+| R067 | M9 | Hot-path profiling refresh | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | MUST | DONE | New main anchor: `0.9519 / 1.772ms / 2.078ms`; `perf` shows query-side CPU is dominated by `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`, while whole-benchmark top sample is still GT `L2Sqr` |
 | R068 | M9 | CPU optimization pass 1 | BoundFetch + reduced duplicate decode / checks | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Keep search semantics fixed |
 | R069 | M9 | CPU optimization pass 2 | BoundFetch + data-layout / SIMD-friendly probe improvements | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Only proceed if R068 moves the profile in the right direction |
 | R070 | M9 | CPU optimization pass 3 | BoundFetch + candidate materialization / rerank reduction | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | MUST | TODO | Stop if gains are negligible |
@@ -142,10 +142,29 @@
 | R074 | M11 | Scale-up check | BoundFetch best point on `deep1m` or `deep8m` | deep* | recall@10, e2e_ms, build_time | NICE | TODO | Run only after M9-M10 stabilize |
 | R075 | M11 | Real-data check | BoundFetch + strongest IVF-family baseline on `MS MARCO Passage` or `Amazon Products` | real-data | recall@10, e2e_ms, build_time | NICE | TODO | Payload heterogeneity and realistic schema |
 
+## M12: FastScan Epsilon Rebuild Validation
+
+| Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
+|--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
+| R076 | M12 | Control check | Reuse `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048` with CLI `epsilon=0.90` | coco_100k | loaded_eps_ip, resolved_index_dir | MUST | DONE | `loaded_eps_ip` stays at `0.0995`; confirms CLI epsilon does not override reused index metadata |
+| R077 | M12 | Clustering export | Export reusable `fkmeans` clustering artifacts from historical index | coco_100k | centroids.fvecs, assignments.ivecs | MUST | DONE | Exported to `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048/{centroids.fvecs,assignments.ivecs}` |
+| R078 | M12 | Rebuild validation | BoundFetch rebuilt `epsilon=0.90` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | MUST | DONE | Superseded debugging run: auto-rebuilt as `bits=1`, so Stage 2 was inactive |
+| R079 | M12 | Rebuild validation | BoundFetch rebuilt `epsilon=0.95` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | MUST | DONE | Superseded debugging run: auto-rebuilt as `bits=1`, so Stage 2 was inactive |
+| R080 | M12 | Rebuild validation | BoundFetch rebuilt `epsilon=0.99` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, uncertain | MUST | DONE | Superseded debugging run: auto-rebuilt as `bits=1`, so Stage 2 was inactive |
+| R081 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.99` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.99`; `0.0994 / 0.9563 / 2.364ms / 2.865ms`; `safe_out=3994.6`, `s2_safe_out=4375.5` |
+| R082 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.95` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.95`; `0.0753 / 0.9561 / 2.050ms / 2.580ms`; `safe_out=6134.9`, `s2_safe_out=2251.8` |
+| R083 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.90` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90`; `0.0631 / 0.9561 / 1.925ms / 2.411ms`; `safe_out=6951.7`, `s2_safe_out=1449.8` |
+| R084 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.85` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.85`; `0.0553 / 0.9556 / 1.857ms / 2.259ms`; `safe_out=7369.1`, `s2_safe_out=1044.7` |
+| R085 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.80` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.80`; `0.0492 / 0.9541 / 1.814ms / 2.269ms`; `safe_out=7626.3`, `s2_safe_out=790.2` |
+| R086 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.75` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75`; `0.0442 / 0.9519 / 1.772ms / 2.078ms`; `safe_out=7803.1`, `s2_safe_out=615.7` |
+| R087 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.70` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.70`; `0.0398 / 0.9500 / 1.743ms / 2.018ms`; `safe_out=7940.9`, `s2_safe_out=487.5` |
+| R088 | M12B | Corrected rebuild | BoundFetch rebuilt `bits=4`, `epsilon=0.60` on exported `fkmeans` clustering | coco_100k | loaded_eps_ip, recall@10, e2e_ms, p99_ms, safe_out, s2_safe_out | MUST | DONE | `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.60`; `0.0324 / 0.9409 / 1.706ms / 1.911ms`; `safe_out=8116.8`, `s2_safe_out=315.0` |
+
 ## Current Interpretation
 
 - Current best practical BoundFetch preload-on tradeoff: `nprobe=200, alpha=0.05` at `0.9346 / 1.609ms / 1.946ms`
-- Current best practical BoundFetch preload-on high-recall point: `nprobe=200, alpha=0.02` at `0.9551 / 2.344ms / 2.834ms`
+- Current main-table / Pareto anchor: corrected `bits=4`, `nprobe=200`, `alpha=0.02`, `epsilon=0.75` at `0.9519 / 1.772ms / 2.078ms`
+- Current best practical BoundFetch preload-on high-recall point: corrected `bits=4`, `nprobe=200`, `alpha=0.02`, `epsilon=0.85` at `0.9556 / 1.857ms / 2.259ms`
 - Current stronger preload-on high-recall point: `nprobe=200, alpha=0.01` at `0.9640 / 2.366ms / 2.830ms`
 - Current strongest DiskANN point in the low-latency region: `L_search=5` at `0.993 / 1.159ms / 1.901ms`
 - Current practical conclusion:
@@ -153,6 +172,11 @@
   - `full_preload` is worth keeping, but it does not remove the high-recall gap to DiskANN
   - the next low-level lever is CPU-side search cost, not more cluster-side I/O-path work
   - synchronized IVF-family tuning is now higher priority than broader dataset expansion
+  - runtime FastScan epsilon is confirmed to be a build-time property of the index, not a query-time override knob
+  - the earlier `index_fkmeans_2048_eps*` sweep was accidentally rebuilt as `bits=1`, so it is only a debugging record and not the final serving conclusion
+  - the corrected `bits=4` sweep shows epsilon changes both Stage 1 `safe_out` volume and real Stage 2 load
+  - reusable `fkmeans` clustering artifacts are now exported, so the next epsilon Pareto refresh can stay on the historical clustering and the intended `bits=4` path
+  - on the new `epsilon=0.75` anchor, measured query CPU is still the bottleneck: `probe_ms=1.500`, `uring_submit_ms=0.089`, `rerank_cpu_ms=0.012`, and the main query-side hotspots are per-query preparation (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) rather than `.clu` I/O
 
 ## Decision Constraints
 

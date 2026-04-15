@@ -9,6 +9,7 @@ RESULTS_DIR = Path("/home/zcq/VDB/VectorRetrival/baselines/results")
 CSV_PATH = RESULTS_DIR / "e2e_comparison_warm.csv"
 BOUND_FETCH_FIG = RESULTS_DIR / "boundfetch_recall_qps.svg"
 BASELINE_FIG = RESULTS_DIR / "baselines_recall_qps.svg"
+PARETO_FIG = RESULTS_DIR / "pareto_comparison.svg"
 
 
 def load_rows():
@@ -160,11 +161,10 @@ def plot_boundfetch(rows):
 
 def pick_boundfetch_best(rows):
     candidates = [r for r in rows if r["system"] == "BoundFetch"]
-    # Use the current preload-on best tradeoff point as the representative point.
     for row in candidates:
-        if row["param"] == "nlist=2048,nprobe=200,alpha=0.05,clu_mode=full_preload":
+        if row["param"] == "nlist=2048,nprobe=200,alpha=0.02,epsilon=0.75,bits=4,clu_mode=full_preload":
             return row
-    raise RuntimeError("BoundFetch representative point not found")
+    raise RuntimeError("BoundFetch epsilon=0.75 representative point not found")
 
 
 def plot_baselines(rows):
@@ -197,7 +197,7 @@ def plot_baselines(rows):
         marker="D",
         s=70,
         color="#d62728",
-        label="BoundFetch best tradeoff",
+        label="BoundFetch epsilon=0.75 anchor",
         zorder=5,
     )
 
@@ -222,7 +222,7 @@ def plot_baselines(rows):
         arrowprops={"arrowstyle": "->", "color": "#9467bd", "lw": 1.0},
     )
     ax.annotate(
-        "BoundFetch best tradeoff",
+        "BoundFetch epsilon=0.75 anchor",
         (boundfetch_best["recall"], boundfetch_best["qps"]),
         xytext=(-110, 12),
         textcoords="offset points",
@@ -238,6 +238,7 @@ def plot_baselines(rows):
     ax.legend(frameon=False)
     fig.tight_layout()
     fig.savefig(BASELINE_FIG, format="svg")
+    fig.savefig(PARETO_FIG, format="svg")
     plt.close(fig)
 
 
@@ -247,6 +248,7 @@ def main():
     plot_baselines(rows)
     print(f"Wrote {BOUND_FETCH_FIG}")
     print(f"Wrote {BASELINE_FIG}")
+    print(f"Wrote {PARETO_FIG}")
 
 
 if __name__ == "__main__":
