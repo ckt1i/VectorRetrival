@@ -121,13 +121,38 @@
 
 ## 4. 目录组织建议
 
-建议在数据目录下为正式 baseline 单独建立统一结构：
+路径口径统一如下：
+
+- `/home/zcq/VDB/data`
+  - 原始下载数据
+  - 原始 embedding
+- `/home/zcq/VDB/baselines/data`
+  - 清洗后的 canonical 数据
+  - split 与 ground truth
+  - 各个 baseline 或 backend 导出的格式化存储数据
+  - 例如 FlatStor / Lance / Parquet 数据
+
 
 ```text
 /home/zcq/VDB/data/formal_baselines/
 ├── coco_100k/
 │   ├── raw/
 │   ├── embeddings/
+│   └── logs/
+├── msmarco_passage/
+├── amazon_esci/
+├── deep8m_synth/
+└── optional/
+    ├── laion_subset/
+    ├── clotho/
+    └── msrvtt/
+```
+
+```text
+/home/zcq/VDB/baselines/data/formal_baselines/
+├── coco_100k/
+│   ├── cleaned/
+│   ├── splits/
 │   ├── gt/
 │   ├── payload_flatstor/
 │   ├── payload_lance/
@@ -136,9 +161,6 @@
 ├── amazon_esci/
 ├── deep8m_synth/
 └── optional/
-    ├── laion_subset/
-    ├── clotho/
-    └── msrvtt/
 ```
 
 ## 5. 合成 payload 生成规则
@@ -165,16 +187,16 @@
 ### ANN ground truth
 
 - 全部主数据集都需要 exact top-k ground truth
-- 输出统一保存为：
+- 输出统一保存到 `/home/zcq/VDB/baselines/data/formal_baselines/{dataset}/gt/`：
   - `gt_top10.npy`
-  - `gt_top100.npy`
+  - `gt_top20.npy`
 
 ### 任务标签 ground truth
 
 - MS MARCO：
-  - 官方 qrels
+  - `/home/zcq/VDB/baselines/data/formal_baselines/msmarco_passage/gt/qrels.tsv`
 - ESCI：
-  - 官方 relevance labels
+  - `/home/zcq/VDB/baselines/data/formal_baselines/amazon_esci/gt/esci_labels.parquet`
 
 ## 7. 主实验优先级
 

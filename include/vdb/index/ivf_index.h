@@ -8,6 +8,7 @@
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
 #include "vdb/index/conann.h"
+#include "vdb/index/ivf_metadata.h"
 #include "vdb/rabitq/rabitq_rotation.h"
 #include "vdb/storage/segment.h"
 
@@ -101,6 +102,12 @@ class IvfIndex {
     /// Payload column schemas (loaded from segment.meta).
     const std::vector<ColumnSchema>& payload_schemas() const { return payload_schemas_; }
 
+    AssignmentMode assignment_mode() const { return assignment_mode_; }
+    uint32_t assignment_factor() const { return assignment_factor_; }
+    float rair_lambda() const { return rair_lambda_; }
+    bool rair_strict_second_choice() const { return rair_strict_second_choice_; }
+    ClusteringSource clustering_source() const { return clustering_source_; }
+
  private:
     std::string dir_;
     Dim dim_ = 0;
@@ -116,6 +123,11 @@ class IvfIndex {
 
     // Payload schemas (loaded from segment meta, for DataFileReader)
     std::vector<ColumnSchema> payload_schemas_;
+    AssignmentMode assignment_mode_ = AssignmentMode::Single;
+    uint32_t assignment_factor_ = 1;
+    float rair_lambda_ = 0.75f;
+    bool rair_strict_second_choice_ = false;
+    ClusteringSource clustering_source_ = ClusteringSource::Auto;
 
 #ifdef VDB_USE_MKL
     // Precomputed ||c||² for each centroid (MKL-accelerated distance)

@@ -8,6 +8,7 @@
 #include "vdb/common/macros.h"
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
+#include "vdb/index/ivf_metadata.h"
 
 namespace vdb {
 namespace index {
@@ -19,6 +20,10 @@ namespace index {
 /// Configuration for IvfBuilder.  All parameters for IVF clustering,
 /// RaBitQ encoding, ConANN calibration, and on-disk layout.
 struct IvfBuilderConfig {
+    /// Explicit assignment mode. Legacy behavior is preserved when this is
+    /// left as Single and assignment_factor is set to 2.
+    AssignmentMode assignment_mode = AssignmentMode::Single;
+
     /// Number of IVF clusters (nlist).
     uint32_t nlist = 16;
 
@@ -89,6 +94,17 @@ struct IvfBuilderConfig {
     /// for reuse in future builds. Ignored when loading precomputed files.
     std::string save_centroids_path;
     std::string save_assignments_path;
+
+    /// Assignment factor for IVF membership. `1` keeps the current
+    /// single-assignment behavior; `2` enables top-2 redundant assignment.
+    uint32_t assignment_factor = 1;
+
+    /// RAIR lambda for AIR-style secondary assignment.
+    float rair_lambda = 0.75f;
+
+    /// When true, force a distinct secondary cluster even if the primary
+    /// cluster minimizes the AIR loss.
+    bool rair_strict_second_choice = false;
 };
 
 // ============================================================================
@@ -150,8 +166,20 @@ class IvfBuilder {
     void SetProgressCallback(ProgressCallback cb) { progress_cb_ = std::move(cb); }
 
     /// Get the assignments from the last Build() call  (length N).
-    /// assignments[i] = cluster index [0, nlist) for vector i.
+    /// assignments[i] = primary cluster index [0, nlist) for vector i.
     const std::vector<uint32_t>& assignments() const { return assignments_; }
+
+    /// Get the secondary assignments from the last Build() call.
+    /// Values are UINT32_MAX when redundant assignment is disabled or when a
+    /// secondary cluster is not present.
+    const std::vector<uint32_t>& secondary_assignments() const {
+        return secondary_assignments_;
+    }
+
+    AssignmentMode assignment_mode() const { return assignment_mode_; }
+    float rair_lambda() const { return rair_lambda_; }
+    bool rair_strict_second_choice() const { return rair_strict_second_choice_; }
+    ClusteringSource clustering_source() const { return clustering_source_; }
 
     /// Get the centroids from the last Build() call (nlist × dim row-major).
     const std::vector<float>& centroids() const { return centroids_; }
@@ -168,6 +196,10 @@ class IvfBuilder {
     /// Phase B: calibrate ConANN d_k by sampling.
     void CalibrateDk(const float* vectors, uint32_t N, Dim dim);
 
+    /// Derive secondary assignments from final centroids for top-2
+    /// redundant-assignment mode.
+    Status DeriveSecondaryAssignments(const float* vectors, uint32_t N, Dim dim);
+
     /// Phase C+D: write per-cluster files + global metadata.
     Status WriteIndex(const float* vectors, uint32_t N, Dim dim,
                       const std::string& output_dir,
@@ -175,9 +207,14 @@ class IvfBuilder {
 
     IvfBuilderConfig config_;
     std::vector<uint32_t> assignments_;  // vector → cluster index
+    std::vector<uint32_t> secondary_assignments_;
     std::vector<float> centroids_;       // nlist × dim row-major
     float calibrated_dk_ = 0.0f;
     float calibrated_eps_ip_ = 0.0f;
+    AssignmentMode assignment_mode_ = AssignmentMode::Single;
+    float rair_lambda_ = 0.75f;
+    bool rair_strict_second_choice_ = false;
+    ClusteringSource clustering_source_ = ClusteringSource::Auto;
     ProgressCallback progress_cb_;
 };
 

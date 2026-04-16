@@ -20,7 +20,21 @@
 
 ## 3. 推荐目录
 
-建议在 baseline 工作区内采用如下结构：
+路径口径统一如下：
+
+- `/home/zcq/VDB/data`
+  - 原始数据
+  - 原始 embedding
+- `/home/zcq/VDB/baselines/data`
+  - 清洗后的 canonical 数据
+  - split manifest 与 ground truth
+  - baseline/backend 导出的格式化数据
+- `/home/zcq/VDB/baselines`
+  - 实验运行产物、CSV、图表、tracker
+
+baseline 运行产物统一放在 `/home/zcq/VDB/baselines` 下。
+
+建议在该路径下采用如下结构：
 
 ```text
 /home/zcq/VDB/baselines/formal-study/
@@ -44,6 +58,28 @@
     ├── RUNBOOK_CN.md
     ├── RUN_STATUS.csv
     └── FAILURES.md
+```
+
+baseline/backend 写出的格式化数据建议统一放在：
+
+```text
+/home/zcq/VDB/baselines/data/formal_baselines/
+├── coco_100k/
+├── msmarco_passage/
+├── amazon_esci/
+├── deep8m_synth/
+└── optional/
+```
+
+如果某个 baseline 依赖手动下载或本地编译的第三方库，统一放在：
+
+```text
+/home/zcq/VDB/third_party/
+├── faiss/
+├── diskann/
+├── extended-rabitq/
+├── conann/
+└── other/
 ```
 
 ## 4. 每个阶段的具体动作

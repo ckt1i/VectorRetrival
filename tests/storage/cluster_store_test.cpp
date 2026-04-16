@@ -1143,6 +1143,72 @@ TEST_F(ClusterStoreTest, ParseClusterBlock_Bits4MatchesLoadedData) {
     }
 }
 
+TEST_F(ClusterStoreTest, ParseClusterBlock_V9RawAddressTableSupportsGaps) {
+    const Dim dim = 32;
+    const uint32_t N = 4;
+    std::string path = TestPath("parse_v9_raw_gaps.clu");
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(123);
+    RaBitQEncoder encoder(dim, rotation, 4);
+
+    std::vector<float> centroid(dim, 0.0f);
+    std::vector<RaBitQCode> codes;
+    for (uint32_t i = 0; i < N; ++i) {
+        std::vector<float> vec(dim, static_cast<float>(i));
+        codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+    }
+
+    const uint32_t page_size = 4096;
+    std::vector<AddressEntry> addrs = {
+        {0ull * page_size, 1u * page_size},
+        {4ull * page_size, 2u * page_size},
+        {9ull * page_size, 1u * page_size},
+        {20ull * page_size, 3u * page_size},
+    };
+    auto raw_table = AddressColumn::EncodeRawTableV2(addrs, page_size);
+
+    RaBitQConfig config{4, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
+    ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
+    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    ASSERT_TRUE(writer.WriteAddressBlocks(raw_table).ok());
+    ASSERT_TRUE(writer.EndCluster().ok());
+    ASSERT_TRUE(writer.Finalize("c.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+    EXPECT_EQ(reader.file_version(), 9u);
+    ASSERT_TRUE(reader.EnsureClusterLoaded(0).ok());
+    auto loc = reader.GetBlockLocation(0);
+    ASSERT_TRUE(loc.has_value());
+
+    constexpr size_t kAlignment = 4096;
+    const size_t alloc_size = static_cast<size_t>(loc->size);
+    const size_t padded_size =
+        ((alloc_size + kAlignment - 1) / kAlignment) * kAlignment;
+    auto* raw_block = static_cast<uint8_t*>(std::aligned_alloc(kAlignment, padded_size));
+    ASSERT_NE(raw_block, nullptr);
+    query::AlignedBufPtr block_buf(raw_block);
+    const ssize_t bytes = ::pread(reader.clu_fd(), block_buf.get(), alloc_size,
+                                  static_cast<off_t>(loc->offset));
+    ASSERT_EQ(bytes, static_cast<ssize_t>(alloc_size));
+
+    query::ParsedCluster parsed;
+    ASSERT_TRUE(reader.ParseClusterBlock(0, std::move(block_buf), loc->size, parsed).ok());
+    ASSERT_TRUE(parsed.addresses_are_raw_v2);
+    ASSERT_NE(parsed.raw_addresses, nullptr);
+    ASSERT_EQ(parsed.address_page_size, page_size);
+    ASSERT_EQ(parsed.num_records, N);
+
+    for (uint32_t i = 0; i < N; ++i) {
+        auto addr = parsed.AddressAt(i);
+        EXPECT_EQ(addr.offset, addrs[i].offset);
+        EXPECT_EQ(addr.size, addrs[i].size);
+    }
+}
+
 TEST_F(ClusterStoreTest, ParsedClusterExRaBitQViewMatchesLegacyAccessors) {
     constexpr Dim dim = 32;
     constexpr uint32_t num_records = 5;

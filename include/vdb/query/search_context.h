@@ -61,6 +61,9 @@ struct SearchStats {
     uint32_t total_payload_prefetched = 0;
     uint32_t total_payload_fetched = 0;
     uint32_t total_submit_calls = 0;
+    uint32_t duplicate_candidates = 0;
+    uint32_t deduplicated_candidates = 0;
+    uint32_t unique_fetch_candidates = 0;
     bool early_stopped = false;
     uint32_t clusters_skipped = 0;
     uint32_t crc_clusters_probed = 0;

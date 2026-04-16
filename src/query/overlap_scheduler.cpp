@@ -82,6 +82,7 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
     // Reset per-query state
     ready_clusters_.clear();
     resident_query_clusters_.clear();
+    submitted_candidate_offsets_.clear();
     CleanupPendingSlots();
     next_to_submit_ = 0;
     inflight_clusters_ = 0;
@@ -408,13 +409,21 @@ void OverlapScheduler::DispatchCompletion(
 
 class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
  public:
-    AsyncIOSink(OverlapScheduler& sched, int dat_fd)
-        : sched_(sched), dat_fd_(dat_fd) {}
+    AsyncIOSink(OverlapScheduler& sched, SearchContext& ctx, int dat_fd)
+        : sched_(sched), ctx_(ctx), dat_fd_(dat_fd) {}
 
     void OnCandidate(uint32_t /*vec_idx*/,
                      AddressEntry addr,
                      float est_dist,
                      index::CandidateClass cls) override {
+        auto [_, inserted] = sched_.submitted_candidate_offsets_.insert(addr.offset);
+        if (!inserted) {
+            ctx_.stats().duplicate_candidates++;
+            ctx_.stats().deduplicated_candidates++;
+            return;
+        }
+        ctx_.stats().unique_fetch_candidates++;
+
         // Maintain est_heap_ for dynamic SafeOut threshold across clusters
         if (sched_.use_crc_) {
             if (sched_.est_heap_.size() < sched_.est_top_k_) {
@@ -512,6 +521,7 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
 
  private:
     OverlapScheduler& sched_;
+    SearchContext& ctx_;
     int dat_fd_;
 };
 
@@ -544,7 +554,7 @@ void OverlapScheduler::ProbeCluster(
         ? est_heap_.front().first
         : std::numeric_limits<float>::infinity();
 
-    AsyncIOSink sink(*this, dat_fd);
+    AsyncIOSink sink(*this, ctx, dat_fd);
     index::ProbeStats local_stats;
     prober_.Probe(pc, pq_, margin_factor, dynamic_d_k, sink, local_stats);
     ctx.stats().uring_prep_ms += sink.prep_read_ms_;

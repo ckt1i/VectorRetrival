@@ -14,10 +14,12 @@ namespace vdb {
 namespace storage {
 
 static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
-static constexpr uint32_t kFileVersion = 8;
+static constexpr uint32_t kFileVersion = 9;
+static constexpr uint32_t kFileVersionV8 = 8;
 static constexpr uint32_t kFileVersionV7 = 7;
 static constexpr uint32_t kAlignSize = 4096;
 static constexpr uint32_t kBlockMagic = 0x424C4356;
+static constexpr uint32_t kAddressFormatV2 = 2;
 
 namespace {
 
@@ -234,21 +236,36 @@ Status ClusterStoreWriter::WriteAddressBlocks(
     if (column.total_records != entry.num_records) {
         return Status::InvalidArgument("Address column record count does not match cluster");
     }
-    if (column.blocks.size() != column.layout.num_address_blocks) {
-        return Status::InvalidArgument("Address column block count does not match layout");
-    }
-    if (entry.num_records > 0 && column.layout.num_address_blocks == 0) {
-        return Status::InvalidArgument("Non-empty cluster requires address blocks");
+    if (column.format == AddressFormat::V1Packed) {
+        if (column.blocks.size() != column.layout.num_address_blocks) {
+            return Status::InvalidArgument("Address column block count does not match layout");
+        }
+        if (entry.num_records > 0 && column.layout.num_address_blocks == 0) {
+            return Status::InvalidArgument("Non-empty cluster requires address blocks");
+        }
+    } else {
+        if (column.raw_entries.size() != entry.num_records) {
+            return Status::InvalidArgument("Raw address table entry count mismatch");
+        }
     }
 
     current_address_column_ = column;
-    for (const auto& block : column.blocks) {
-        file_.write(reinterpret_cast<const char*>(block.packed.data()),
-                    static_cast<std::streamsize>(block.packed.size()));
+    if (current_address_column_.format == AddressFormat::V1Packed) {
+        std::vector<AddressEntry> decoded;
+        VDB_RETURN_IF_ERROR(AddressColumn::Decode(current_address_column_, decoded));
+        current_address_column_ = AddressColumn::EncodeRawTableV2(
+            decoded, current_address_column_.layout.page_size);
+    }
+
+    const size_t bytes =
+        current_address_column_.raw_entries.size() * sizeof(RawAddressEntryV2);
+    if (bytes > 0) {
+        file_.write(reinterpret_cast<const char*>(current_address_column_.raw_entries.data()),
+                    static_cast<std::streamsize>(bytes));
         if (!file_.good()) {
-            return Status::IOError("Failed to write address block data");
+            return Status::IOError("Failed to write raw address table");
         }
-        current_offset_ += block.packed.size();
+        current_offset_ += bytes;
     }
 
     address_written_ = true;
@@ -264,17 +281,22 @@ Status ClusterStoreWriter::EndCluster() {
     }
 
     const uint64_t trailer_start = current_offset_;
-    WriteVal(file_, current_address_column_.layout.page_size);
-    WriteVal(file_, current_address_column_.layout.bit_width);
-    WriteVal(file_, current_address_column_.layout.block_granularity);
-    WriteVal(file_, current_address_column_.layout.fixed_packed_size);
-    WriteVal(file_, current_address_column_.layout.last_packed_size);
-    const uint32_t num_blocks = current_address_column_.layout.num_address_blocks;
-    WriteVal(file_, num_blocks);
+    const uint32_t ex_entry_size =
+        (info_.rabitq_config.bits <= 1) ? 0u : (2 * info_.dim + sizeof(float));
+    const uint32_t address_entry_size = sizeof(RawAddressEntryV2);
+    const uint32_t num_entries =
+        static_cast<uint32_t>(current_address_column_.raw_entries.size());
+    const uint32_t address_payload_bytes = num_entries * address_entry_size;
+    const uint32_t address_payload_offset =
+        current_exrabitq_region_offset_ +
+        info_.lookup_table[current_cluster_index_].num_records * ex_entry_size;
 
-    for (const auto& block : current_address_column_.blocks) {
-        WriteVal(file_, block.base_offset);
-    }
+    WriteVal(file_, kAddressFormatV2);
+    WriteVal(file_, current_address_column_.layout.page_size);
+    WriteVal(file_, address_entry_size);
+    WriteVal(file_, num_entries);
+    WriteVal(file_, address_payload_offset);
+    WriteVal(file_, address_payload_bytes);
 
     const uint64_t after_blocks_pos = static_cast<uint64_t>(file_.tellp());
     const uint32_t mini_trailer_size =
@@ -412,6 +434,7 @@ void ClusterStoreReader::Close() {
     resident_preload_bytes_ = 0;
     resident_preload_time_ms_ = 0.0;
     cluster_index_.clear();
+    file_version_ = 0;
 }
 
 Status ClusterStoreReader::Open(const std::string& path, bool use_direct_io) {
@@ -452,13 +475,14 @@ Status ClusterStoreReader::Open(const std::string& path, bool use_direct_io) {
         }
         std::memcpy(&version, p, 4);
         p += 4;
-        if (version != kFileVersion && version != kFileVersionV7) {
+        if (version != kFileVersion && version != kFileVersionV8 &&
+            version != kFileVersionV7) {
             std::free(hdr_buf);
             Close();
             return Status::NotSupported(
                 "Unsupported ClusterStore version: " + std::to_string(version));
         }
-        const bool is_v8_local = (version == kFileVersion);
+        file_version_ = version;
 
         std::memcpy(&info_.num_clusters, p, 4);
         p += 4;
@@ -545,7 +569,7 @@ Status ClusterStoreReader::Open(const std::string& path, bool use_direct_io) {
         }
         std::free(lookup_raw);
         pos += static_cast<off_t>(total_lookup_size);
-        if (is_v8_local) {
+        if (version != kFileVersionV7) {
             pos = static_cast<off_t>(RoundUp4K(static_cast<uint64_t>(pos)));
         }
     }
@@ -633,30 +657,61 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
         return true;
     };
 
-    if (!ReadT(data.address_layout.page_size) ||
-        !ReadT(data.address_layout.bit_width) ||
-        !ReadT(data.address_layout.block_granularity) ||
-        !ReadT(data.address_layout.fixed_packed_size) ||
-        !ReadT(data.address_layout.last_packed_size) ||
-        !ReadT(data.address_layout.num_address_blocks)) {
-        return Status::Corruption("Mini-trailer: failed to read shared address layout");
-    }
+    uint32_t address_format_version = 0;
+    uint32_t v9_page_size = 0;
+    uint32_t v9_entry_size = 0;
+    uint32_t v9_num_entries = 0;
+    uint32_t v9_payload_offset = 0;
+    uint32_t v9_payload_bytes = 0;
+    uint32_t num_blocks = 0;
 
-    const uint32_t num_blocks = data.address_layout.num_address_blocks;
-    if (entry.num_records == 0) {
-        if (num_blocks != 0 || data.address_layout.last_packed_size != 0) {
-            return Status::Corruption("Empty cluster has invalid address layout");
+    if (file_version_ >= kFileVersion) {
+        if (!ReadT(address_format_version) ||
+            !ReadT(v9_page_size) ||
+            !ReadT(v9_entry_size) ||
+            !ReadT(v9_num_entries) ||
+            !ReadT(v9_payload_offset) ||
+            !ReadT(v9_payload_bytes)) {
+            return Status::Corruption("Mini-trailer: failed to read V9 address table metadata");
         }
-    } else if (num_blocks == 0) {
-        return Status::Corruption("Non-empty cluster has zero address blocks");
-    }
+        if (address_format_version != kAddressFormatV2) {
+            return Status::Corruption("Unsupported V9 address format");
+        }
+        if (v9_entry_size != sizeof(RawAddressEntryV2)) {
+            return Status::Corruption("Unexpected V9 raw address entry size");
+        }
+        if (v9_num_entries != entry.num_records) {
+            return Status::Corruption("V9 raw address entry count mismatch");
+        }
+        data.address_format = AddressFormat::V2RawTable;
+        data.address_layout.page_size = v9_page_size;
+    } else {
+        if (!ReadT(data.address_layout.page_size) ||
+            !ReadT(data.address_layout.bit_width) ||
+            !ReadT(data.address_layout.block_granularity) ||
+            !ReadT(data.address_layout.fixed_packed_size) ||
+            !ReadT(data.address_layout.last_packed_size) ||
+            !ReadT(data.address_layout.num_address_blocks)) {
+            return Status::Corruption("Mini-trailer: failed to read shared address layout");
+        }
 
-    data.address_blocks.resize(num_blocks);
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        if (!ReadT(data.address_blocks[i].base_offset)) {
-            return Status::Corruption(
-                "Mini-trailer: failed to parse block " + std::to_string(i));
+        num_blocks = data.address_layout.num_address_blocks;
+        if (entry.num_records == 0) {
+            if (num_blocks != 0 || data.address_layout.last_packed_size != 0) {
+                return Status::Corruption("Empty cluster has invalid address layout");
+            }
+        } else if (num_blocks == 0) {
+            return Status::Corruption("Non-empty cluster has zero address blocks");
         }
+
+        data.address_blocks.resize(num_blocks);
+        for (uint32_t i = 0; i < num_blocks; ++i) {
+            if (!ReadT(data.address_blocks[i].base_offset)) {
+                return Status::Corruption(
+                    "Mini-trailer: failed to parse block " + std::to_string(i));
+            }
+        }
+        data.address_format = AddressFormat::V1Packed;
     }
 
     uint32_t stored_trailer_size = 0;
@@ -670,7 +725,8 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
     if (tpos != trailer_buf.size()) {
         return Status::Corruption("Mini-trailer has trailing bytes");
     }
-    if (num_blocks > 0 && data.address_layout.block_granularity == 0) {
+    if (data.address_format == AddressFormat::V1Packed &&
+        num_blocks > 0 && data.address_layout.block_granularity == 0) {
         return Status::Corruption("Invalid address block granularity");
     }
 
@@ -687,13 +743,17 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
         }
     }
 
-    const uint64_t address_payload_offset = entry.block_offset + data.codes_length;
-    if (address_payload_offset > block_end || data.codes_length > entry.block_size) {
+    const uint64_t default_payload_offset = entry.block_offset + data.codes_length;
+    if (default_payload_offset > block_end || data.codes_length > entry.block_size) {
         return Status::Corruption("Cluster block shorter than RaBitQ code region");
     }
 
     uint64_t expected_payload_bytes = 0;
-    if (num_blocks > 0) {
+    uint64_t address_payload_offset = default_payload_offset;
+    if (data.address_format == AddressFormat::V2RawTable) {
+        address_payload_offset = entry.block_offset + static_cast<uint64_t>(v9_payload_offset);
+        expected_payload_bytes = v9_payload_bytes;
+    } else if (num_blocks > 0) {
         expected_payload_bytes =
             static_cast<uint64_t>(num_blocks - 1) * data.address_layout.fixed_packed_size +
             data.address_layout.last_packed_size;
@@ -707,24 +767,40 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
         return Status::Corruption("Address payload size mismatch");
     }
 
-    uint64_t addr_read_offset = address_payload_offset;
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        auto& block = data.address_blocks[i];
-        const uint32_t packed_size =
-            AddressColumn::BlockPackedSize(data.address_layout, i);
-        block.packed.resize(packed_size);
-        if (packed_size == 0) continue;
-
-        if (!PreadBytes(fd_, static_cast<off_t>(addr_read_offset),
-                        block.packed.data(), packed_size)) {
-            return Status::IOError("Failed to read address block packed data");
+    if (data.address_format == AddressFormat::V2RawTable) {
+        data.raw_addresses_v2.resize(entry.num_records);
+        if (v9_payload_bytes > 0 &&
+            !PreadBytes(fd_, static_cast<off_t>(address_payload_offset),
+                        data.raw_addresses_v2.data(), v9_payload_bytes)) {
+            return Status::IOError("Failed to read raw address table");
         }
-        addr_read_offset += packed_size;
-    }
+        EncodedAddressColumn raw_column;
+        raw_column.format = AddressFormat::V2RawTable;
+        raw_column.layout.page_size = v9_page_size;
+        raw_column.total_records = entry.num_records;
+        raw_column.raw_entries = data.raw_addresses_v2;
+        VDB_RETURN_IF_ERROR(AddressColumn::DecodeRawTableV2(
+            raw_column, data.decoded_addresses));
+    } else {
+        uint64_t addr_read_offset = address_payload_offset;
+        for (uint32_t i = 0; i < num_blocks; ++i) {
+            auto& block = data.address_blocks[i];
+            const uint32_t packed_size =
+                AddressColumn::BlockPackedSize(data.address_layout, i);
+            block.packed.resize(packed_size);
+            if (packed_size == 0) continue;
 
-    VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
-        data.address_layout, data.address_blocks, entry.num_records,
-        data.decoded_addresses));
+            if (!PreadBytes(fd_, static_cast<off_t>(addr_read_offset),
+                            block.packed.data(), packed_size)) {
+                return Status::IOError("Failed to read address block packed data");
+            }
+            addr_read_offset += packed_size;
+        }
+
+        VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
+            data.address_layout, data.address_blocks, entry.num_records,
+            data.decoded_addresses));
+    }
 
     loaded_clusters_[cluster_id] = std::move(data);
     return Status::OK();
@@ -782,29 +858,61 @@ Status ClusterStoreReader::ParseClusterBlockView(
     };
 
     AddressColumnLayout address_layout;
-    if (!ReadT(address_layout.page_size) ||
-        !ReadT(address_layout.bit_width) ||
-        !ReadT(address_layout.block_granularity) ||
-        !ReadT(address_layout.fixed_packed_size) ||
-        !ReadT(address_layout.last_packed_size) ||
-        !ReadT(address_layout.num_address_blocks)) {
-        return Status::Corruption("Mini-trailer: failed to read shared address layout");
-    }
+    std::vector<AddressBlock> address_blocks;
+    const RawAddressEntryV2* raw_addresses = nullptr;
+    uint32_t address_page_size = 0;
+    bool addresses_are_raw_v2 = false;
+    uint32_t num_blocks = 0;
+    uint32_t v9_payload_offset = 0;
+    uint32_t v9_payload_bytes = 0;
 
-    const uint32_t num_blocks = address_layout.num_address_blocks;
-    if (entry.num_records == 0) {
-        if (num_blocks != 0 || address_layout.last_packed_size != 0) {
-            return Status::Corruption("Empty cluster has invalid address layout");
+    if (file_version_ >= kFileVersion) {
+        uint32_t address_format_version = 0;
+        uint32_t address_entry_size = 0;
+        uint32_t num_entries = 0;
+        if (!ReadT(address_format_version) ||
+            !ReadT(address_page_size) ||
+            !ReadT(address_entry_size) ||
+            !ReadT(num_entries) ||
+            !ReadT(v9_payload_offset) ||
+            !ReadT(v9_payload_bytes)) {
+            return Status::Corruption("Mini-trailer: failed to read V9 address metadata");
         }
-    } else if (num_blocks == 0) {
-        return Status::Corruption("Non-empty cluster has zero address blocks");
-    }
+        if (address_format_version != kAddressFormatV2) {
+            return Status::Corruption("Unsupported V9 address format");
+        }
+        if (address_entry_size != sizeof(RawAddressEntryV2)) {
+            return Status::Corruption("Unexpected V9 raw address entry size");
+        }
+        if (num_entries != entry.num_records) {
+            return Status::Corruption("V9 raw address entry count mismatch");
+        }
+        addresses_are_raw_v2 = true;
+    } else {
+        if (!ReadT(address_layout.page_size) ||
+            !ReadT(address_layout.bit_width) ||
+            !ReadT(address_layout.block_granularity) ||
+            !ReadT(address_layout.fixed_packed_size) ||
+            !ReadT(address_layout.last_packed_size) ||
+            !ReadT(address_layout.num_address_blocks)) {
+            return Status::Corruption("Mini-trailer: failed to read shared address layout");
+        }
 
-    std::vector<AddressBlock> address_blocks(num_blocks);
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        if (!ReadT(address_blocks[i].base_offset)) {
-            return Status::Corruption(
-                "Mini-trailer: failed to parse block " + std::to_string(i));
+        num_blocks = address_layout.num_address_blocks;
+        if (entry.num_records == 0) {
+            if (num_blocks != 0 || address_layout.last_packed_size != 0) {
+                return Status::Corruption("Empty cluster has invalid address layout");
+            }
+        } else if (num_blocks == 0) {
+            return Status::Corruption("Non-empty cluster has zero address blocks");
+        }
+
+        address_blocks.resize(num_blocks);
+        for (uint32_t i = 0; i < num_blocks; ++i) {
+            if (!ReadT(address_blocks[i].base_offset)) {
+                return Status::Corruption(
+                    "Mini-trailer: failed to parse block " + std::to_string(i));
+            }
         }
     }
 
@@ -819,7 +927,8 @@ Status ClusterStoreReader::ParseClusterBlockView(
     if (tpos != mini_trailer_size) {
         return Status::Corruption("Mini-trailer has trailing bytes");
     }
-    if (num_blocks > 0 && address_layout.block_granularity == 0) {
+    if (!addresses_are_raw_v2 &&
+        num_blocks > 0 && address_layout.block_granularity == 0) {
         return Status::Corruption("Invalid address block granularity");
     }
 
@@ -833,7 +942,9 @@ Status ClusterStoreReader::ParseClusterBlockView(
     }
 
     uint64_t expected_payload_bytes = 0;
-    if (num_blocks > 0) {
+    if (addresses_are_raw_v2) {
+        expected_payload_bytes = v9_payload_bytes;
+    } else if (num_blocks > 0) {
         expected_payload_bytes =
             static_cast<uint64_t>(num_blocks - 1) * address_layout.fixed_packed_size +
             address_layout.last_packed_size;
@@ -847,21 +958,35 @@ Status ClusterStoreReader::ParseClusterBlockView(
         return Status::Corruption("Address payload size mismatch");
     }
 
-    uint64_t addr_offset = codes_length;
-    for (uint32_t i = 0; i < num_blocks; ++i) {
-        auto& block = address_blocks[i];
-        const uint32_t packed_size =
-            AddressColumn::BlockPackedSize(address_layout, i);
-        if (packed_size > 0) {
-            block.packed.assign(block_ptr + addr_offset,
-                                block_ptr + addr_offset + packed_size);
-        }
-        addr_offset += packed_size;
-    }
-
     std::vector<AddressEntry> decoded;
-    VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
-        address_layout, address_blocks, entry.num_records, decoded));
+    if (addresses_are_raw_v2) {
+        if (static_cast<uint64_t>(v9_payload_offset) + v9_payload_bytes >
+            block_size - mini_trailer_size) {
+            return Status::Corruption("V9 raw address payload exceeds block");
+        }
+        raw_addresses = reinterpret_cast<const RawAddressEntryV2*>(
+            block_ptr + v9_payload_offset);
+        decoded.resize(entry.num_records);
+        for (uint32_t i = 0; i < entry.num_records; ++i) {
+            decoded[i] = AddressColumn::DecodeRawEntryV2(raw_addresses[i],
+                                                         address_page_size);
+        }
+    } else {
+        uint64_t addr_offset = codes_length;
+        for (uint32_t i = 0; i < num_blocks; ++i) {
+            auto& block = address_blocks[i];
+            const uint32_t packed_size =
+                AddressColumn::BlockPackedSize(address_layout, i);
+            if (packed_size > 0) {
+                block.packed.assign(block_ptr + addr_offset,
+                                    block_ptr + addr_offset + packed_size);
+            }
+            addr_offset += packed_size;
+        }
+
+        VDB_RETURN_IF_ERROR(AddressColumn::DecodeBatchBlocks(
+            address_layout, address_blocks, entry.num_records, decoded));
+    }
 
     out.fastscan_blocks = block_ptr;
     out.fastscan_block_size = fb_size;
@@ -870,6 +995,9 @@ Status ClusterStoreReader::ParseClusterBlockView(
     out.exrabitq_entry_size = ex_entry_size;
     out.num_records = entry.num_records;
     out.epsilon = entry.epsilon;
+    out.raw_addresses = raw_addresses;
+    out.address_page_size = address_page_size;
+    out.addresses_are_raw_v2 = addresses_are_raw_v2;
     out.decoded_addresses = std::move(decoded);
     out.codes_start = out.fastscan_blocks;
     out.code_entry_size = 0;
@@ -931,6 +1059,9 @@ Status ClusterStoreReader::PreloadAllClusters() {
         view.exrabitq_entry_size = parsed.exrabitq_entry_size;
         view.num_records = parsed.num_records;
         view.epsilon = parsed.epsilon;
+        view.raw_addresses = parsed.raw_addresses;
+        view.address_page_size = parsed.address_page_size;
+        view.addresses_are_raw_v2 = parsed.addresses_are_raw_v2;
         view.decoded_addresses = std::move(parsed.decoded_addresses);
         resident_clusters[entry.cluster_id] = std::move(view);
     }
@@ -953,8 +1084,18 @@ ClusterStoreReader::GetResidentClusterView(uint32_t cluster_id) const {
 AddressEntry ClusterStoreReader::GetAddress(uint32_t cluster_id,
                                             uint32_t record_idx) const {
     auto it = loaded_clusters_.find(cluster_id);
-    if (it == loaded_clusters_.end() ||
-        record_idx >= it->second.decoded_addresses.size()) {
+    if (it == loaded_clusters_.end()) {
+        return AddressEntry{0, 0};
+    }
+    if (it->second.address_format == AddressFormat::V2RawTable) {
+        if (record_idx >= it->second.raw_addresses_v2.size()) {
+            return AddressEntry{0, 0};
+        }
+        return AddressColumn::DecodeRawEntryV2(
+            it->second.raw_addresses_v2[record_idx],
+            it->second.address_layout.page_size);
+    }
+    if (record_idx >= it->second.decoded_addresses.size()) {
         return AddressEntry{0, 0};
     }
     return it->second.decoded_addresses[record_idx];

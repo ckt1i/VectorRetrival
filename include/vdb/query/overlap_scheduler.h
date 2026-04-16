@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <unordered_set>
 #include <unordered_map>
 #include <vector>
 
@@ -113,6 +114,7 @@ class OverlapScheduler {
     // Sliding window state (reset per Search() call)
     std::unordered_map<uint32_t, ParsedCluster> ready_clusters_;
     std::unordered_map<uint32_t, ParsedCluster> resident_query_clusters_;
+    std::unordered_set<uint64_t> submitted_candidate_offsets_;
     uint32_t next_to_submit_ = 0;
     uint32_t inflight_clusters_ = 0;
 

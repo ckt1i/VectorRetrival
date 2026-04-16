@@ -137,9 +137,9 @@
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
 | R067 | M9 | Hot-path profiling refresh | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | MUST | DONE | New main anchor: `0.9519 / 1.772ms / 2.078ms`; `perf` shows query-side CPU is dominated by `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`, while whole-benchmark top sample is still GT `L2Sqr` |
-| R068 | M9 | CPU optimization pass 1 | BoundFetch + tighter per-query preparation | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Directly target `QuantizeQuery14Bit` and `PrepareQueryRotatedInto` without changing search semantics |
-| R069 | M9 | CPU optimization pass 2 | BoundFetch + SIMD-friendly query/probe layout | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Only continue if R068 clearly reduces query-prep cost |
-| R070 | M9 | CPU optimization pass 3 | BoundFetch + candidate materialization tightening only if needed | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | MUST | TODO | Lowest priority; skip if rerank remains near 0.01ms |
+| R068 | M9 | CPU optimization pass 1 | BoundFetch + FastScan LUT fusion / tighter per-query preparation | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | DONE-FAILED | Substep timing showed the dominant hot substep is `lut_build`; the reference retest was `alpha=0.01: 0.9887 / 2.149ms`, `alpha=0.02: 0.9848 / 2.064ms`. A second-pass fused helper preserved recall but regressed to `2.551ms / 2.564ms`, so the code path was rolled back |
+| R069 | M9 | CPU optimization pass 2 | BoundFetch + SIMD-friendly query/probe layout | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | PAUSED | Re-open only with a different CPU-side hypothesis |
+| R070 | M9 | CPU optimization pass 3 | BoundFetch + candidate materialization tightening only if needed | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | MUST | PAUSED | Not continued after the R068 failure |
 
 ## M10: Synchronized IVF-Family Pareto
 
@@ -192,6 +192,7 @@
   - the corrected `bits=4` sweep shows epsilon changes both Stage 1 `safe_out` volume and real Stage 2 load
   - reusable `fkmeans` clustering artifacts are now exported, so the next epsilon Pareto refresh can stay on the historical clustering and the intended `bits=4` path
   - measured query CPU is still the bottleneck: `probe_ms` remains far above `uring_submit_ms` and `rerank_cpu_ms`, and the main query-side hotspots are per-query preparation (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) plus probe itself rather than `.clu` I/O
+  - `fastscan-lut-fusion-optimization` is now closed as a failed direction: both implementation passes missed the acceptance gate and the code changes were rolled back
 
 ## Decision Constraints
 

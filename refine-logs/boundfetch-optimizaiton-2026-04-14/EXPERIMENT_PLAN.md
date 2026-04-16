@@ -133,10 +133,11 @@ Recommended interpretation:
     - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.01`
   - implement only changes that can plausibly reduce query-prep or per-cluster probe CPU work without changing search semantics
   - likely candidates:
-    - remove repeated work inside `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`
     - improve SIMD-friendly data layout for query buffers and probe
     - reduce redundant decode / bound-check work in probe
     - consider candidate materialization and rerank only if they become visible after the first two passes
+  - already rejected direction:
+    - `fastscan-lut-fusion-optimization`: both implementation passes missed the benchmark gate, and the second fused helper was slower; the code path has been rolled back
 - Success criterion:
   - at least one `recall@10 >= 0.98` point moves materially toward DiskANN without harming recall semantics
 - Failure interpretation:
@@ -255,7 +256,7 @@ Recommended interpretation:
 |-----------|------|------|---------------|------|------|
 | M0 | Re-anchor the docs after preload and retests | Update report, plan, and tracker | All future runs use the new post-preload policy | 0.5 day | Low |
 | M1 | Lock in preload as completed optimization | Blocks 1 and 2 | Do not restart submit-path tuning unless new evidence appears | 0.5-1 day | Low |
-| M2 | Decide whether CPU tuning is still worthwhile | Block 3 | If `recall@10 >= 0.98` cannot move materially, stop direct DiskANN chasing | 1-3 days | Medium |
+| M2 | Decide whether CPU tuning is still worthwhile | Block 3 | `fastscan-lut-fusion-optimization` is already closed as failed; only continue with a new CPU-side hypothesis | 1-3 days | Medium |
 | M3 | Consume parallel baseline outputs and keep the story aligned | Blocks 4 and 5 | Baseline outputs arrive externally; this workstream only updates the interpretation | 0.5-1 day | Low |
 | M4 | Add light generality support | Block 7 | Run only if M1-M3 already support the paper | 2-4 days | Medium |
 

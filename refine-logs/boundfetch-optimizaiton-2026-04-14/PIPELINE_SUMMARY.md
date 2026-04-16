@@ -28,9 +28,9 @@
 - C2: `QuantizeQuery14Bit`, `PrepareQueryRotatedInto`, and probe itself are the current optimization targets
 
 ## First Runs to Launch
-1. Run R068: tighten `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`.
-2. Re-measure the two high-value points on the current main curve.
-3. Only if R068 has a clear effect, run R069 for query/probe layout and SIMD-friendly cleanup.
+1. Do not continue `fastscan-lut-fusion-optimization`.
+2. Re-open CPU optimization only with a different hypothesis.
+3. If a new hypothesis is credible, re-measure the two high-value points on the current main curve.
 
 ## Main Risks
 - Risk: recall does not improve without a meaningful latency jump.
@@ -41,4 +41,4 @@
   - Mitigation: keep all appendix-style tuning checks secondary to the main E2E claim.
 
 ## Next Action
-- Proceed to method-side optimization only
+- Stop the FastScan LUT fusion line and keep the rolled-back codebase as the active baseline

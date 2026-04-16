@@ -106,7 +106,7 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                 : CandidateClass::Uncertain;
 
             sink.OnCandidate(global_idx,
-                             pc.decoded_addresses[global_idx],
+                             pc.AddressAt(global_idx),
                              est_dist_s1,
                              cls);
         }

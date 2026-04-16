@@ -38,6 +38,26 @@ uint32_t ComputeBlockGranularity(uint32_t fixed_packed_size, uint8_t bit_width) 
 
 }  // namespace
 
+AddressEntry AddressColumn::DecodeRawEntryV2(const RawAddressEntryV2& entry,
+                                             uint32_t page_size) {
+    const uint64_t ps = page_size;
+    return AddressEntry{
+        static_cast<uint64_t>(entry.offset_pages) * ps,
+        static_cast<uint32_t>(static_cast<uint64_t>(entry.size_pages) * ps)};
+}
+
+bool AddressColumn::ValidateRawTableV2Alignment(
+    const std::vector<AddressEntry>& entries,
+    uint32_t page_size) {
+    if (page_size == 0) return false;
+    for (const auto& entry : entries) {
+        if ((entry.offset % page_size) != 0 || (entry.size % page_size) != 0) {
+            return false;
+        }
+    }
+    return true;
+}
+
 // ============================================================================
 // Encode — convert AddressEntry[] into AddressBlock[]
 // ============================================================================
@@ -89,6 +109,24 @@ EncodedAddressColumn AddressColumn::Encode(
         column.blocks.push_back(std::move(block));
     }
 
+    return column;
+}
+
+EncodedAddressColumn AddressColumn::EncodeRawTableV2(
+    const std::vector<AddressEntry>& entries,
+    uint32_t page_size) {
+    EncodedAddressColumn column;
+    column.format = AddressFormat::V2RawTable;
+    column.layout.page_size = page_size;
+    column.total_records = static_cast<uint32_t>(entries.size());
+    column.raw_entries.resize(entries.size());
+
+    for (size_t i = 0; i < entries.size(); ++i) {
+        column.raw_entries[i].offset_pages =
+            static_cast<uint32_t>(entries[i].offset / page_size);
+        column.raw_entries[i].size_pages =
+            static_cast<uint32_t>(entries[i].size / page_size);
+    }
     return column;
 }
 
@@ -152,8 +190,27 @@ void AddressColumn::DecodeSingleBlock(const AddressColumnLayout& layout,
 
 Status AddressColumn::Decode(const EncodedAddressColumn& column,
                              std::vector<AddressEntry>& out_entries) {
+    if (column.format == AddressFormat::V2RawTable) {
+        return DecodeRawTableV2(column, out_entries);
+    }
     return DecodeBatchBlocks(
         column.layout, column.blocks, column.total_records, out_entries);
+}
+
+Status AddressColumn::DecodeRawTableV2(const EncodedAddressColumn& column,
+                                       std::vector<AddressEntry>& out_entries) {
+    if (column.format != AddressFormat::V2RawTable) {
+        return Status::InvalidArgument("column is not V2 raw address table");
+    }
+    if (column.raw_entries.size() != column.total_records) {
+        return Status::Corruption("raw address entry count mismatch");
+    }
+    out_entries.resize(column.total_records);
+    for (uint32_t i = 0; i < column.total_records; ++i) {
+        out_entries[i] = DecodeRawEntryV2(column.raw_entries[i],
+                                          column.layout.page_size);
+    }
+    return Status::OK();
 }
 
 // ============================================================================

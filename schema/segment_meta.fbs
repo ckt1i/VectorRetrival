@@ -19,6 +19,17 @@ enum MetricType : byte {
     COSINE = 2                   // 余弦相似度
 }
 
+enum AssignmentMode : byte {
+    SINGLE = 0,
+    REDUNDANT_TOP2 = 1,
+    REDUNDANT_TOP2_RAIR = 2
+}
+
+enum ClusteringSource : byte {
+    AUTO = 0,
+    PRECOMPUTED = 1
+}
+
 // ============================================================
 // 向量数据类型
 // ============================================================
@@ -58,6 +69,12 @@ table IvfParams {
     // 0 = 无约束 (标准 K-means)
     // >1.0 = 每个 cluster 最大容量 = ceil(balance_factor × N / nlist)
     balance_factor: float;       // 平衡聚类因子
+
+    assignment_mode: AssignmentMode = SINGLE;
+    assignment_factor: uint32 = 1;
+    clustering_source: ClusteringSource = AUTO;
+    rair_lambda: float = 0.75;
+    rair_strict_second_choice: bool = false;
 }
 
 // ============================================================

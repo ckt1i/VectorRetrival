@@ -91,6 +91,9 @@ class ClusterStoreReader {
         uint32_t exrabitq_entry_size = 0;
         uint32_t num_records = 0;
         float epsilon = 0.0f;
+        const RawAddressEntryV2* raw_addresses = nullptr;
+        uint32_t address_page_size = 0;
+        bool addresses_are_raw_v2 = false;
         std::vector<AddressEntry> decoded_addresses;
 
         query::ParsedCluster ToParsedCluster() const {
@@ -102,6 +105,9 @@ class ClusterStoreReader {
             pc.exrabitq_entry_size = exrabitq_entry_size;
             pc.num_records = num_records;
             pc.epsilon = epsilon;
+            pc.raw_addresses = raw_addresses;
+            pc.address_page_size = address_page_size;
+            pc.addresses_are_raw_v2 = addresses_are_raw_v2;
             pc.decoded_addresses = decoded_addresses;
             pc.codes_start = fastscan_blocks;
             pc.code_entry_size = 0;
@@ -120,6 +126,7 @@ class ClusterStoreReader {
     void Close();
 
     uint32_t num_clusters() const { return info_.num_clusters; }
+    uint32_t file_version() const { return file_version_; }
     Dim dim() const { return info_.dim; }
     const RaBitQConfig& rabitq_config() const { return info_.rabitq_config; }
     const std::string& data_file_path() const { return info_.data_file_path; }
@@ -162,6 +169,7 @@ class ClusterStoreReader {
 
  private:
     int fd_ = -1;
+    uint32_t file_version_ = 0;
     ClusterStoreWriter::GlobalInfo info_;
     std::map<uint32_t, uint32_t> cluster_index_;
 
@@ -169,8 +177,10 @@ class ClusterStoreReader {
         uint64_t codes_offset = 0;
         uint32_t codes_length = 0;
         std::vector<uint8_t> codes_buffer;
+        AddressFormat address_format = AddressFormat::V1Packed;
         AddressColumnLayout address_layout;
         std::vector<AddressBlock> address_blocks;
+        std::vector<RawAddressEntryV2> raw_addresses_v2;
         std::vector<AddressEntry> decoded_addresses;
     };
 

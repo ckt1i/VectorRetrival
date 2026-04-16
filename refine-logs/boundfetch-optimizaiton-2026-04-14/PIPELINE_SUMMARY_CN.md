@@ -58,4 +58,5 @@
 - 如果 `R042-R056` 未能创建有用的新 BoundFetch 前沿区域，冻结低级优化并将工作重心转向分层权衡故事。
 
 ## 下一步
-- 进入 R068：每查询预处理优化
+- 不再继续 `fastscan-lut-fusion-optimization`
+- 如继续做 CPU 优化，必须基于新的假设，而不是继续 FastScan LUT 融合

@@ -137,9 +137,9 @@
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
 | R067 | M9 | 热路径重新剖析 | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | 必须 | 已完成 | 新主锚点：`0.9519 / 1.772ms / 2.078ms`；`perf` 显示 query 侧 CPU 主要耗在 `QuantizeQuery14Bit` 和 `PrepareQueryRotatedInto`，整段 benchmark 的头号样本仍是 GT `L2Sqr` |
-| R068 | M9 | CPU 优化 pass 1 | BoundFetch + 收紧每查询预处理开销 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 直接针对 `QuantizeQuery14Bit` 与 `PrepareQueryRotatedInto`，目标是在不改语义下减少每查询固定成本 |
-| R069 | M9 | CPU 优化 pass 2 | BoundFetch + probe 数据布局 / SIMD 友好优化 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 仅在 R068 明显减少 query-prep 成本后继续 |
-| R070 | M9 | CPU 优化 pass 3 | BoundFetch + 仅在必要时收紧 candidate materialization | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | 必须 | 待运行 | 当前优先级最低；若 rerank 仍接近 0.01ms，可直接跳过 |
+| R068 | M9 | CPU 优化 pass 1 | BoundFetch + FastScan LUT 融合 / 每查询预处理收紧 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 已完成-失败 | 分段计时确认热点主要落在 `lut_build`；reference 复测为 `alpha=0.01: 0.9887 / 2.149ms`、`alpha=0.02: 0.9848 / 2.064ms`。第二版 fused helper 保持召回但回退到 `2.551ms / 2.564ms`，因此代码已回退 |
+| R069 | M9 | CPU 优化 pass 2 | BoundFetch + probe 数据布局 / SIMD 友好优化 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 暂停 | 仅在提出不同于 FastScan LUT 融合的新 CPU 假设后重开 |
+| R070 | M9 | CPU 优化 pass 3 | BoundFetch + 仅在必要时收紧 candidate materialization | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | 必须 | 暂停 | R068 失败后不沿该子线顺推 |
 
 ## M10: 同步 IVF 家族 Pareto
 
@@ -185,12 +185,13 @@
   - BoundFetch 已击败观察到的 IVF 家族基线
   - `full_preload` 值得保留，但它已经不是继续提速的主杠杆
   - BoundFetch 已进入与 DiskANN 的点对点比较区间，但在最高召回端仍略落后
-  - 下一步底层杠杆是 query-prep / probe CPU 成本，而不是更多 cluster 侧 I/O 路径工作
+  - 下一步底层杠杆仍然是 query-prep / probe CPU 成本，而不是更多 cluster 侧 I/O 路径工作
   - baseline 主结果现在作为固定输入保留，本任务的主优先级已经转为有限轮次 CPU 热路径优化
   - 运行时 FastScan epsilon 已确认是索引构建阶段写入的属性，而不是查询阶段可覆盖的参数
   - 先前的 `index_fkmeans_2048_eps*` sweep 实际误建成了 `bits=1`，因此只能作为定位问题的调试记录，不能作为最终服务结论
   - 修正后的 `bits=4` sweep 表明，epsilon 不仅影响 Stage 1 `safe_out`，也会真实减少 Stage 2 负载
   - 在最新 profiling 下，查询瓶颈仍然是 CPU：`probe_ms` 远大于 `uring_submit_ms` 和 `rerank_cpu_ms`；热点主要落在每查询预处理 (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) 与 probe 本身，而不是 `.clu` I/O
+  - `fastscan-lut-fusion-optimization` 已作为失败方向收束：两版实现都没有优于历史主曲线，且第二版更慢；相关代码已从工作树回退
   - 历史 `index_fkmeans_2048` 的 clustering 工件已经导出，因此下一轮 epsilon Pareto 刷新可以保持在同一份 `fkmeans` clustering 和目标 `bits=4` 路径上
 
 ## 决策约束

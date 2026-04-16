@@ -79,6 +79,28 @@ def select_current_rebuild(rows):
     return sorted(selected, key=lambda r: (r["recall"], r["qps"]))
 
 
+def select_rair_study(rows, assignment_mode):
+    selected = []
+    for row in rows:
+        kv = row["param_kv"]
+        if row["system"] != "BoundFetch":
+            continue
+        if kv.get("clu_mode") != "full_preload":
+            continue
+        if kv.get("epsilon") != "0.90":
+            continue
+        if kv.get("bits") != "4":
+            continue
+        if kv.get("index") != "rair_alpha_sweep_20260416":
+            continue
+        if kv.get("nprobe") != "512":
+            continue
+        if kv.get("assign") != assignment_mode:
+            continue
+        selected.append(row)
+    return sorted(selected, key=lambda r: (r["recall"], r["qps"]))
+
+
 def select_baselines(rows):
     diskann = sorted(
         [r for r in rows if r["system"] == "DiskANN+FlatStor"],
@@ -145,29 +167,38 @@ def plot_boundfetch(rows):
 
 
 def plot_baselines(rows):
-    historical = select_historical_full_preload(rows)
-    current = select_current_rebuild(rows)
+    single = select_rair_study(rows, "single")
+    naive = select_rair_study(rows, "redundant_top2_naive")
+    rair = select_rair_study(rows, "redundant_top2_rair")
     diskann, faiss = select_baselines(rows)
 
     fig, ax = plt.subplots(figsize=(8.8, 5.6))
     ax.plot(
-        [r["recall"] for r in historical],
-        [r["qps"] for r in historical],
-        marker="o",
+        [r["recall"] for r in single],
+        [r["qps"] for r in single],
+        marker="s",
         linewidth=2.0,
         markersize=5.0,
-        color="#1f77b4",
-        label="Historical full_preload",
-        alpha=0.75,
+        color="#d62728",
+        label="BoundFetch single",
     )
     ax.plot(
-        [r["recall"] for r in current],
-        [r["qps"] for r in current],
-        marker="s",
-        linewidth=2.4,
+        [r["recall"] for r in naive],
+        [r["qps"] for r in naive],
+        marker="o",
+        linewidth=2.0,
         markersize=5.5,
-        color="#d62728",
-        label="BoundFetch eps=0.90, nprobe=512",
+        color="#ff7f0e",
+        label="BoundFetch redundant_top2_naive",
+    )
+    ax.plot(
+        [r["recall"] for r in rair],
+        [r["qps"] for r in rair],
+        marker="D",
+        linewidth=2.2,
+        markersize=5.3,
+        color="#8c564b",
+        label="BoundFetch redundant_top2_rair",
     )
     ax.plot(
         [r["recall"] for r in diskann],
@@ -188,28 +219,38 @@ def plot_baselines(rows):
         label="FAISS-IVFPQ+FlatStor",
     )
 
-    current_best = next(r for r in current if r["param_kv"].get("alpha") == "0.01")
-    historical_best = next(r for r in historical if r["param_kv"].get("alpha") == "0.01")
+    single_best = next(r for r in single if r["param_kv"].get("alpha") == "0.01")
+    naive_best = next(r for r in naive if r["param_kv"].get("alpha") == "0.02")
+    rair_mid = next(r for r in rair if r["param_kv"].get("alpha") == "0.08")
     ax.annotate(
-        "BoundFetch eps=0.90, nprobe=512, a=0.01",
-        (current_best["recall"], current_best["qps"]),
-        xytext=(-110, 10),
+        "single a=0.01",
+        (single_best["recall"], single_best["qps"]),
+        xytext=(-60, 8),
         textcoords="offset points",
         fontsize=9,
         color="#d62728",
         arrowprops={"arrowstyle": "->", "color": "#d62728", "lw": 1.0},
     )
     ax.annotate(
-        "Historical full_preload a=0.01",
-        (historical_best["recall"], historical_best["qps"]),
-        xytext=(-10, -18),
+        "naive a=0.02",
+        (naive_best["recall"], naive_best["qps"]),
+        xytext=(-10, 10),
         textcoords="offset points",
         fontsize=9,
-        color="#1f77b4",
-        arrowprops={"arrowstyle": "->", "color": "#1f77b4", "lw": 1.0},
+        color="#ff7f0e",
+        arrowprops={"arrowstyle": "->", "color": "#ff7f0e", "lw": 1.0},
+    )
+    ax.annotate(
+        "RAIR a=0.08",
+        (rair_mid["recall"], rair_mid["qps"]),
+        xytext=(8, -16),
+        textcoords="offset points",
+        fontsize=9,
+        color="#8c564b",
+        arrowprops={"arrowstyle": "->", "color": "#8c564b", "lw": 1.0},
     )
 
-    ax.set_title("Pareto Comparison: eps=0.90, nprobe=512 vs Historical Full-Preload and Baselines")
+    ax.set_title("Warm Pareto Comparison: BoundFetch Assignment Modes vs Baselines")
     ax.set_xlabel("Recall@10")
     ax.set_ylabel("QPS")
     ax.grid(True, linestyle="--", alpha=0.25)

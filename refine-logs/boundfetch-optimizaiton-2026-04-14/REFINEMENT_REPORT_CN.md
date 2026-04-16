@@ -46,4 +46,5 @@
 
 ## 下一步行动
 - 使用 `refine-logs/EXPERIMENT_PLAN_CN.md` 和 `refine-logs/EXPERIMENT_TRACKER_CN.md` 作为方法优化路线图。
-- 优先执行 R068，再决定是否进入 R069 / R070。
+- `R068` 已完成并失败，相关代码已回退。
+- 后续如继续 CPU 优化，只能基于新的假设重开，不再沿 FastScan LUT 融合路线推进。

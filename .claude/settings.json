@@ -3,6 +3,9 @@
     "allow": [
       "Bash(./build-bench-only/benchmarks/bench_e2e --dataset /home/zcq/VDB/data/coco_100k --index-dir /home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048 --nlist 2048 --nprobe 250 --queries 1000 --topk 10 --io-queue-depth 64 --crc-alpha 0.05 --crc-calib 0.5 --crc-tune 0.1 --epsilon-percentile 0.99 --output /home/zcq/VDB/test)",
       "Bash(./build-bench-only/benchmarks/bench_e2e --dataset /home/zcq/VDB/data/coco_100k --index-dir /home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048 --nlist 2048 --nprobe 500 --queries 1000 --topk 10 --io-queue-depth 64 --crc-alpha 0.01 --crc-calib 0.5 --crc-tune 0.1 --epsilon-percentile 0.99 --output /home/zcq/VDB/test)"
+    ],
+    "additionalDirectories": [
+      "/home/zcq/VDB/VectorRetrival/openspec/specs"
     ]
   }
 }

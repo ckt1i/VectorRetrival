@@ -10,6 +10,16 @@
 namespace vdb {
 namespace storage {
 
+enum class AddressFormat : uint32_t {
+    V1Packed = 1,
+    V2RawTable = 2,
+};
+
+struct RawAddressEntryV2 {
+    uint32_t offset_pages = 0;
+    uint32_t size_pages = 0;
+};
+
 // ============================================================================
 // AddressColumnLayout / AddressBlock / EncodedAddressColumn
 // ============================================================================
@@ -42,8 +52,10 @@ struct AddressBlock {
 
 /// Full encoded address column for one cluster.
 struct EncodedAddressColumn {
+    AddressFormat format = AddressFormat::V1Packed;
     AddressColumnLayout layout;
     std::vector<AddressBlock> blocks;
+    std::vector<RawAddressEntryV2> raw_entries;
     uint32_t total_records = 0;
 };
 
@@ -102,6 +114,15 @@ class AddressColumn {
         uint32_t fixed_packed_size = kDefaultFixedPackedSize,
         uint32_t page_size = kDefaultPageSize);
 
+    /// Encode an address table as fixed-width raw entries in page units.
+    static EncodedAddressColumn EncodeRawTableV2(
+        const std::vector<AddressEntry>& entries,
+        uint32_t page_size = kDefaultPageSize);
+
+    static bool ValidateRawTableV2Alignment(
+        const std::vector<AddressEntry>& entries,
+        uint32_t page_size = kDefaultPageSize);
+
     // ---- Decoding (query time) -------------------------------------------
 
     /// Decode a single block into AddressEntry values.
@@ -120,6 +141,12 @@ class AddressColumn {
     /// Decode all blocks in one encoded address column.
     static Status Decode(const EncodedAddressColumn& column,
                          std::vector<AddressEntry>& out_entries);
+
+    static Status DecodeRawTableV2(const EncodedAddressColumn& column,
+                                   std::vector<AddressEntry>& out_entries);
+
+    static AddressEntry DecodeRawEntryV2(const RawAddressEntryV2& entry,
+                                         uint32_t page_size);
 
     /// Decode multiple regular blocks in batches and the tail block separately.
     /// Uses multi-stream SIMD pipeline (K=8 blocks per batch) for regular

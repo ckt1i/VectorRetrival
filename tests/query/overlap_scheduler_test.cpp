@@ -331,3 +331,96 @@ TEST_F(OverlapSchedulerTest, WindowAndFullPreloadModesProduceSameResults) {
     EXPECT_TRUE(index_->segment().resident_preload_enabled());
     EXPECT_GT(index_->segment().resident_preload_bytes(), 0u);
 }
+
+TEST_F(OverlapSchedulerTest, RedundantAssignmentDeduplicatesBeforeRerank) {
+    auto ra_dir = fs::temp_directory_path() / "vdb_scheduler_test_ra";
+    fs::remove_all(ra_dir);
+    fs::create_directories(ra_dir);
+
+    IvfBuilderConfig cfg;
+    cfg.nlist = kNlist;
+    cfg.max_iterations = 20;
+    cfg.seed = 42;
+    cfg.rabitq.c_factor = 5.75f;
+    cfg.calibration_samples = 50;
+    cfg.calibration_topk = kTopK;
+    cfg.epsilon_samples = 20;
+    cfg.page_size = 1;
+    cfg.assignment_factor = 2;
+    cfg.assignment_mode = AssignmentMode::RedundantTop2Naive;
+
+    IvfBuilder builder(cfg);
+    auto s = builder.Build(vectors_.data(), N, kDim, ra_dir.string());
+    ASSERT_TRUE(s.ok()) << s.message();
+
+    IvfIndex ra_index;
+    s = ra_index.Open(ra_dir.string());
+    ASSERT_TRUE(s.ok()) << s.message();
+    EXPECT_EQ(ra_index.assignment_factor(), 2u);
+
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.early_stop = false;
+
+    OverlapScheduler scheduler(ra_index, reader, config);
+    const float* query = vectors_.data();
+    auto results = scheduler.Search(query);
+
+    ASSERT_GT(results.size(), 0u);
+    EXPECT_GT(results.stats().duplicate_candidates, 0u);
+    EXPECT_GT(results.stats().deduplicated_candidates, 0u);
+    EXPECT_EQ(results.stats().total_reranked,
+              results.stats().unique_fetch_candidates);
+
+    fs::remove_all(ra_dir);
+}
+
+TEST_F(OverlapSchedulerTest, RairAssignmentDeduplicatesBeforeRerank) {
+    auto ra_dir = fs::temp_directory_path() / "vdb_scheduler_test_rair";
+    fs::remove_all(ra_dir);
+    fs::create_directories(ra_dir);
+
+    IvfBuilderConfig cfg;
+    cfg.nlist = kNlist;
+    cfg.max_iterations = 20;
+    cfg.seed = 42;
+    cfg.rabitq.c_factor = 5.75f;
+    cfg.calibration_samples = 50;
+    cfg.calibration_topk = kTopK;
+    cfg.epsilon_samples = 20;
+    cfg.page_size = 1;
+    cfg.assignment_factor = 2;
+    cfg.assignment_mode = AssignmentMode::RedundantTop2Rair;
+    cfg.rair_lambda = 0.75f;
+
+    IvfBuilder builder(cfg);
+    auto s = builder.Build(vectors_.data(), N, kDim, ra_dir.string());
+    ASSERT_TRUE(s.ok()) << s.message();
+
+    IvfIndex ra_index;
+    s = ra_index.Open(ra_dir.string());
+    ASSERT_TRUE(s.ok()) << s.message();
+    EXPECT_EQ(ra_index.assignment_mode(), AssignmentMode::RedundantTop2Rair);
+    EXPECT_EQ(ra_index.assignment_factor(), 2u);
+    EXPECT_FLOAT_EQ(ra_index.rair_lambda(), 0.75f);
+
+    PreadFallbackReader reader;
+    SearchConfig config;
+    config.top_k = kTopK;
+    config.nprobe = kNprobe;
+    config.early_stop = false;
+
+    OverlapScheduler scheduler(ra_index, reader, config);
+    const float* query = vectors_.data();
+    auto results = scheduler.Search(query);
+
+    ASSERT_GT(results.size(), 0u);
+    EXPECT_GT(results.stats().duplicate_candidates, 0u);
+    EXPECT_GT(results.stats().deduplicated_candidates, 0u);
+    EXPECT_EQ(results.stats().total_reranked,
+              results.stats().unique_fetch_candidates);
+
+    fs::remove_all(ra_dir);
+}

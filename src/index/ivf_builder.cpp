@@ -59,9 +59,29 @@ Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
     if (config_.nlist > N) {
         return Status::InvalidArgument("nlist must be <= N");
     }
+    if (config_.assignment_factor != 1 && config_.assignment_factor != 2) {
+        return Status::InvalidArgument("assignment_factor must be 1 or 2");
+    }
+
+    if (config_.assignment_mode == AssignmentMode::RedundantTop2Rair &&
+        config_.assignment_factor != 2) {
+        return Status::InvalidArgument(
+            "assignment_mode=redundant_top2_rair requires assignment_factor=2");
+    }
 
     // Phase A: K-means clustering
     auto s = RunKMeans(vectors, N, dim);
+    if (!s.ok()) return s;
+
+    assignment_mode_ = config_.assignment_mode;
+    if (assignment_mode_ == AssignmentMode::Single &&
+        config_.assignment_factor == 2) {
+        assignment_mode_ = AssignmentMode::RedundantTop2Naive;
+    }
+    rair_lambda_ = config_.rair_lambda;
+    rair_strict_second_choice_ = config_.rair_strict_second_choice;
+
+    s = DeriveSecondaryAssignments(vectors, N, dim);
     if (!s.ok()) return s;
 
     // Phase B: calibrate ConANN d_k
@@ -78,6 +98,7 @@ Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
 
 Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
     const uint32_t K = config_.nlist;
+    clustering_source_ = ClusteringSource::Auto;
 
     // Path 1: Load precomputed centroids and assignments
     if (!config_.centroids_path.empty() && !config_.assignments_path.empty()) {
@@ -105,6 +126,7 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
         for (uint32_t i = 0; i < N; ++i) {
             assignments_[i] = static_cast<uint32_t>(a.data[i]);
         }
+        clustering_source_ = ClusteringSource::Precomputed;
         return Status::OK();
     }
 
@@ -166,6 +188,91 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
             f.write(reinterpret_cast<const char*>(&one), 4);
             f.write(reinterpret_cast<const char*>(&assignments_[i]), 4);
         }
+    }
+
+    return Status::OK();
+}
+
+Status IvfBuilder::DeriveSecondaryAssignments(const float* vectors,
+                                              uint32_t N,
+                                              Dim dim) {
+    secondary_assignments_.assign(N, std::numeric_limits<uint32_t>::max());
+    if (assignment_mode_ == AssignmentMode::Single ||
+        config_.assignment_factor == 1) {
+        return Status::OK();
+    }
+
+    const uint32_t K = config_.nlist;
+#pragma omp parallel for schedule(static)
+    for (int64_t i = 0; i < static_cast<int64_t>(N); ++i) {
+        const float* vec = vectors + static_cast<size_t>(i) * dim;
+        float best_dist = std::numeric_limits<float>::max();
+        float second_dist = std::numeric_limits<float>::max();
+        uint32_t best_cluster = std::numeric_limits<uint32_t>::max();
+        uint32_t second_cluster = std::numeric_limits<uint32_t>::max();
+
+        for (uint32_t k = 0; k < K; ++k) {
+            float d = simd::L2Sqr(vec,
+                                  centroids_.data() + static_cast<size_t>(k) * dim,
+                                  dim);
+            if (d < best_dist) {
+                second_dist = best_dist;
+                second_cluster = best_cluster;
+                best_dist = d;
+                best_cluster = k;
+            } else if (d < second_dist) {
+                second_dist = d;
+                second_cluster = k;
+            }
+        }
+
+        if (best_cluster == std::numeric_limits<uint32_t>::max()) {
+            continue;
+        }
+
+        const uint32_t primary = assignments_[static_cast<size_t>(i)];
+        if (assignment_mode_ == AssignmentMode::RedundantTop2Naive) {
+            if (primary == best_cluster) {
+                secondary_assignments_[static_cast<size_t>(i)] = second_cluster;
+            } else if (primary == second_cluster) {
+                secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
+            } else {
+                secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
+            }
+            continue;
+        }
+
+        const float* primary_centroid =
+            centroids_.data() + static_cast<size_t>(primary) * dim;
+        float best_air_loss = std::numeric_limits<float>::max();
+        uint32_t best_air_cluster = std::numeric_limits<uint32_t>::max();
+
+        for (uint32_t k = 0; k < K; ++k) {
+            if (k == primary && rair_strict_second_choice_) {
+                continue;
+            }
+
+            const float* cand_centroid =
+                centroids_.data() + static_cast<size_t>(k) * dim;
+            float residual_ip = 0.0f;
+            float cand_dist = 0.0f;
+            for (Dim j = 0; j < dim; ++j) {
+                const float r = primary_centroid[j] - vec[j];
+                const float rp = cand_centroid[j] - vec[j];
+                residual_ip += r * rp;
+                cand_dist += rp * rp;
+            }
+            const float loss = cand_dist + rair_lambda_ * residual_ip;
+            if (loss < best_air_loss) {
+                best_air_loss = loss;
+                best_air_cluster = k;
+            }
+        }
+
+        if (!rair_strict_second_choice_ && best_air_cluster == primary) {
+            continue;
+        }
+        secondary_assignments_[static_cast<size_t>(i)] = best_air_cluster;
     }
 
     return Status::OK();
@@ -399,6 +506,11 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
     std::vector<std::vector<uint32_t>> cluster_members(K);
     for (uint32_t i = 0; i < N; ++i) {
         cluster_members[assignments_[i]].push_back(i);
+        if (config_.assignment_factor == 2 &&
+            secondary_assignments_[i] != std::numeric_limits<uint32_t>::max() &&
+            secondary_assignments_[i] != assignments_[i]) {
+            cluster_members[secondary_assignments_[i]].push_back(i);
+        }
     }
 
     // --- Build encoder ---
@@ -417,6 +529,17 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
                         config_.page_size);
     if (!s.ok()) return s;
 
+    // Write each original vector exactly once. Cluster postings reuse the
+    // same AddressEntry so duplicated assignments do not duplicate data.dat.
+    std::vector<AddressEntry> addr_by_vec_id(N);
+
+    for (uint32_t idx = 0; idx < N; ++idx) {
+        const float* vec = vectors + static_cast<size_t>(idx) * dim;
+        auto pl = payload_fn ? payload_fn(idx) : std::vector<Datum>{};
+        s = dat_writer.WriteRecord(vec, pl, addr_by_vec_id[idx]);
+        if (!s.ok()) return s;
+    }
+
     // addr_entries_per_cluster[k] = address entries for cluster k
     std::vector<std::vector<AddressEntry>> addr_entries_per_cluster(K);
 
@@ -425,12 +548,7 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         addr_entries_per_cluster[k].reserve(members.size());
 
         for (uint32_t idx : members) {
-            const float* vec = vectors + static_cast<size_t>(idx) * dim;
-            AddressEntry entry;
-            auto pl = payload_fn ? payload_fn(idx) : std::vector<Datum>{};
-            s = dat_writer.WriteRecord(vec, pl, entry);
-            if (!s.ok()) return s;
-            addr_entries_per_cluster[k].push_back(entry);
+            addr_entries_per_cluster[k].push_back(addr_by_vec_id[idx]);
         }
     }
 
@@ -481,9 +599,9 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         const uint32_t n_members = static_cast<uint32_t>(members.size());
         const float* centroid = centroids_.data() + static_cast<size_t>(k) * dim;
 
-        // AddressColumn encode
-        auto addr_blocks = storage::AddressColumn::Encode(
-            addr_entries_per_cluster[k], 64 /*fixed packed size*/, config_.page_size);
+        // V9 raw address table encode
+        auto addr_blocks = storage::AddressColumn::EncodeRawTableV2(
+            addr_entries_per_cluster[k], config_.page_size);
 
         // Write cluster block (epsilon field stores r_max)
         s = clu_writer.BeginCluster(k, n_members, centroid, r_max_per_cluster[k]);
@@ -518,7 +636,18 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
         N,                         // training_vectors
         config_.max_iterations,    // kmeans_iterations
         0, 0, 0.0f,               // min/max/avg list size (not computed here)
-        0.0f                       // balance_factor (deprecated, always 0)
+        0.0f,                      // balance_factor (deprecated, always 0)
+        assignment_mode_ == AssignmentMode::RedundantTop2Rair
+            ? vdb::schema::AssignmentMode::REDUNDANT_TOP2_RAIR
+            : assignment_mode_ == AssignmentMode::RedundantTop2Naive
+                ? vdb::schema::AssignmentMode::REDUNDANT_TOP2
+                : vdb::schema::AssignmentMode::SINGLE,
+        config_.assignment_factor,
+        clustering_source_ == ClusteringSource::Precomputed
+            ? vdb::schema::ClusteringSource::PRECOMPUTED
+            : vdb::schema::ClusteringSource::AUTO,
+        rair_lambda_,
+        rair_strict_second_choice_
     );
 
     // RaBitQParams

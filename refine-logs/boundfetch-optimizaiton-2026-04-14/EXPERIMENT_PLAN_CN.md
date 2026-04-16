@@ -133,10 +133,11 @@
     - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.01`
   - 仅实现那些能在不改变搜索语义下减少 query-prep 或 per-cluster probe CPU 开销的改动
   - 候选方向包括：
-    - 消除 `QuantizeQuery14Bit` 和 `PrepareQueryRotatedInto` 的重复工作
     - 优化 query buffer / probe 数据布局和 SIMD 友好性
     - 减少 probe 路径中的重复 decode / bound-check
     - 仅在前两项完成后，才考虑 candidate materialization 与 rerank
+  - 已知应停止的方向：
+    - `fastscan-lut-fusion-optimization`：两版实现均未通过 benchmark gate，第二版 fused helper 更慢，代码已回退
 - 成功标准：
   - 至少有一个 `recall@10 >= 0.98` 的工作点在不改变召回语义下明显向 DiskANN 靠近
 - 失败解释：
@@ -255,7 +256,7 @@
 |--------|------|------|---------------|------|------|
 | M0 | 在 preload 和重测后重新锚定文档 | 更新报告、计划和追踪器 | 所有未来运行使用新的 post-preload 策略 | 0.5 天 | 低 |
 | M1 | 将 preload 视为已完成优化并封板 | 块 1 和 2 | 除非出现新证据，否则不再重启 submit-path 调优 | 0.5-1 天 | 低 |
-| M2 | 判断 CPU 调优是否仍值得继续 | 块 3 | 若 `recall@10 >= 0.98` 区间无法明显推进，则停止继续追逐 DiskANN | 1-3 天 | 中 |
+| M2 | 判断 CPU 调优是否仍值得继续 | 块 3 | `fastscan-lut-fusion-optimization` 已失败并回退；后续仅在提出新 CPU 假设时继续 | 1-3 天 | 中 |
 | M3 | 消费并行 baseline 结果，维护主比较结论 | 块 4 和 5 | baseline 结果由并行任务提供，本任务不阻塞其执行 | 0.5-1 天 | 低 |
 | M4 | 仅在方法线稳定后再做扩展验证 | 块 7 | 只在 M1-M3 已稳定后运行 | 2-4 天 | 中 |
 

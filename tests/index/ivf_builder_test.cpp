@@ -301,3 +301,97 @@ TEST_F(IvfBuilderTest, CalibrationQueries_ChangeDk) {
     // Shifted queries are farther from database → d_k should be larger
     EXPECT_GT(dk2, dk1);
 }
+
+TEST_F(IvfBuilderTest, RedundantAssignmentBuild_PreservesPrimaryAndSecondaryState) {
+    constexpr uint32_t N = 96;
+    constexpr Dim dim = 32;
+    constexpr uint32_t nlist = 8;
+
+    auto vecs = GenerateVectors(N, dim, 777);
+
+    IvfBuilderConfig cfg;
+    cfg.nlist = nlist;
+    cfg.max_iterations = 10;
+    cfg.seed = 777;
+    cfg.rabitq = {1, 64, 5.75f};
+    cfg.calibration_samples = 10;
+    cfg.calibration_topk = 5;
+    cfg.page_size = 1;
+    cfg.assignment_factor = 2;
+    cfg.assignment_mode = AssignmentMode::RedundantTop2Naive;
+
+    IvfBuilder builder(cfg);
+    ASSERT_TRUE(builder.Build(vecs.data(), N, dim, test_dir_).ok());
+
+    EXPECT_EQ(builder.assignment_mode(), AssignmentMode::RedundantTop2Naive);
+    EXPECT_EQ(builder.clustering_source(), ClusteringSource::Auto);
+    ASSERT_EQ(builder.assignments().size(), N);
+    ASSERT_EQ(builder.secondary_assignments().size(), N);
+
+    uint32_t distinct_secondary = 0;
+    for (uint32_t i = 0; i < N; ++i) {
+        EXPECT_LT(builder.assignments()[i], nlist);
+        EXPECT_LT(builder.secondary_assignments()[i], nlist);
+        if (builder.secondary_assignments()[i] != builder.assignments()[i]) {
+            distinct_secondary++;
+        }
+    }
+    EXPECT_GT(distinct_secondary, 0u);
+
+    IvfIndex idx;
+    ASSERT_TRUE(idx.Open(test_dir_).ok());
+    EXPECT_EQ(idx.assignment_mode(), AssignmentMode::RedundantTop2Naive);
+    EXPECT_EQ(idx.assignment_factor(), 2u);
+    EXPECT_FLOAT_EQ(idx.rair_lambda(), 0.75f);
+    EXPECT_FALSE(idx.rair_strict_second_choice());
+    EXPECT_EQ(idx.clustering_source(), ClusteringSource::Auto);
+}
+
+TEST_F(IvfBuilderTest, RairAssignmentBuild_DiffersFromNaiveAndPersistsMetadata) {
+    constexpr uint32_t N = 96;
+    constexpr Dim dim = 32;
+    constexpr uint32_t nlist = 8;
+
+    auto vecs = GenerateVectors(N, dim, 2026);
+
+    IvfBuilderConfig naive_cfg;
+    naive_cfg.nlist = nlist;
+    naive_cfg.max_iterations = 10;
+    naive_cfg.seed = 2026;
+    naive_cfg.rabitq = {1, 64, 5.75f};
+    naive_cfg.calibration_samples = 10;
+    naive_cfg.calibration_topk = 5;
+    naive_cfg.page_size = 1;
+    naive_cfg.assignment_factor = 2;
+    naive_cfg.assignment_mode = AssignmentMode::RedundantTop2Naive;
+
+    auto naive_dir = (fs::path(test_dir_) / "naive").string();
+    IvfBuilder naive_builder(naive_cfg);
+    ASSERT_TRUE(naive_builder.Build(vecs.data(), N, dim, naive_dir).ok());
+
+    IvfBuilderConfig rair_cfg = naive_cfg;
+    rair_cfg.assignment_mode = AssignmentMode::RedundantTop2Rair;
+    rair_cfg.rair_lambda = 0.75f;
+    rair_cfg.rair_strict_second_choice = false;
+
+    auto rair_dir = (fs::path(test_dir_) / "rair").string();
+    IvfBuilder rair_builder(rair_cfg);
+    ASSERT_TRUE(rair_builder.Build(vecs.data(), N, dim, rair_dir).ok());
+
+    size_t differing_secondary = 0;
+    for (uint32_t i = 0; i < N; ++i) {
+        EXPECT_EQ(naive_builder.assignments()[i], rair_builder.assignments()[i]);
+        if (naive_builder.secondary_assignments()[i] !=
+            rair_builder.secondary_assignments()[i]) {
+            differing_secondary++;
+        }
+    }
+    EXPECT_GT(differing_secondary, 0u);
+
+    IvfIndex idx;
+    ASSERT_TRUE(idx.Open(rair_dir).ok());
+    EXPECT_EQ(idx.assignment_mode(), AssignmentMode::RedundantTop2Rair);
+    EXPECT_EQ(idx.assignment_factor(), 2u);
+    EXPECT_FLOAT_EQ(idx.rair_lambda(), 0.75f);
+    EXPECT_FALSE(idx.rair_strict_second_choice());
+}

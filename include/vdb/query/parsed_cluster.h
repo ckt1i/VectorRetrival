@@ -8,6 +8,7 @@
 
 #include "vdb/common/macros.h"
 #include "vdb/common/types.h"
+#include "vdb/storage/address_column.h"
 
 namespace vdb {
 namespace query {
@@ -56,6 +57,9 @@ struct ParsedCluster {
     // --- Existing ---
     uint32_t num_records = 0;
     float epsilon = 0.0f;  // r_max = max(||o-c||) within cluster
+    const storage::RawAddressEntryV2* raw_addresses = nullptr;
+    uint32_t address_page_size = 0;
+    bool addresses_are_raw_v2 = false;
     std::vector<AddressEntry> decoded_addresses;
 
     // --- Legacy (kept for compatibility during transition) ---
@@ -103,6 +107,14 @@ struct ParsedCluster {
             exrabitq_entries + static_cast<size_t>(vec_idx) * exrabitq_entry_size + 2 * dim,
             sizeof(float));
         return val;
+    }
+
+    AddressEntry AddressAt(uint32_t vec_idx) const {
+        if (addresses_are_raw_v2 && raw_addresses != nullptr) {
+            return storage::AddressColumn::DecodeRawEntryV2(
+                raw_addresses[vec_idx], address_page_size);
+        }
+        return decoded_addresses[vec_idx];
     }
 };
 

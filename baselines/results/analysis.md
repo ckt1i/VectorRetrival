@@ -7,16 +7,23 @@
 
 ## Executive Summary
 
-This document now contains three result blocks:
+This document now contains four result blocks:
 1. Historical warm `full_preload` points collected before the rebuild investigation
 2. The reproducible `nprobe=200` rebuild sweeps used to isolate epsilon effects
 3. The current main comparison curve: `epsilon=0.90`, `nprobe=512`, `bits=4`, `clu_mode=full_preload`
+4. The `single / redundant_top2_naive / redundant_top2_rair` comparison under the same `epsilon=0.90`, `nprobe=512` protocol
 
 **Current main curve**: the latest comparison uses `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90_rebuild_20260415_epssweep` and reruns `crc-alpha ∈ {0.01,0.02,0.05,0.08,0.10,0.15,0.20}` at `nprobe=512`.
 
 **Current best recall point**: `alpha=0.01` reaches `recall@10=0.9887` at `1.5114 ms` average latency and `2.2997 ms` p99.
 
 **Current practical high-recall tradeoff**: `alpha=0.05` reaches `recall@10=0.9694` at `1.4785 ms`.
+
+**Current RAIR conclusion**:
+- RAIR improves the redundant-top2 curve relative to the naive second-centroid rule, but it does not beat the best `single` curve at the top end.
+- At roughly `0.99` recall, `RAIR(alpha=0.02)` reaches `0.9902 @ 2.0548 ms`, compared with naive top-2 `0.9924 @ 2.4395 ms`. This is a `15.8%` latency reduction, with `25.2%` fewer probed candidates, `53.3%` fewer duplicate candidates, and `26.5%` lower `.clu` preload bytes.
+- In the mid-recall band, RAIR defines the best BoundFetch-family Pareto points: `0.9698 @ 1.0692 ms` and `0.9577 @ 0.9927 ms`.
+- RAIR does not reduce the probing demand needed to reach `~0.99` recall: in the earlier `alpha=0.01` nprobe sweep, naive top-2 reached `0.9900` at `nprobe=300`, while RAIR needed `nprobe=400` to reach `0.9911`.
 
 **Comparison summary**:
 - Against the earlier `nprobe=200` rebuild curves, `nprobe=512` closes most of the recall gap and moves BoundFetch into the `0.97-0.99` regime.
@@ -68,6 +75,71 @@ This document now contains three result blocks:
 | FAISS-IVFPQ+FlatStor (`nprobe=32`) | 0.7470 | 1.3167 | Dominated by BoundFetch |
 
 The current `baselines_recall_qps.svg` should therefore be read as a high-recall comparison figure centered on the `epsilon=0.90, nprobe=512` BoundFetch curve.
+
+---
+
+## 0B. Assignment-Mode Comparison (`epsilon=0.90`, `nprobe=512`, `nlist=2048`)
+
+### Fixed Protocol
+
+- dataset: `coco_100k`
+- `queries=1000`
+- `bits=4`
+- `clu_mode=full_preload`
+- `crc-alpha={0.01,0.02,0.05,0.08,0.10,0.15,0.20}`
+- assignment modes:
+  - `single`
+  - `redundant_top2_naive`
+  - `redundant_top2_rair (lambda=0.75)`
+
+### Key Pareto Points Inside the BoundFetch Family
+
+| Curve | alpha | recall@10 | avg_ms | p99_ms | avg_total_probed | dup/query | preload_MB |
+|-------|-------|-----------|--------|--------|------------------|-----------|------------|
+| single | 0.01 | 0.9901 | 1.7103 | 2.7942 | 22295.6 | 0.0 | 115.6 |
+| single | 0.08 | 0.9556 | 1.6066 | 2.7846 | 20506.5 | 0.0 | 115.6 |
+| redundant_top2_naive | 0.02 | 0.9924 | 2.4395 | 4.8810 | 45061.6 | 30.4 | 220.8 |
+| redundant_top2_naive | 0.10 | 0.9585 | 1.1476 | 2.6519 | 10738.4 | 25.6 | 220.8 |
+| redundant_top2_rair | 0.02 | 0.9902 | 2.0548 | 3.8854 | 33688.9 | 14.2 | 162.2 |
+| redundant_top2_rair | 0.05 | 0.9698 | 1.0692 | 2.5575 | 10135.1 | 12.3 | 162.2 |
+| redundant_top2_rair | 0.08 | 0.9577 | 0.9927 | 2.3963 | 8846.6 | 11.8 | 162.2 |
+
+### Direct Takeaways
+
+1. At the very high-recall end, `single` remains the best BoundFetch-family operating line. `single(alpha=0.01)` gives `0.9901 @ 1.7103 ms`, which is faster than both redundant variants.
+2. RAIR is still materially better than naive top-2. Around `0.99` recall, RAIR cuts latency from `2.4395 ms` to `2.0548 ms` and cuts duplicate candidates from `30.4` to `14.2` per query.
+3. In the `0.95-0.97` recall band, RAIR is the strongest BoundFetch-family curve:
+   - `0.9698 @ 1.0692 ms` vs single `0.9724 @ 2.4426 ms`
+   - `0.9577 @ 0.9927 ms` vs naive `0.9585 @ 1.1476 ms` and single `0.9556 @ 1.6066 ms`
+4. The benefit of RAIR is therefore not “better top-end recall-latency than single”, but “a clearly lighter redundant-top2 curve and the best mid-recall Pareto line inside the BoundFetch family”.
+
+### Probing-Demand Check
+
+The separate `alpha=0.01` nprobe sweep remains important because the original motivation for RAIR was to reduce the probe demand of redundant assignment.
+
+| Method | recall@10 target region | nprobe needed | avg_ms |
+|--------|--------------------------|---------------|--------|
+| redundant_top2_naive | `0.9900` | `300` | `1.770` |
+| redundant_top2_rair | `0.9911` | `400` | `1.763` |
+
+This means the current `lambda=0.75` RAIR build does **not** reduce the probing demand needed to reach the `~0.99` region on `COCO100k / nlist=2048`. It improves the redundant-top2 cost profile at fixed `nprobe`, but not the nprobe requirement itself.
+
+### Position Relative to the Two Baselines
+
+| System | recall@10 | avg_ms | Notes |
+|--------|-----------|--------|-------|
+| BoundFetch single (`alpha=0.01`) | 0.9901 | 1.7103 | Best BoundFetch-family top-end point in this study |
+| BoundFetch RAIR (`alpha=0.02`) | 0.9902 | 2.0548 | Better than naive top-2, but slower than single |
+| BoundFetch RAIR (`alpha=0.08`) | 0.9577 | 0.9927 | Best BoundFetch-family mid-recall point |
+| DiskANN+FlatStor (`L_search=4`) | 0.9970 | 0.9463 | Still better in both recall and latency |
+| DiskANN+FlatStor (`L_search=16`) | 0.9990 | 1.6735 | Higher recall at similar latency to BoundFetch single |
+| FAISS-IVFPQ+FlatStor (`nprobe=64`) | 0.7490 | 1.4664 | Dominated by all current BoundFetch-family curves |
+
+The baseline interpretation is therefore:
+
+1. All three BoundFetch-family curves still dominate the reported FAISS-IVFPQ+FlatStor range.
+2. DiskANN remains ahead at the high-recall end.
+3. RAIR improves the redundant-top2 variant enough to make it worth keeping as an optional serving mode for the mid-recall region, but it does not justify replacing the `single` top-end curve or claiming lower high-recall probing demand.
 
 ---
 

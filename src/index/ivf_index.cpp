@@ -71,6 +71,26 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
     if (nlist_ == 0) {
         return Status::InvalidArgument("IvfParams nlist is 0");
     }
+    assignment_mode_ = AssignmentMode::Single;
+    switch (ivf->assignment_mode()) {
+        case vdb::schema::AssignmentMode::REDUNDANT_TOP2:
+            assignment_mode_ = AssignmentMode::RedundantTop2Naive;
+            break;
+        case vdb::schema::AssignmentMode::REDUNDANT_TOP2_RAIR:
+            assignment_mode_ = AssignmentMode::RedundantTop2Rair;
+            break;
+        case vdb::schema::AssignmentMode::SINGLE:
+        default:
+            assignment_mode_ = AssignmentMode::Single;
+            break;
+    }
+    assignment_factor_ = ivf->assignment_factor();
+    rair_lambda_ = ivf->rair_lambda();
+    rair_strict_second_choice_ = ivf->rair_strict_second_choice();
+    clustering_source_ = (ivf->clustering_source() ==
+                          vdb::schema::ClusteringSource::PRECOMPUTED)
+        ? ClusteringSource::Precomputed
+        : ClusteringSource::Auto;
 
     // --- 3. Load centroids.bin ---
     const std::string centroids_path = dir + "/centroids.bin";

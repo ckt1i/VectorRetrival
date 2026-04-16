@@ -425,6 +425,28 @@ TEST(AddressColumnTest, PageAligned_MultipleRecords) {
     }
 }
 
+TEST(AddressColumnTest, RawTableV2_GappedAddressesRoundTrip) {
+    const uint32_t page_size = 4096;
+    std::vector<AddressEntry> entries = {
+        {0ull * page_size, 1u * page_size},
+        {3ull * page_size, 2u * page_size},
+        {10ull * page_size, 1u * page_size},
+    };
+
+    ASSERT_TRUE(AddressColumn::ValidateRawTableV2Alignment(entries, page_size));
+    auto column = AddressColumn::EncodeRawTableV2(entries, page_size);
+    ASSERT_EQ(column.format, AddressFormat::V2RawTable);
+    ASSERT_EQ(column.raw_entries.size(), entries.size());
+
+    std::vector<AddressEntry> decoded;
+    ASSERT_TRUE(AddressColumn::DecodeRawTableV2(column, decoded).ok());
+    ASSERT_EQ(decoded.size(), entries.size());
+    for (size_t i = 0; i < entries.size(); ++i) {
+        EXPECT_EQ(decoded[i].offset, entries[i].offset);
+        EXPECT_EQ(decoded[i].size, entries[i].size);
+    }
+}
+
 TEST(AddressColumnTest, PageAligned_VariableSizes) {
     // Records of varying page counts (1-5 pages each)
     const uint32_t page_size = 4096;

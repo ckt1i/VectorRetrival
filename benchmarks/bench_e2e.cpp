@@ -110,14 +110,26 @@ static std::string ResolveBenchIndexDir(const std::string& dataset_name,
                                         int nlist,
                                         int bits,
                                         float epsilon_percentile,
+                                        const std::string& assignment_mode_tag,
+                                        float rair_lambda,
                                         const std::string& requested_index_dir) {
     if (!requested_index_dir.empty()) {
         return requested_index_dir;
     }
     if (dataset_name == "coco_100k" && nlist == 2048) {
-        return "/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits" +
+        std::string dir = "/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits" +
                std::to_string(bits) + "_eps" +
                FormatEpsilonTag(epsilon_percentile);
+        if (!assignment_mode_tag.empty() && assignment_mode_tag != "single") {
+            dir += "_" + assignment_mode_tag;
+            if (assignment_mode_tag == "redundant_top2_rair") {
+                std::ostringstream oss;
+                oss << "_lambda" << std::fixed << std::setprecision(2)
+                    << rair_lambda;
+                dir += oss.str();
+            }
+        }
+        return dir;
     }
     return output_dir + "/index";
 }
@@ -277,6 +289,9 @@ struct QueryResult {
     uint32_t s2_safe_in;
     uint32_t s2_safe_out;
     uint32_t s2_uncertain;
+    uint32_t duplicate_candidates = 0;
+    uint32_t deduplicated_candidates = 0;
+    uint32_t unique_fetch_candidates = 0;
     uint32_t false_safeout;       // GT IDs missing from predicted results
     uint32_t false_safein_upper;  // safe_in - hits_in_topk (upper bound)
 };
@@ -305,6 +320,9 @@ struct RoundMetrics {
     double avg_s2_safe_in = 0;
     double avg_s2_safe_out = 0;
     double avg_s2_uncertain = 0;
+    double avg_duplicate_candidates = 0;
+    double avg_deduplicated_candidates = 0;
+    double avg_unique_fetch_candidates = 0;
     double avg_false_safeout = 0;
     double avg_false_safein_upper = 0;
     uint64_t total_final_safein = 0;   // absolute count: S1 SafeIn + S2 SafeIn
@@ -375,6 +393,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.s2_safe_in = results.stats().s2_safe_in;
         qr.s2_safe_out = results.stats().s2_safe_out;
         qr.s2_uncertain = results.stats().s2_uncertain;
+        qr.duplicate_candidates = results.stats().duplicate_candidates;
+        qr.deduplicated_candidates = results.stats().deduplicated_candidates;
+        qr.unique_fetch_candidates = results.stats().unique_fetch_candidates;
 
         for (uint32_t j = 0; j < results.size(); ++j) {
             qr.predicted_dists.push_back(results[j].distance);
@@ -429,6 +450,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
 
     double sum_probed = 0, sum_si = 0, sum_so = 0, sum_unc = 0;
     double sum_s2_si = 0, sum_s2_so = 0, sum_s2_unc = 0;
+    double sum_dup = 0, sum_dedup = 0, sum_unique_fetch = 0;
     double sum_false_so = 0, sum_false_si = 0;
     double sum_io_wait = 0, sum_probe = 0, sum_rerank_cpu = 0, sum_total = 0;
     double sum_uring_prep = 0, sum_uring_submit = 0;
@@ -444,6 +466,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_s2_si += qresults[qi].s2_safe_in;
         sum_s2_so += qresults[qi].s2_safe_out;
         sum_s2_unc += qresults[qi].s2_uncertain;
+        sum_dup += qresults[qi].duplicate_candidates;
+        sum_dedup += qresults[qi].deduplicated_candidates;
+        sum_unique_fetch += qresults[qi].unique_fetch_candidates;
         sum_false_so += qresults[qi].false_safeout;
         sum_false_si += qresults[qi].false_safein_upper;
         sum_io_wait += qresults[qi].io_wait_ms;
@@ -477,6 +502,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_s2_safe_in = sum_s2_si / Q;
     m.avg_s2_safe_out = sum_s2_so / Q;
     m.avg_s2_uncertain = sum_s2_unc / Q;
+    m.avg_duplicate_candidates = sum_dup / Q;
+    m.avg_deduplicated_candidates = sum_dedup / Q;
+    m.avg_unique_fetch_candidates = sum_unique_fetch / Q;
     m.avg_false_safeout = sum_false_so / Q;
     m.avg_false_safein_upper = sum_false_si / Q;
     m.total_final_safein = static_cast<uint64_t>(sum_si + sum_s2_si);
@@ -499,6 +527,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         m.avg_safe_in, m.avg_safe_out, m.avg_uncertain);
     Log("  %s: s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n", label,
         m.avg_s2_safe_in, m.avg_s2_safe_out, m.avg_s2_uncertain);
+    Log("  %s: duplicate_candidates=%.1f  deduplicated=%.1f  unique_fetch=%.1f\n",
+        label, m.avg_duplicate_candidates, m.avg_deduplicated_candidates,
+        m.avg_unique_fetch_candidates);
     Log("  %s: false_safeout=%.2f  false_safein_upper=%.1f  total_safein=%lu\n",
         label, m.avg_false_safeout, m.avg_false_safein_upper,
         static_cast<unsigned long>(m.total_final_safein));
@@ -506,6 +537,28 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         m.early_pct * 100, m.avg_skipped, m.overlap_ratio);
 
     return {std::move(qresults), m};
+}
+
+static const char* AssignmentModeName(index::AssignmentMode mode) {
+    switch (mode) {
+        case index::AssignmentMode::Single:
+            return "single";
+        case index::AssignmentMode::RedundantTop2Naive:
+            return "redundant_top2_naive";
+        case index::AssignmentMode::RedundantTop2Rair:
+            return "redundant_top2_rair";
+    }
+    return "unknown";
+}
+
+static const char* ClusteringSourceName(index::ClusteringSource source) {
+    switch (source) {
+        case index::ClusteringSource::Auto:
+            return "auto_superkmeans";
+        case index::ClusteringSource::Precomputed:
+            return "precomputed";
+    }
+    return "unknown";
 }
 
 // ============================================================================
@@ -528,6 +581,12 @@ int main(int argc, char* argv[]) {
     int arg_seed       = GetIntArg(argc, argv, "--seed", 42);
     int arg_page_size  = GetIntArg(argc, argv, "--page-size", 4096);
     int arg_p_for_dk   = GetIntArg(argc, argv, "--p-for-dk", 99);
+    int arg_assignment_factor = GetIntArg(argc, argv, "--assignment-factor", 1);
+    std::string arg_assignment_mode =
+        GetStringArg(argc, argv, "--assignment-mode", "");
+    float arg_rair_lambda = GetFloatArg(argc, argv, "--rair-lambda", 0.75f);
+    int arg_rair_strict_second_choice =
+        GetIntArg(argc, argv, "--rair-strict-second-choice", 0);
     int arg_epsilon_samples = GetIntArg(argc, argv, "--epsilon-samples", 100);
     float arg_epsilon_percentile = GetFloatArg(argc, argv, "--epsilon-percentile", 0.99f);
     int arg_io_queue_depth = GetIntArg(argc, argv, "--io-queue-depth", 64);
@@ -555,6 +614,28 @@ int main(int argc, char* argv[]) {
         std::fprintf(stderr,
                      "Invalid --clu-read-mode: %s (expected window or full_preload)\n",
                      arg_clu_read_mode.c_str());
+        return 1;
+    }
+    if (arg_assignment_factor != 1 && arg_assignment_factor != 2) {
+        std::fprintf(stderr,
+                     "Invalid --assignment-factor: %d (expected 1 or 2)\n",
+                     arg_assignment_factor);
+        return 1;
+    }
+    if (!arg_assignment_mode.empty() &&
+        arg_assignment_mode != "single" &&
+        arg_assignment_mode != "redundant_top2_naive" &&
+        arg_assignment_mode != "redundant_top2_rair") {
+        std::fprintf(stderr,
+                     "Invalid --assignment-mode: %s (expected single, redundant_top2_naive, or redundant_top2_rair)\n",
+                     arg_assignment_mode.c_str());
+        return 1;
+    }
+    if (arg_rair_strict_second_choice != 0 &&
+        arg_rair_strict_second_choice != 1) {
+        std::fprintf(stderr,
+                     "Invalid --rair-strict-second-choice: %d (expected 0 or 1)\n",
+                     arg_rair_strict_second_choice);
         return 1;
     }
 
@@ -597,6 +678,11 @@ int main(int argc, char* argv[]) {
 
     std::string ds_name = DatasetName(data_dir);
     std::string ts = Timestamp();
+    std::string resolved_assignment_mode = arg_assignment_mode;
+    if (resolved_assignment_mode.empty()) {
+        resolved_assignment_mode =
+            (arg_assignment_factor == 2) ? "redundant_top2_naive" : "single";
+    }
 
     Log("=== VDB E2E Benchmark ===\n");
     Log("Dataset: %s\n", data_dir.c_str());
@@ -712,7 +798,8 @@ int main(int argc, char* argv[]) {
     std::string output_dir = output_base + "/" + ds_name + "_" + ts;
     std::string index_dir = ResolveBenchIndexDir(
         ds_name, output_dir, arg_nlist, arg_bits,
-        arg_epsilon_percentile, arg_index_dir);
+        arg_epsilon_percentile, resolved_assignment_mode,
+        arg_rair_lambda, arg_index_dir);
     const std::string index_source =
         arg_index_dir.empty() ? "rebuilt" : "reused";
     const std::string resolved_index_dir = NormalizePath(index_dir);
@@ -731,6 +818,18 @@ int main(int argc, char* argv[]) {
         cfg.calibration_samples = std::min(100u, N);
         cfg.epsilon_samples = static_cast<uint32_t>(arg_epsilon_samples);
         cfg.epsilon_percentile = arg_epsilon_percentile;
+        cfg.assignment_factor = static_cast<uint32_t>(arg_assignment_factor);
+        if (arg_assignment_mode == "redundant_top2_naive") {
+            cfg.assignment_mode = index::AssignmentMode::RedundantTop2Naive;
+            cfg.assignment_factor = 2;
+        } else if (arg_assignment_mode == "redundant_top2_rair") {
+            cfg.assignment_mode = index::AssignmentMode::RedundantTop2Rair;
+            cfg.assignment_factor = 2;
+        } else {
+            cfg.assignment_mode = index::AssignmentMode::Single;
+        }
+        cfg.rair_lambda = arg_rair_lambda;
+        cfg.rair_strict_second_choice = (arg_rair_strict_second_choice != 0);
         cfg.calibration_topk = GT_K;
         cfg.calibration_percentile = static_cast<float>(arg_p_for_dk) / 100.0f;
         cfg.page_size = static_cast<uint32_t>(arg_page_size);
@@ -1005,7 +1104,10 @@ int main(int argc, char* argv[]) {
                          "avg_probe_ms,avg_io_wait_ms,avg_uring_submit_ms,"
                          "avg_submit_calls,avg_safe_out_rate,io_queue_depth,"
                          "sqpoll_enabled,cluster_submit_reserve,submission_mode,"
-                         "clu_read_mode,index_source,resolved_index_dir,"
+                         "clu_read_mode,assignment_mode,assignment_factor,clustering_source,"
+                         "rair_lambda,rair_strict_second_choice,"
+                         "avg_duplicate_candidates,avg_deduplicated_candidates,"
+                         "avg_unique_fetch_candidates,index_source,resolved_index_dir,"
                          "loaded_eps_ip,loaded_d_k,preload_time_ms,preload_bytes\n";
         }
 
@@ -1045,6 +1147,14 @@ int main(int argc, char* argv[]) {
                       << search_cfg.cluster_submit_reserve << ","
                       << arg_submission_mode << ","
                       << arg_clu_read_mode << ","
+                      << AssignmentModeName(index.assignment_mode()) << ","
+                      << index.assignment_factor() << ","
+                      << ClusteringSourceName(index.clustering_source()) << ","
+                      << index.rair_lambda() << ","
+                      << (index.rair_strict_second_choice() ? 1 : 0) << ","
+                      << sm.avg_duplicate_candidates << ","
+                      << sm.avg_deduplicated_candidates << ","
+                      << sm.avg_unique_fetch_candidates << ","
                       << index_source << ","
                       << "\"" << resolved_index_dir << "\"" << ","
                       << index.conann().epsilon() << ","
@@ -1135,6 +1245,12 @@ int main(int argc, char* argv[]) {
         index_source.c_str(), resolved_index_dir.c_str());
     Log("  loaded_eps_ip=%.6f  loaded_d_k=%.6f\n",
         index.conann().epsilon(), index.conann().d_k());
+    Log("  assignment_mode=%s  assignment_factor=%u  clustering_source=%s\n",
+        AssignmentModeName(index.assignment_mode()),
+        index.assignment_factor(),
+        ClusteringSourceName(index.clustering_source()));
+    Log("  rair_lambda=%.3f  rair_strict_second_choice=%d\n",
+        index.rair_lambda(), index.rair_strict_second_choice() ? 1 : 0);
     Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
         metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
     Log("  clu_mode=%s  preload_time=%.3f ms  preload_bytes=%.0f\n",
@@ -1143,6 +1259,10 @@ int main(int argc, char* argv[]) {
         metrics.avg_safe_in, metrics.avg_safe_out, metrics.avg_uncertain);
     Log("  s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n",
         metrics.avg_s2_safe_in, metrics.avg_s2_safe_out, metrics.avg_s2_uncertain);
+    Log("  duplicate_candidates=%.1f  deduplicated=%.1f  unique_fetch=%.1f\n",
+        metrics.avg_duplicate_candidates,
+        metrics.avg_deduplicated_candidates,
+        metrics.avg_unique_fetch_candidates);
     Log("  false_safeout=%.2f  false_safein_upper=%.1f  total_safein=%lu\n",
         metrics.avg_false_safeout, metrics.avg_false_safein_upper,
         static_cast<unsigned long>(metrics.total_final_safein));
@@ -1177,6 +1297,10 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("page_size", arg_page_size) << ",\n";
         f << "    " << JInt("epsilon_samples", arg_epsilon_samples) << ",\n";
         f << "    " << JNum("epsilon_percentile", arg_epsilon_percentile) << ",\n";
+        f << "    " << JStr("assignment_mode", resolved_assignment_mode) << ",\n";
+        f << "    " << JInt("assignment_factor", arg_assignment_factor) << ",\n";
+        f << "    " << JNum("rair_lambda", arg_rair_lambda) << ",\n";
+        f << "    " << JBool("rair_strict_second_choice", arg_rair_strict_second_choice != 0) << ",\n";
         f << "    " << JStr("requested_index_dir", arg_index_dir) << ",\n";
         f << "    " << JStr("resolved_index_dir", resolved_index_dir) << "\n";
         f << "  },\n";
@@ -1200,7 +1324,12 @@ int main(int argc, char* argv[]) {
         f << "  },\n";
         f << "  \"runtime_index\": {\n";
         f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
-        f << "    " << JNum("loaded_d_k", index.conann().d_k()) << "\n";
+        f << "    " << JNum("loaded_d_k", index.conann().d_k()) << ",\n";
+        f << "    " << JStr("assignment_mode", AssignmentModeName(index.assignment_mode())) << ",\n";
+        f << "    " << JInt("assignment_factor", index.assignment_factor()) << ",\n";
+        f << "    " << JNum("rair_lambda", index.rair_lambda()) << ",\n";
+        f << "    " << JBool("rair_strict_second_choice", index.rair_strict_second_choice()) << ",\n";
+        f << "    " << JStr("clustering_source", ClusteringSourceName(index.clustering_source())) << "\n";
         f << "  }\n";
         f << "}\n";
     }
@@ -1239,6 +1368,9 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_s2_safe_in", metrics.avg_s2_safe_in) << ",\n";
         f << "    " << JNum("avg_s2_safe_out", metrics.avg_s2_safe_out) << ",\n";
         f << "    " << JNum("avg_s2_uncertain", metrics.avg_s2_uncertain) << ",\n";
+        f << "    " << JNum("avg_duplicate_candidates", metrics.avg_duplicate_candidates) << ",\n";
+        f << "    " << JNum("avg_deduplicated_candidates", metrics.avg_deduplicated_candidates) << ",\n";
+        f << "    " << JNum("avg_unique_fetch_candidates", metrics.avg_unique_fetch_candidates) << ",\n";
         f << "    " << JNum("avg_false_safeout", metrics.avg_false_safeout) << ",\n";
         f << "    " << JNum("avg_false_safein_upper", metrics.avg_false_safein_upper) << ",\n";
         f << "    " << JInt("total_final_safein", static_cast<int64_t>(metrics.total_final_safein)) << ",\n";
