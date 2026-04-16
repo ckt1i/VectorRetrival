@@ -1,8 +1,8 @@
 # Refinement Report
 
-**Problem**: Re-anchor BoundFetch after synchronized warm-serving baseline tuning.  
-**Initial Approach**: Keep the earlier thesis that BoundFetch mainly needs more recall tuning and may already dominate the important warm-serving region.  
-**Date**: 2026-04-14  
+**Problem**: Re-anchor the refine documents after the work split so they describe only the method-optimization track.  
+**Initial Approach**: Keep baseline expansion and method optimization in one mixed execution narrative.  
+**Date**: 2026-04-16  
 **Rounds**: 2 local refinement rounds  
 **Final Verdict**: READY FOR NEXT EXECUTION ROUND  
 
@@ -25,10 +25,10 @@
 | 2 | The synchronized baseline results show tuned DiskANN+FlatStor dominating the current BoundFetch frontier, so the old "strong warm win" thesis is no longer accurate. | Re-anchored the proposal around a minimal warm-resident preload of `.clu` quantized vectors and address metadata, and replaced the full-matrix baseline idea with a layered comparison strategy. | Resolved for the next stage |
 
 ## Final Proposal Snapshot
-- BoundFetch still clearly beats the IVF+PQ+FlatStor family on the warm E2E frontier, but tuned DiskANN+FlatStor is now the strong serving upper baseline.
-- The next high-value BoundFetch optimization is not more blind submit-path tuning; it is warm-resident preload of cluster-side quantized vectors and raw address metadata.
-- DiskANN should remain in the paper as a required strong reference rather than being removed because it currently wins.
-- Storage-backend comparisons should be separated from search-core comparisons so the final story stays interpretable.
+- These refine documents now serve the continued BoundFetch method-optimization track only.
+- Baseline results remain fixed inputs and no longer define the active execution checklist here.
+- The next high-value BoundFetch optimization is query-prep / probe CPU reduction, not more `.clu` / submit-path work.
+- The active execution decision is now R068 first, then conditional R069 / R070.
 
 ## Method Evolution Highlights
 1. Shifted the paper target from cold-start disk behavior to warm steady-state serving.
@@ -50,10 +50,6 @@
 - Backend alignment with `Lance` or `Parquet` may cost non-trivial engineering time.
 
 ## Next Steps
-- Implement warm-resident preload for `.clu` quantized vectors and raw address metadata.
-- Re-run the BoundFetch Pareto frontier with preload enabled before doing any additional micro-optimization.
-- Keep DiskANN in the reported baseline set.
-- Run layered baseline experiments:
-  - main search-core table
-  - storage-backend ablation
-  - build-time and preload-footprint table
+- Execute R068 on the current main curve.
+- Re-measure the two high-value BoundFetch points after R068.
+- Only if R068 clearly helps, proceed to R069 and then optional R070.

@@ -26,16 +26,16 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                            float dynamic_d_k,
                            ProbeResultSink& sink,
                            ProbeStats& stats) const {
-    // Packed codes occupy the first FastScanPackedSize(dim_) bytes of each block.
-    // Norms follow immediately after.
     const uint32_t packed_sz = storage::FastScanPackedSize(dim_);
 
     for (uint32_t b = 0; b < pc.num_fastscan_blocks; ++b) {
         const uint32_t base_idx = b * 32;
         const uint32_t count = std::min(32u, pc.num_records - base_idx);
 
-        const uint8_t* block_ptr  = pc.fastscan_blocks + static_cast<size_t>(b) * pc.fastscan_block_size;
-        const float*   block_norms = reinterpret_cast<const float*>(block_ptr + packed_sz);
+        const uint8_t* block_ptr =
+            pc.fastscan_blocks + static_cast<size_t>(b) * pc.fastscan_block_size;
+        const float* block_norms =
+            reinterpret_cast<const float*>(block_ptr + packed_sz);
 
         // Stage 1a: batch-32 FastScan distance estimation
         alignas(64) float dists[32];
@@ -74,14 +74,13 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
             // Stage 2: ExRaBitQ re-classification for S1-Uncertain (bits > 1)
             if (rc_s1 == ResultClass::Uncertain && has_s2_ &&
                 pc.exrabitq_entries != nullptr) {
-                const uint8_t* ex_code = pc.ex_code(global_idx);
-                const uint8_t* ex_sign = pc.ex_sign(global_idx, dim_);
-                const float    xipn    = pc.xipnorm(global_idx, dim_);
+                const query::ParsedCluster::ExRaBitQView ex_view =
+                    pc.exrabitq_view(global_idx, dim_);
                 const float    norm_oc = block_norms[j];
 
                 const float ip_raw = simd::IPExRaBitQ(
-                    pq.rotated.data(), ex_code, ex_sign, dim_);
-                const float ip_est = ip_raw * xipn;
+                    pq.rotated.data(), ex_view.code_abs, ex_view.sign, dim_);
+                const float ip_est = ip_raw * ex_view.xipnorm;
 
                 float est_dist_s2 = norm_oc * norm_oc + pq.norm_qc_sq
                                   - 2.0f * norm_oc * pq.norm_qc * ip_est;

@@ -1,6 +1,7 @@
 #include "vdb/simd/fastscan.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstring>
 
@@ -34,6 +35,60 @@ VDB_FORCE_INLINE float ReduceMax256(__m256 v) {
         vmax = std::max(vmax, lanes[i]);
     }
     return vmax;
+}
+#endif
+
+VDB_FORCE_INLINE void BuildLut16(int q0, int q1, int q2, int q3,
+                                 uint16_t* VDB_RESTRICT lut,
+                                 int32_t* VDB_RESTRICT v_min_out) {
+    const int32_t v_min =
+        std::min(q0, 0) + std::min(q1, 0) +
+        std::min(q2, 0) + std::min(q3, 0);
+    const int32_t bias = -v_min;
+
+    lut[0]  = static_cast<uint16_t>(bias);
+    lut[1]  = static_cast<uint16_t>(bias + q3);
+    lut[2]  = static_cast<uint16_t>(bias + q2);
+    lut[3]  = static_cast<uint16_t>(bias + q2 + q3);
+    lut[4]  = static_cast<uint16_t>(bias + q1);
+    lut[5]  = static_cast<uint16_t>(bias + q1 + q3);
+    lut[6]  = static_cast<uint16_t>(bias + q1 + q2);
+    lut[7]  = static_cast<uint16_t>(bias + q1 + q2 + q3);
+    lut[8]  = static_cast<uint16_t>(bias + q0);
+    lut[9]  = static_cast<uint16_t>(bias + q0 + q3);
+    lut[10] = static_cast<uint16_t>(bias + q0 + q2);
+    lut[11] = static_cast<uint16_t>(bias + q0 + q2 + q3);
+    lut[12] = static_cast<uint16_t>(bias + q0 + q1);
+    lut[13] = static_cast<uint16_t>(bias + q0 + q1 + q3);
+    lut[14] = static_cast<uint16_t>(bias + q0 + q1 + q2);
+    lut[15] = static_cast<uint16_t>(bias + q0 + q1 + q2 + q3);
+
+    *v_min_out = v_min;
+}
+
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+VDB_FORCE_INLINE __m128i LutLowBytes128(const uint16_t* VDB_RESTRICT lut) {
+    return _mm_setr_epi8(
+        static_cast<char>(lut[0] & 0xFF), static_cast<char>(lut[1] & 0xFF),
+        static_cast<char>(lut[2] & 0xFF), static_cast<char>(lut[3] & 0xFF),
+        static_cast<char>(lut[4] & 0xFF), static_cast<char>(lut[5] & 0xFF),
+        static_cast<char>(lut[6] & 0xFF), static_cast<char>(lut[7] & 0xFF),
+        static_cast<char>(lut[8] & 0xFF), static_cast<char>(lut[9] & 0xFF),
+        static_cast<char>(lut[10] & 0xFF), static_cast<char>(lut[11] & 0xFF),
+        static_cast<char>(lut[12] & 0xFF), static_cast<char>(lut[13] & 0xFF),
+        static_cast<char>(lut[14] & 0xFF), static_cast<char>(lut[15] & 0xFF));
+}
+
+VDB_FORCE_INLINE __m128i LutHighBytes128(const uint16_t* VDB_RESTRICT lut) {
+    return _mm_setr_epi8(
+        static_cast<char>(lut[0] >> 8), static_cast<char>(lut[1] >> 8),
+        static_cast<char>(lut[2] >> 8), static_cast<char>(lut[3] >> 8),
+        static_cast<char>(lut[4] >> 8), static_cast<char>(lut[5] >> 8),
+        static_cast<char>(lut[6] >> 8), static_cast<char>(lut[7] >> 8),
+        static_cast<char>(lut[8] >> 8), static_cast<char>(lut[9] >> 8),
+        static_cast<char>(lut[10] >> 8), static_cast<char>(lut[11] >> 8),
+        static_cast<char>(lut[12] >> 8), static_cast<char>(lut[13] >> 8),
+        static_cast<char>(lut[14] >> 8), static_cast<char>(lut[15] >> 8));
 }
 #endif
 
@@ -182,75 +237,51 @@ int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
 #endif
 
     const int16_t* qq = quant_query;
-    for (uint32_t i = 0; i < M; ++i) {
-        const int q0 = qq[0];
-        const int q1 = qq[1];
-        const int q2 = qq[2];
-        const int q3 = qq[3];
+    uint32_t i = 0;
 
-        // Minimum subset sum over {q0,q1,q2,q3}: include all negative values,
-        // exclude all positive values.
-        const int v_min =
-            std::min(q0, 0) + std::min(q1, 0) +
-            std::min(q2, 0) + std::min(q3, 0);
-        const int bias = -v_min;
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+    for (; i + n_lut_per_iter <= M; i += n_lut_per_iter) {
+        std::array<std::array<uint16_t, 16>, n_lut_per_iter> lut_groups{};
+        for (size_t g = 0; g < n_lut_per_iter; ++g) {
+            int32_t v_min = 0;
+            BuildLut16(qq[0], qq[1], qq[2], qq[3], lut_groups[g].data(), &v_min);
+            total_shift += v_min;
+            qq += 4;
+        }
 
-        const uint16_t lut0  = static_cast<uint16_t>(bias);
-        const uint16_t lut1  = static_cast<uint16_t>(bias + q3);
-        const uint16_t lut2  = static_cast<uint16_t>(bias + q2);
-        const uint16_t lut3  = static_cast<uint16_t>(bias + q2 + q3);
-        const uint16_t lut4  = static_cast<uint16_t>(bias + q1);
-        const uint16_t lut5  = static_cast<uint16_t>(bias + q1 + q3);
-        const uint16_t lut6  = static_cast<uint16_t>(bias + q1 + q2);
-        const uint16_t lut7  = static_cast<uint16_t>(bias + q1 + q2 + q3);
-        const uint16_t lut8  = static_cast<uint16_t>(bias + q0);
-        const uint16_t lut9  = static_cast<uint16_t>(bias + q0 + q3);
-        const uint16_t lut10 = static_cast<uint16_t>(bias + q0 + q2);
-        const uint16_t lut11 = static_cast<uint16_t>(bias + q0 + q2 + q3);
-        const uint16_t lut12 = static_cast<uint16_t>(bias + q0 + q1);
-        const uint16_t lut13 = static_cast<uint16_t>(bias + q0 + q1 + q3);
-        const uint16_t lut14 = static_cast<uint16_t>(bias + q0 + q1 + q2);
-        const uint16_t lut15 = static_cast<uint16_t>(bias + q0 + q1 + q2 + q3);
+        uint8_t* fill_lo =
+            lut_out + (i / n_lut_per_iter) * n_code_per_iter;
+        uint8_t* fill_hi = fill_lo + hi_offset;
+
+        for (size_t g = 0; g < n_lut_per_iter; ++g) {
+            _mm_storeu_si128(
+                reinterpret_cast<__m128i*>(fill_lo + g * n_code_per_lane),
+                LutLowBytes128(lut_groups[g].data()));
+            _mm_storeu_si128(
+                reinterpret_cast<__m128i*>(fill_hi + g * n_code_per_lane),
+                LutHighBytes128(lut_groups[g].data()));
+        }
+    }
+#endif
+
+    for (; i < M; ++i) {
+        int32_t v_min = 0;
+        uint16_t lut[16];
+        BuildLut16(qq[0], qq[1], qq[2], qq[3], lut, &v_min);
+        total_shift += v_min;
 
         uint8_t* fill_lo = lut_out + (i / n_lut_per_iter) * n_code_per_iter +
                            (i % n_lut_per_iter) * n_code_per_lane;
         uint8_t* fill_hi = fill_lo + hi_offset;
-
-        fill_lo[0]  = static_cast<uint8_t>(lut0 & 0xFF);
-        fill_lo[1]  = static_cast<uint8_t>(lut1 & 0xFF);
-        fill_lo[2]  = static_cast<uint8_t>(lut2 & 0xFF);
-        fill_lo[3]  = static_cast<uint8_t>(lut3 & 0xFF);
-        fill_lo[4]  = static_cast<uint8_t>(lut4 & 0xFF);
-        fill_lo[5]  = static_cast<uint8_t>(lut5 & 0xFF);
-        fill_lo[6]  = static_cast<uint8_t>(lut6 & 0xFF);
-        fill_lo[7]  = static_cast<uint8_t>(lut7 & 0xFF);
-        fill_lo[8]  = static_cast<uint8_t>(lut8 & 0xFF);
-        fill_lo[9]  = static_cast<uint8_t>(lut9 & 0xFF);
-        fill_lo[10] = static_cast<uint8_t>(lut10 & 0xFF);
-        fill_lo[11] = static_cast<uint8_t>(lut11 & 0xFF);
-        fill_lo[12] = static_cast<uint8_t>(lut12 & 0xFF);
-        fill_lo[13] = static_cast<uint8_t>(lut13 & 0xFF);
-        fill_lo[14] = static_cast<uint8_t>(lut14 & 0xFF);
-        fill_lo[15] = static_cast<uint8_t>(lut15 & 0xFF);
-
-        fill_hi[0]  = static_cast<uint8_t>(lut0 >> 8);
-        fill_hi[1]  = static_cast<uint8_t>(lut1 >> 8);
-        fill_hi[2]  = static_cast<uint8_t>(lut2 >> 8);
-        fill_hi[3]  = static_cast<uint8_t>(lut3 >> 8);
-        fill_hi[4]  = static_cast<uint8_t>(lut4 >> 8);
-        fill_hi[5]  = static_cast<uint8_t>(lut5 >> 8);
-        fill_hi[6]  = static_cast<uint8_t>(lut6 >> 8);
-        fill_hi[7]  = static_cast<uint8_t>(lut7 >> 8);
-        fill_hi[8]  = static_cast<uint8_t>(lut8 >> 8);
-        fill_hi[9]  = static_cast<uint8_t>(lut9 >> 8);
-        fill_hi[10] = static_cast<uint8_t>(lut10 >> 8);
-        fill_hi[11] = static_cast<uint8_t>(lut11 >> 8);
-        fill_hi[12] = static_cast<uint8_t>(lut12 >> 8);
-        fill_hi[13] = static_cast<uint8_t>(lut13 >> 8);
-        fill_hi[14] = static_cast<uint8_t>(lut14 >> 8);
-        fill_hi[15] = static_cast<uint8_t>(lut15 >> 8);
-
-        total_shift += v_min;
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_lo), LutLowBytes128(lut));
+        _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_hi), LutHighBytes128(lut));
+#else
+        for (int j = 0; j < 16; ++j) {
+            fill_lo[j] = static_cast<uint8_t>(lut[j] & 0xFF);
+            fill_hi[j] = static_cast<uint8_t>(lut[j] >> 8);
+        }
+#endif
         qq += 4;
     }
 

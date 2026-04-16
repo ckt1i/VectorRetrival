@@ -19,8 +19,8 @@ def load_temp_rows():
         for row in reader:
             row["alpha_float"] = float(row["alpha"])
             row["recall"] = float(row["recall@10"])
-            row["e2e_ms"] = float(row["e2e_ms"])
-            row["qps"] = 1000.0 / row["e2e_ms"]
+            row["e2e_ms_float"] = float(row["e2e_ms"])
+            row["qps"] = 1000.0 / row["e2e_ms_float"]
             rows.append(row)
     return rows
 
@@ -46,52 +46,61 @@ def load_baselines():
                 diskann.append(row)
             else:
                 faiss.append(row)
+    diskann.sort(key=lambda r: (r["recall"], r["qps"]))
+    faiss.sort(key=lambda r: (r["recall"], r["qps"]))
     return diskann, faiss
 
 
+def annotate_curve(ax, rows, color, alphas):
+    lookup = {row["alpha"]: row for row in rows}
+    for alpha in alphas:
+        row = lookup.get(alpha)
+        if row is None:
+            continue
+        ax.annotate(
+            f"a={alpha}",
+            (row["recall"], row["qps"]),
+            xytext=(4, 4),
+            textcoords="offset points",
+            fontsize=8,
+            color=color,
+        )
+
+
 def plot_temp_compare(rows):
-    window = sorted([r for r in rows if r["mode"] == "window"], key=lambda r: r["alpha_float"])
-    preload = sorted([r for r in rows if r["mode"] == "full_preload"], key=lambda r: r["alpha_float"])
+    historical = sorted(
+        [r for r in rows if r["mode"] == "historical_full_preload"],
+        key=lambda r: r["alpha_float"],
+    )
+    current = sorted(
+        [r for r in rows if r["mode"] == "phase1_revert_eps075"],
+        key=lambda r: r["alpha_float"],
+    )
 
     fig, ax = plt.subplots(figsize=(8.8, 5.6))
     ax.plot(
-        [r["recall"] for r in window],
-        [r["qps"] for r in window],
+        [r["recall"] for r in historical],
+        [r["qps"] for r in historical],
         marker="o",
         linewidth=2.0,
         markersize=5.5,
         color="#1f77b4",
-        label="BoundFetch window",
+        label="Historical full_preload",
     )
     ax.plot(
-        [r["recall"] for r in preload],
-        [r["qps"] for r in preload],
+        [r["recall"] for r in current],
+        [r["qps"] for r in current],
         marker="s",
-        linewidth=2.0,
+        linewidth=2.2,
         markersize=5.5,
         color="#d62728",
-        label="BoundFetch full_preload",
+        label="Phase1-revert eps=0.75",
     )
 
-    preload_map = {r["alpha"]: r for r in preload}
-    for row in window:
-        paired = preload_map[row["alpha"]]
-        ax.annotate(
-            "",
-            xy=(paired["recall"], paired["qps"]),
-            xytext=(row["recall"], row["qps"]),
-            arrowprops={"arrowstyle": "->", "color": "#666666", "lw": 1.0, "alpha": 0.7},
-        )
-        ax.annotate(
-            f"a={row['alpha']}",
-            (paired["recall"], paired["qps"]),
-            xytext=(4, 4),
-            textcoords="offset points",
-            fontsize=8,
-            color="#444444",
-        )
+    annotate_curve(ax, historical, "#1f77b4", ["0.01", "0.05", "0.20"])
+    annotate_curve(ax, current, "#d62728", ["0.01", "0.05", "0.20"])
 
-    ax.set_title("BoundFetch Alpha Sweep at nprobe=200: Window vs Full-Preload")
+    ax.set_title("BoundFetch Alpha Sweep: Historical Full-Preload vs Phase1-Revert Rebuild")
     ax.set_xlabel("Recall@10")
     ax.set_ylabel("QPS")
     ax.grid(True, linestyle="--", alpha=0.25)
@@ -102,28 +111,34 @@ def plot_temp_compare(rows):
 
 
 def plot_temp_vs_baselines(rows, diskann, faiss):
-    window = sorted([r for r in rows if r["mode"] == "window"], key=lambda r: r["alpha_float"])
-    preload = sorted([r for r in rows if r["mode"] == "full_preload"], key=lambda r: r["alpha_float"])
+    historical = sorted(
+        [r for r in rows if r["mode"] == "historical_full_preload"],
+        key=lambda r: r["alpha_float"],
+    )
+    current = sorted(
+        [r for r in rows if r["mode"] == "phase1_revert_eps075"],
+        key=lambda r: r["alpha_float"],
+    )
 
     fig, ax = plt.subplots(figsize=(8.8, 5.6))
     ax.plot(
-        [r["recall"] for r in window],
-        [r["qps"] for r in window],
+        [r["recall"] for r in historical],
+        [r["qps"] for r in historical],
         marker="o",
         linewidth=2.0,
         markersize=5.0,
         color="#1f77b4",
-        label="BoundFetch window",
-        alpha=0.55,
+        label="Historical full_preload",
+        alpha=0.75,
     )
     ax.plot(
-        [r["recall"] for r in preload],
-        [r["qps"] for r in preload],
+        [r["recall"] for r in current],
+        [r["qps"] for r in current],
         marker="s",
         linewidth=2.4,
         markersize=5.5,
         color="#d62728",
-        label="BoundFetch full_preload",
+        label="Phase1-revert eps=0.75",
     )
     ax.plot(
         [r["recall"] for r in diskann],
@@ -144,18 +159,28 @@ def plot_temp_vs_baselines(rows, diskann, faiss):
         label="FAISS-IVFPQ+FlatStor",
     )
 
-    bf_best = next(r for r in preload if r["alpha"] == "0.05")
+    current_best = next(r for r in current if r["alpha"] == "0.01")
+    historical_best = next(r for r in historical if r["alpha"] == "0.01")
     ax.annotate(
-        "BoundFetch a=0.05",
-        (bf_best["recall"], bf_best["qps"]),
-        xytext=(-95, 10),
+        "Phase1-revert a=0.01",
+        (current_best["recall"], current_best["qps"]),
+        xytext=(-110, 10),
         textcoords="offset points",
         fontsize=9,
         color="#d62728",
         arrowprops={"arrowstyle": "->", "color": "#d62728", "lw": 1.0},
     )
+    ax.annotate(
+        "Historical full_preload a=0.01",
+        (historical_best["recall"], historical_best["qps"]),
+        xytext=(-10, -18),
+        textcoords="offset points",
+        fontsize=9,
+        color="#1f77b4",
+        arrowprops={"arrowstyle": "->", "color": "#1f77b4", "lw": 1.0},
+    )
 
-    ax.set_title("Temporary Comparison: BoundFetch Curve vs Baselines")
+    ax.set_title("Phase1-Revert Pareto Curve vs Historical Full-Preload and Baselines")
     ax.set_xlabel("Recall@10")
     ax.set_ylabel("QPS")
     ax.grid(True, linestyle="--", alpha=0.25)

@@ -1,5 +1,7 @@
 # Baseline 实验计划（磁盘模式重构版）
 
+> 分工说明：本文件由并行 baseline 任务维护。当前 refine 文档中的执行主线不再负责 baseline sweep，只将这里的结果作为外部输入引用。
+
 **日期**：2026-04-11（v5: 全面重构为 disk-based baseline，新增 Deep8M，切换 labnew Python 3.12 环境）
 **定位**：本文件是 BASELINE_PLAN 的最新权威版本。v4 的纯内存 FAISS/DiskANN 测试（见下方附录 A）仅保留作为"内存上界"的参考数据，不进入论文主表。
 **问题重述**：BoundFetch 是 disk-based vector search + payload 系统，其主要论点是 I/O–compute 重叠和 SafeOut 剪枝能在冷/温 I/O 场景下显著降低 E2E 延迟。当前 v4 baseline 全部为 pure-memory FAISS IVF-PQ/IVF-Flat，与 BoundFetch 的 disk 行为不对称，不能支撑论文的核心对比。本版本重构所有向量搜索 baseline 为磁盘模式，并新增 Deep8M 以在 dataset > page cache 时形成真实的 I/O 压力。

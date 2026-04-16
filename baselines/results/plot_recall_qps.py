@@ -12,6 +12,17 @@ BASELINE_FIG = RESULTS_DIR / "baselines_recall_qps.svg"
 PARETO_FIG = RESULTS_DIR / "pareto_comparison.svg"
 
 
+def parse_param(param: str):
+    kv = {}
+    for part in param.split(","):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        k, v = part.split("=", 1)
+        kv[k.strip()] = v.strip()
+    return kv
+
+
 def load_rows():
     rows = []
     with CSV_PATH.open("r", encoding="utf-8", newline="") as f:
@@ -25,131 +36,105 @@ def load_rows():
             except ValueError:
                 continue
             row["qps"] = 1000.0 / row["e2e_ms_float"] if row["e2e_ms_float"] > 0 else 0.0
+            row["param_kv"] = parse_param(row["param"])
             rows.append(row)
     return rows
 
 
-def sort_by_recall(rows):
-    return sorted(rows, key=lambda r: (r["recall"], r["qps"]))
-
-
-def boundfetch_key_from_param(param: str):
-    parts = [p.strip() for p in param.split(",")]
-    kv = {}
-    for part in parts:
-        if "=" in part:
-            k, v = part.split("=", 1)
-            kv[k.strip()] = v.strip()
-    if "nprobe" not in kv or "alpha" not in kv:
-        return None
-    return kv["nprobe"], kv["alpha"]
-
-
-def is_full_preload(row):
-    return row["system"] == "BoundFetch" and "clu_mode=full_preload" in row["param"]
-
-
-def is_window_ablation(row):
-    return row["system"] == "BoundFetch" and "clu_mode=window" in row["param"]
-
-
-def is_historical_boundfetch(row):
-    return row["system"] == "BoundFetch" and "clu_mode=" not in row["param"]
-
-
-def select_boundfetch_pairs(rows):
-    historical = {}
+def select_historical_full_preload(rows):
+    selected = []
     for row in rows:
-        if is_historical_boundfetch(row):
-            key = boundfetch_key_from_param(row["param"])
-            if key is not None:
-                historical[key] = row
-
-    window = {}
-    for row in rows:
-        if is_window_ablation(row):
-            key = boundfetch_key_from_param(row["param"])
-            if key is not None:
-                window[key] = row
-
-    preload = {}
-    for row in rows:
-        if is_full_preload(row):
-            key = boundfetch_key_from_param(row["param"])
-            if key is not None:
-                preload[key] = row
-
-    paired_original = []
-    paired_preload = []
-    for key, preload_row in preload.items():
-        original_row = window.get(key, historical.get(key))
-        if original_row is None:
+        kv = row["param_kv"]
+        if row["system"] != "BoundFetch":
             continue
-        paired_original.append(original_row)
-        paired_preload.append(preload_row)
-    return sort_by_recall(paired_original), sort_by_recall(paired_preload)
+        if kv.get("clu_mode") != "full_preload":
+            continue
+        if "epsilon" in kv or "index" in kv:
+            continue
+        if kv.get("nprobe") != "200":
+            continue
+        if not row["notes"].startswith("low-load retest"):
+            continue
+        selected.append(row)
+    return sorted(selected, key=lambda r: (r["recall"], r["qps"]))
+
+
+def select_current_rebuild(rows):
+    selected = []
+    for row in rows:
+        kv = row["param_kv"]
+        if row["system"] != "BoundFetch":
+            continue
+        if kv.get("clu_mode") != "full_preload":
+            continue
+        if kv.get("epsilon") != "0.90":
+            continue
+        if kv.get("bits") != "4":
+            continue
+        if kv.get("index") != "eps090_nprobe512_20260416":
+            continue
+        if kv.get("nprobe") != "512":
+            continue
+        selected.append(row)
+    return sorted(selected, key=lambda r: (r["recall"], r["qps"]))
+
+
+def select_baselines(rows):
+    diskann = sorted(
+        [r for r in rows if r["system"] == "DiskANN+FlatStor"],
+        key=lambda r: (r["recall"], r["qps"]),
+    )
+    faiss = sorted(
+        [r for r in rows if r["system"] == "FAISS-IVFPQ+FlatStor"],
+        key=lambda r: (r["recall"], r["qps"]),
+    )
+    return diskann, faiss
+
+
+def annotate_curve(ax, rows, color, alphas):
+    lookup = {r["param_kv"].get("alpha"): r for r in rows}
+    for alpha in alphas:
+        row = lookup.get(alpha)
+        if row is None:
+            continue
+        ax.annotate(
+            f"a={alpha}",
+            (row["recall"], row["qps"]),
+            xytext=(4, 4),
+            textcoords="offset points",
+            fontsize=8,
+            color=color,
+        )
 
 
 def plot_boundfetch(rows):
-    original, preload = select_boundfetch_pairs(rows)
+    historical = select_historical_full_preload(rows)
+    current = select_current_rebuild(rows)
 
     fig, ax = plt.subplots(figsize=(8.8, 5.6))
     ax.plot(
-        [r["recall"] for r in original],
-        [r["qps"] for r in original],
+        [r["recall"] for r in historical],
+        [r["qps"] for r in historical],
         marker="o",
         linewidth=2.0,
         markersize=5.5,
         color="#1f77b4",
-        label="BoundFetch original / window",
+        label="Historical full_preload",
     )
     ax.plot(
-        [r["recall"] for r in preload],
-        [r["qps"] for r in preload],
+        [r["recall"] for r in current],
+        [r["qps"] for r in current],
         marker="s",
-        linewidth=2.0,
+        linewidth=2.2,
         markersize=5.5,
         color="#d62728",
-        label="BoundFetch full_preload",
+        label="eps=0.90, nprobe=512",
     )
 
-    # Draw pairwise arrows so the direction of change is explicit.
-    orig_map = {boundfetch_key_from_param(r["param"]): r for r in original}
-    preload_map = {boundfetch_key_from_param(r["param"]): r for r in preload}
-    for key, orig_row in orig_map.items():
-        pre_row = preload_map.get(key)
-        if pre_row is None:
-            continue
-        ax.annotate(
-            "",
-            xy=(pre_row["recall"], pre_row["qps"]),
-            xytext=(orig_row["recall"], orig_row["qps"]),
-            arrowprops={"arrowstyle": "->", "color": "#555555", "lw": 1.0, "alpha": 0.6},
-        )
+    annotate_curve(ax, historical, "#1f77b4", ["0.01", "0.05", "0.20"])
+    annotate_curve(ax, current, "#d62728", ["0.01", "0.08", "0.20"])
 
-    key_200_005 = ("200", "0.05")
-    anchor_original = orig_map[key_200_005]
-    anchor_preload = preload_map[key_200_005]
-    ax.annotate(
-        "same point before/without preload",
-        (anchor_original["recall"], anchor_original["qps"]),
-        xytext=(-90, 18),
-        textcoords="offset points",
-        fontsize=9,
-        color="#1f77b4",
-        arrowprops={"arrowstyle": "->", "color": "#1f77b4", "lw": 1.0},
-    )
-    ax.annotate(
-        "same point with full_preload",
-        (anchor_preload["recall"], anchor_preload["qps"]),
-        xytext=(10, -18),
-        textcoords="offset points",
-        fontsize=9,
-        color="#d62728",
-        arrowprops={"arrowstyle": "->", "color": "#d62728", "lw": 1.0},
-    )
-
-    ax.set_title("BoundFetch: Matched Original/Window vs Full-Preload")
+    ax.set_title("BoundFetch Pareto Curves: Historical Full-Preload vs eps=0.90, nprobe=512")
     ax.set_xlabel("Recall@10")
     ax.set_ylabel("QPS")
     ax.grid(True, linestyle="--", alpha=0.25)
@@ -159,20 +144,31 @@ def plot_boundfetch(rows):
     plt.close(fig)
 
 
-def pick_boundfetch_best(rows):
-    candidates = [r for r in rows if r["system"] == "BoundFetch"]
-    for row in candidates:
-        if row["param"] == "nlist=2048,nprobe=200,alpha=0.02,epsilon=0.75,bits=4,clu_mode=full_preload":
-            return row
-    raise RuntimeError("BoundFetch epsilon=0.75 representative point not found")
-
-
 def plot_baselines(rows):
-    diskann = sort_by_recall([r for r in rows if r["system"] == "DiskANN+FlatStor"])
-    faiss = sort_by_recall([r for r in rows if r["system"] == "FAISS-IVFPQ+FlatStor"])
-    boundfetch_best = pick_boundfetch_best(rows)
+    historical = select_historical_full_preload(rows)
+    current = select_current_rebuild(rows)
+    diskann, faiss = select_baselines(rows)
 
     fig, ax = plt.subplots(figsize=(8.8, 5.6))
+    ax.plot(
+        [r["recall"] for r in historical],
+        [r["qps"] for r in historical],
+        marker="o",
+        linewidth=2.0,
+        markersize=5.0,
+        color="#1f77b4",
+        label="Historical full_preload",
+        alpha=0.75,
+    )
+    ax.plot(
+        [r["recall"] for r in current],
+        [r["qps"] for r in current],
+        marker="s",
+        linewidth=2.4,
+        markersize=5.5,
+        color="#d62728",
+        label="BoundFetch eps=0.90, nprobe=512",
+    )
     ax.plot(
         [r["recall"] for r in diskann],
         [r["qps"] for r in diskann],
@@ -191,47 +187,29 @@ def plot_baselines(rows):
         color="#9467bd",
         label="FAISS-IVFPQ+FlatStor",
     )
-    ax.scatter(
-        [boundfetch_best["recall"]],
-        [boundfetch_best["qps"]],
-        marker="D",
-        s=70,
-        color="#d62728",
-        label="BoundFetch epsilon=0.75 anchor",
-        zorder=5,
-    )
 
-    diskann_best_qps = max(diskann, key=lambda r: r["qps"])
-    faiss_best_recall = max(faiss, key=lambda r: r["recall"])
+    current_best = next(r for r in current if r["param_kv"].get("alpha") == "0.01")
+    historical_best = next(r for r in historical if r["param_kv"].get("alpha") == "0.01")
     ax.annotate(
-        "DiskANN best-QPS point",
-        (diskann_best_qps["recall"], diskann_best_qps["qps"]),
-        xytext=(8, 10),
-        textcoords="offset points",
-        fontsize=9,
-        color="#2ca02c",
-        arrowprops={"arrowstyle": "->", "color": "#2ca02c", "lw": 1.0},
-    )
-    ax.annotate(
-        "FAISS recall ceiling",
-        (faiss_best_recall["recall"], faiss_best_recall["qps"]),
-        xytext=(-90, -18),
-        textcoords="offset points",
-        fontsize=9,
-        color="#9467bd",
-        arrowprops={"arrowstyle": "->", "color": "#9467bd", "lw": 1.0},
-    )
-    ax.annotate(
-        "BoundFetch epsilon=0.75 anchor",
-        (boundfetch_best["recall"], boundfetch_best["qps"]),
-        xytext=(-110, 12),
+        "BoundFetch eps=0.90, nprobe=512, a=0.01",
+        (current_best["recall"], current_best["qps"]),
+        xytext=(-110, 10),
         textcoords="offset points",
         fontsize=9,
         color="#d62728",
         arrowprops={"arrowstyle": "->", "color": "#d62728", "lw": 1.0},
     )
+    ax.annotate(
+        "Historical full_preload a=0.01",
+        (historical_best["recall"], historical_best["qps"]),
+        xytext=(-10, -18),
+        textcoords="offset points",
+        fontsize=9,
+        color="#1f77b4",
+        arrowprops={"arrowstyle": "->", "color": "#1f77b4", "lw": 1.0},
+    )
 
-    ax.set_title("BoundFetch vs Baselines: Recall vs QPS")
+    ax.set_title("Pareto Comparison: eps=0.90, nprobe=512 vs Historical Full-Preload and Baselines")
     ax.set_xlabel("Recall@10")
     ax.set_ylabel("QPS")
     ax.grid(True, linestyle="--", alpha=0.25)

@@ -1,6 +1,6 @@
 # Experiment Tracker
 
-**Date**: 2026-04-15
+**Date**: 2026-04-16
 **System**: BoundFetch
 **Protocol**: Warm steady-state only
 
@@ -20,6 +20,20 @@
 - For the `recall@10 >= 0.95` region, the next BoundFetch optimization target is the CPU-side probe / verification path.
 - The main paper comparison should now shift toward synchronized IVF-family baselines, while keeping DiskANN as a strong graph upper-bound reference rather than the only primary target.
 - Dataset expansion is needed, but only after the COCO 100K comparison story stabilizes.
+
+## 2026-04-16 Main-Curve Update
+
+- The current main curve is now `epsilon=0.90, nprobe=512, bits=4, clu_mode=full_preload`.
+- The current top-recall BoundFetch point is `alpha=0.01`: `0.9887 / 1.5114ms / 2.2997ms`.
+- The current practical high-recall point is `alpha=0.05`: `0.9694 / 1.4785ms / 2.3044ms`.
+- On this refreshed curve, BoundFetch clearly dominates the reported FAISS-IVFPQ baseline and has moved into point-by-point comparison territory with DiskANN.
+- R067 indicates that further CPU work should target `QuantizeQuery14Bit`, `PrepareQueryRotatedInto`, and probe itself rather than rerank or `.clu` I/O.
+
+## Current Ownership Split
+
+- **This workstream**: further BoundFetch method optimization.
+- **Parallel workstream**: all baseline experiments and their maintenance.
+- Baseline-related rows below therefore remain as status records and input context, not as the active execution checklist for this workstream.
 
 ## Synchronization Rule
 
@@ -102,38 +116,38 @@
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R057 | M7 | Main search-core table | Choose main backend policy | coco_100k | comparability note | MUST | TODO | Prefer shared `Lance` backend if feasible |
-| R058 | M7 | Main search-core table | BoundFetch best preload point on chosen policy | coco_100k | recall@10, e2e_ms, p99_ms, build_time | MUST | TODO | Main table point |
-| R059 | M7 | Main search-core table | IVF+PQ or IVF+RQ on chosen policy | coco_100k | recall@10, e2e_ms, p99_ms, build_time | MUST | TODO | Lower classical baseline |
-| R060 | M7 | Main search-core table | DiskANN on chosen policy or as `DiskANN+FlatStor` upper reference | coco_100k | recall@10, e2e_ms, p99_ms, build_time | MUST | TODO | Must remain in scope |
-| R061 | M7 | Storage ablation | BoundFetch across `FlatStor` and `Lance` | coco_100k | recall@10, e2e_ms, startup_time, file_size | MUST | TODO | Start with 2 backends only |
-| R062 | M7 | Storage ablation | IVF baseline across `FlatStor` and `Lance` | coco_100k | recall@10, e2e_ms, startup_time, file_size | MUST | TODO | Separate backend effect from search-core effect |
-| R063 | M7 | Optional storage ablation | Add `Parquet` if integration is cheap | coco_100k | recall@10, e2e_ms, startup_time, file_size | NICE | TODO | Do not block the main story |
+| R057 | M7 | Main search-core table | Choose main backend policy | coco_100k | comparability note | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R058 | M7 | Main search-core table | BoundFetch best preload point on chosen policy | coco_100k | recall@10, e2e_ms, p99_ms, build_time | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R059 | M7 | Main search-core table | IVF+PQ or IVF+RQ on chosen policy | coco_100k | recall@10, e2e_ms, p99_ms, build_time | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R060 | M7 | Main search-core table | DiskANN on chosen policy or as `DiskANN+FlatStor` upper reference | coco_100k | recall@10, e2e_ms, p99_ms, build_time | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R061 | M7 | Storage ablation | BoundFetch across `FlatStor` and `Lance` | coco_100k | recall@10, e2e_ms, startup_time, file_size | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R062 | M7 | Storage ablation | IVF baseline across `FlatStor` and `Lance` | coco_100k | recall@10, e2e_ms, startup_time, file_size | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R063 | M7 | Optional storage ablation | Add `Parquet` if integration is cheap | coco_100k | recall@10, e2e_ms, startup_time, file_size | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
 
 ## M8: Build and Startup Cost Table
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R064 | M8 | Build-cost table | BoundFetch build and preload cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | MUST | TODO | Needed even if DiskANN still wins serving |
-| R065 | M8 | Build-cost table | DiskANN build and startup cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | MUST | TODO | Strong comparison axis |
-| R066 | M8 | Build-cost table | IVF-family baseline build and startup cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | MUST | TODO | Completes tradeoff table |
+| R064 | M8 | Build-cost table | BoundFetch build and preload cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | PARALLEL | DONE | Results are summarized in `analysis.md`; maintained by the baseline workstream |
+| R065 | M8 | Build-cost table | DiskANN build and startup cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | PARALLEL | EXTERNAL | Maintained by the baseline workstream |
+| R066 | M8 | Build-cost table | IVF-family baseline build and startup cost | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | PARALLEL | DONE | Results are summarized in `analysis.md`; maintained by the baseline workstream |
 
 ## M9: CPU-Side BoundFetch Optimization
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
 | R067 | M9 | Hot-path profiling refresh | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | MUST | DONE | New main anchor: `0.9519 / 1.772ms / 2.078ms`; `perf` shows query-side CPU is dominated by `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`, while whole-benchmark top sample is still GT `L2Sqr` |
-| R068 | M9 | CPU optimization pass 1 | BoundFetch + reduced duplicate decode / checks | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Keep search semantics fixed |
-| R069 | M9 | CPU optimization pass 2 | BoundFetch + data-layout / SIMD-friendly probe improvements | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Only proceed if R068 moves the profile in the right direction |
-| R070 | M9 | CPU optimization pass 3 | BoundFetch + candidate materialization / rerank reduction | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | MUST | TODO | Stop if gains are negligible |
+| R068 | M9 | CPU optimization pass 1 | BoundFetch + tighter per-query preparation | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Directly target `QuantizeQuery14Bit` and `PrepareQueryRotatedInto` without changing search semantics |
+| R069 | M9 | CPU optimization pass 2 | BoundFetch + SIMD-friendly query/probe layout | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | MUST | TODO | Only continue if R068 clearly reduces query-prep cost |
+| R070 | M9 | CPU optimization pass 3 | BoundFetch + candidate materialization tightening only if needed | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | MUST | TODO | Lowest priority; skip if rerank remains near 0.01ms |
 
 ## M10: Synchronized IVF-Family Pareto
 
 | Run ID | Milestone | Purpose | System / Variant | Split | Metrics | Priority | Status | Notes |
 |--------|-----------|---------|------------------|-------|---------|----------|--------|-------|
-| R071 | M10 | Baseline curve | Re-tuned FAISS-IVFPQ under final warm protocol | coco_100k | recall@10, e2e_ms, p99_ms | MUST | TODO | Refresh curve with the same reporting pipeline as BoundFetch |
-| R072 | M10 | Baseline curve | IVF+RQ or ConANN synchronized sweep | coco_100k | recall@10, e2e_ms, p99_ms | MUST | TODO | Choose the cheapest credible second IVF-family baseline |
-| R073 | M10 | Consolidated IVF-family figure | BoundFetch + FAISS + IVF+RQ/ConANN | coco_100k | non-dominated points | MUST | TODO | This becomes the main family-comparison Pareto figure |
+| R071 | M10 | Baseline curve | Re-tuned FAISS-IVFPQ under final warm protocol | coco_100k | recall@10, e2e_ms, p99_ms | PARALLEL | DONE | BoundFetch now dominates the full reported FAISS range; maintained by the baseline workstream |
+| R072 | M10 | Baseline curve | IVF+RQ or ConANN synchronized sweep | coco_100k | recall@10, e2e_ms, p99_ms | PARALLEL | DONE | Synchronized baseline tuning is complete; maintained by the baseline workstream |
+| R073 | M10 | Consolidated IVF-family figure | BoundFetch + FAISS + IVF+RQ/ConANN | coco_100k | non-dominated points | PARALLEL | DONE | Supports the “BoundFetch leads the IVF-family frontier” claim; maintained by the baseline workstream |
 
 ## M11: Dataset Expansion
 
@@ -162,21 +176,22 @@
 
 ## Current Interpretation
 
-- Current best practical BoundFetch preload-on tradeoff: `nprobe=200, alpha=0.05` at `0.9346 / 1.609ms / 1.946ms`
-- Current main-table / Pareto anchor: corrected `bits=4`, `nprobe=200`, `alpha=0.02`, `epsilon=0.75` at `0.9519 / 1.772ms / 2.078ms`
-- Current best practical BoundFetch preload-on high-recall point: corrected `bits=4`, `nprobe=200`, `alpha=0.02`, `epsilon=0.85` at `0.9556 / 1.857ms / 2.259ms`
-- Current stronger preload-on high-recall point: `nprobe=200, alpha=0.01` at `0.9640 / 2.366ms / 2.830ms`
+- Current main-table / Pareto anchor: `bits=4`, `epsilon=0.90`, `nprobe=512`, `alpha=0.05` at `0.9694 / 1.4785ms / 2.3044ms`
+- Current top-recall point: `bits=4`, `epsilon=0.90`, `nprobe=512`, `alpha=0.01` at `0.9887 / 1.5114ms / 2.2997ms`
+- Current second high-recall point: `bits=4`, `epsilon=0.90`, `nprobe=512`, `alpha=0.02` at `0.9848 / 1.5098ms / 2.3033ms`
+- Corrected `bits=4`, `nprobe=200`, `epsilon=0.75~0.85` curves now serve as the reproducible epsilon-mechanism reference rather than the main comparison figure
 - Current strongest DiskANN point in the low-latency region: `L_search=5` at `0.993 / 1.159ms / 1.901ms`
 - Current practical conclusion:
   - BoundFetch beats the observed IVF-family baselines
-  - `full_preload` is worth keeping, but it does not remove the high-recall gap to DiskANN
-  - the next low-level lever is CPU-side search cost, not more cluster-side I/O-path work
-  - synchronized IVF-family tuning is now higher priority than broader dataset expansion
+  - `full_preload` is worth keeping, but it is no longer the main performance lever
+  - BoundFetch is now close enough to DiskANN that the comparison should be made point-by-point rather than by coarse recall bands
+  - the next low-level lever is query-prep / probe CPU cost, not more cluster-side I/O-path work
+  - baseline results are now fixed inputs for this method-optimization workstream
   - runtime FastScan epsilon is confirmed to be a build-time property of the index, not a query-time override knob
   - the earlier `index_fkmeans_2048_eps*` sweep was accidentally rebuilt as `bits=1`, so it is only a debugging record and not the final serving conclusion
   - the corrected `bits=4` sweep shows epsilon changes both Stage 1 `safe_out` volume and real Stage 2 load
   - reusable `fkmeans` clustering artifacts are now exported, so the next epsilon Pareto refresh can stay on the historical clustering and the intended `bits=4` path
-  - on the new `epsilon=0.75` anchor, measured query CPU is still the bottleneck: `probe_ms=1.500`, `uring_submit_ms=0.089`, `rerank_cpu_ms=0.012`, and the main query-side hotspots are per-query preparation (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) rather than `.clu` I/O
+  - measured query CPU is still the bottleneck: `probe_ms` remains far above `uring_submit_ms` and `rerank_cpu_ms`, and the main query-side hotspots are per-query preparation (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) plus probe itself rather than `.clu` I/O
 
 ## Decision Constraints
 

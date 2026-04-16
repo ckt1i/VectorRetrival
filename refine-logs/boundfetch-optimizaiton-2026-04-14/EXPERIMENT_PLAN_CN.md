@@ -1,24 +1,30 @@
 # 实验计划
 
-**问题**：在完成同步暖服务调优和 `.clu` 全量预加载后，BoundFetch 已明显优于 IVF+PQ+FlatStor 系列，但在 COCO 100K 的 `recall@10 >= 0.95` 区间仍落后于调优后的 DiskANN+FlatStor。
-**方法论文**：`.clu` 预加载是有效且值得保留的优化，但它本身并不能补齐与 DiskANN 的剩余差距。下一阶段应拆成三条线：公平同步的 IVF 家族基线、面向 BoundFetch 的 CPU 侧定向优化，以及超出 COCO 100K 的分阶段扩展验证。
-**日期**：2026-04-15
+**问题**：在完成同步暖服务调优、`.clu` 全量预加载、`bits=4` 重建校正和 `epsilon=0.90, nprobe=512` 主曲线刷新后，BoundFetch 已在 COCO 100K 上进入 `0.97-0.99` 高召回区间。当前需要继续优化方法本身，在不改变搜索语义的前提下进一步压缩 query-prep / probe 的 CPU 成本。
+**方法论文**：当前工作流的主线已经收束为“在固定的 baseline 证据输入下，对 BoundFetch 做有限轮次的 CPU 热路径优化”。baseline 实验改由并行任务维护；本计划只覆盖方法继续优化、复测和后续扩展验证。
+**日期**：2026-04-16
+
+## 当前分工
+
+- **本任务负责**：BoundFetch 方法继续优化，重点是 query-prep / probe CPU 热路径。
+- **并行任务负责**：继续运行、补齐和维护所有 baseline 实验及其图表/表格。
+- **本计划中的 baseline 相关内容**：只作为外部输入和对照条件保留，不再作为本任务的执行清单。
 
 ## 声明映射表
 
 | 声明 | 重要性 | 最小可信证据 | 关联块 |
 |-------|----------------|-----------------------------|---------------|
 | C1 | 暖驻 `.clu` 聚类侧状态预加载是有效优化，但已不再是主要缺失杠杆。 | 预加载保持召回语义不变并改善延迟，但在高召回区间与 DiskANN 的差距仍然存在。 | B1, B2 |
-| C2 | BoundFetch 下一步最重要的优化目标应是 probe / verification 的 CPU 成本，而不是继续做 cluster submit-path 微调。 | 机制分析和 preload 重测表明 cluster 侧 submit/parse 开销已基本移除，而高召回延迟仍显著落后于 DiskANN。 | B3 |
-| C3 | DiskANN 应继续保留为图算法上界参考，但主方法声明应优先在同步调参后的 IVF 家族基线中建立。 | 用 IVF 家族对照主表，再辅以单独的 DiskANN 参考表，更符合 BoundFetch 的快速构建和未来动态更新定位。 | B4, B5, B6 |
+| C2 | BoundFetch 下一步最重要的优化目标应是 query-prep / probe 的 CPU 热路径，而不是继续做 cluster submit-path 微调。 | R067 和后续 corrected `bits=4` sweep 表明 `.clu` I/O 与 rerank 都不是主要瓶颈，热点集中在 `QuantizeQuery14Bit`、`PrepareQueryRotatedInto` 与 probe 本身。 | B3 |
+| C3 | baseline 结果应作为固定输入支撑当前方法优化，而不是继续占用本任务的主要执行预算。 | 现有主曲线已经足够说明 BoundFetch 的当前位置；后续 baseline 扩展由并行任务维护，本任务只消费这些结果。 | B4, B5, B6 |
 
 ## 论文故事线
 - 主论文必须证明：
   - 暖稳态 E2E 服务仍然是正确的评估目标
   - `.clu` preload 是已经完成且有效的优化，而不是最终答案
-  - 下一步有意义的 BoundFetch 优化是 probe / verification 的 CPU 侧效率，而非更多盲目的 `io_uring` 微调
-  - 在统一暖协议下，BoundFetch 仍明显强于同步调参后的 IVF 家族基线
-  - DiskANN 仍是强图算法上界参考，但不应成为唯一需要正面击败的主轴
+  - 下一步有意义的 BoundFetch 优化是 query-prep / probe 的 CPU 侧效率，而非更多盲目的 `io_uring` 微调
+  - 在固定 baseline 结果输入下，BoundFetch 的下一步提升应来自方法本身，而不是更多对比实验
+  - DiskANN 与 IVF 家族结果保留为外部参考，但不再是本任务的执行主体
 - 附录可支撑：
   - 额外的存储后端变体
   - 残余队列深度或模式敏感性检查
@@ -108,7 +114,7 @@
 
 ### 块 3：BoundFetch 的 CPU 侧优化
 - 测试声明：C2
-- 为什么存在此块：在 preload 完成后，剩余差距最可能来自 probe / verification 的 CPU 成本，尤其是在 `recall@10 = 0.95` 以上区间。
+- 为什么存在此块：在 preload 完成后，剩余差距最可能来自 query-prep / probe 的 CPU 成本，尤其是在 `recall@10 = 0.98` 左右的高召回区间。
 - 数据集/分割/任务：`coco_100k`，top-k=10，暖稳态服务，`queries=1000`
 - 对比系统：
   - BoundFetch 当前最佳 preload 设置
@@ -122,24 +128,24 @@
   - 扫描/验证候选数
 - 设置细节：
   - 固定 `clu_mode=full_preload`
-  - 以两个高价值工作点为锚点：
-    - `nlist=2048, nprobe=200, alpha=0.02`
-    - `nlist=2048, nprobe=200, alpha=0.01`
-  - 仅实现那些能在不改变搜索语义下减少 per-cluster 或 per-candidate CPU 开销的改动
+  - 以当前主曲线的两个高价值工作点为锚点：
+    - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.02`
+    - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.01`
+  - 仅实现那些能在不改变搜索语义下减少 query-prep 或 per-cluster probe CPU 开销的改动
   - 候选方向包括：
-    - 降低重复 decode / bound-check 工作
-    - 优化 probe 阶段的数据布局和 SIMD 友好性
-    - 缩减 candidate materialization 与 rerank 代价
-    - 将 payload 请求准备与 probe 计算进一步重叠
+    - 消除 `QuantizeQuery14Bit` 和 `PrepareQueryRotatedInto` 的重复工作
+    - 优化 query buffer / probe 数据布局和 SIMD 友好性
+    - 减少 probe 路径中的重复 decode / bound-check
+    - 仅在前两项完成后，才考虑 candidate materialization 与 rerank
 - 成功标准：
-  - 至少有一个 `recall@10 >= 0.95` 的工作点在不改变召回语义下明显向 DiskANN 靠近
+  - 至少有一个 `recall@10 >= 0.98` 的工作点在不改变召回语义下明显向 DiskANN 靠近
 - 失败解释：
-  - 如果 CPU 侧调优无法实质推动 `>=0.95` 区间，就停止继续追逐 DiskANN 的暖延迟
+  - 如果 CPU 侧调优无法实质推动 `>=0.98` 区间，就停止继续追逐 DiskANN 的暖延迟
 - 表格/图形目标：
   - 机制表 + 刷新的高召回 Pareto
 - 优先级：必须运行
 
-### 块 4：同步 IVF 家族基线
+### 块 4：同步 IVF 家族基线（并行任务维护）
 - 测试声明：C3
 - 为什么存在此块：在继续追 DiskANN 之前，需要先证明 BoundFetch 在它最自然的同类方法中处于什么位置。
 - 数据集/分割/任务：`coco_100k`，代表性暖服务工作点
@@ -165,9 +171,9 @@
   - 如果另一个 IVF 家族方法支配 BoundFetch，应先解释并修复这一差距，再考虑扩数据集
 - 表格/图形目标：
   - 主 Pareto 图中的 IVF 家族对比
-- 优先级：必须运行
+- 优先级：并行任务
 
-### 块 5：DiskANN 参考与成本表
+### 块 5：DiskANN 参考与成本表（并行任务维护）
 - 测试声明：C3
 - 为什么存在此块：DiskANN 应该继续保留，但更适合作为强图算法参考，再配合构建/启动成本形成完整权衡。
 - 数据集/分割/任务：`coco_100k`
@@ -193,9 +199,9 @@
   - 如果 BoundFetch 在构建和启动成本上也输了，论文范围必须再次缩小
 - 表格/图形目标：
   - 主成本表 + 次级 DiskANN 参考图
-- 优先级：必须运行
+- 优先级：并行任务
 
-### 块 6：存储后端消融
+### 块 6：存储后端消融（并行任务维护）
 - 测试声明：C3
 - 为什么存在此块：必须把搜索核心效应和后端格式效应拆开，否则结论会显得混淆。
 - 数据集/分割/任务：`coco_100k`，代表性暖服务工作点
@@ -216,7 +222,7 @@
   - 如果代价过高，缩成 `FlatStor` vs `Lance` 或移到附录
 - 表格/图形目标：
   - 附录存储后端表
-- 优先级：可选
+- 优先级：并行任务
 
 ### 块 7：超出 COCO 100K 的通用性检查
 - 测试声明：仅支撑证据
@@ -249,11 +255,9 @@
 |--------|------|------|---------------|------|------|
 | M0 | 在 preload 和重测后重新锚定文档 | 更新报告、计划和追踪器 | 所有未来运行使用新的 post-preload 策略 | 0.5 天 | 低 |
 | M1 | 将 preload 视为已完成优化并封板 | 块 1 和 2 | 除非出现新证据，否则不再重启 submit-path 调优 | 0.5-1 天 | 低 |
-| M2 | 判断 CPU 调优是否仍值得继续 | 块 3 | 若 `recall@10 >= 0.95` 区间无法明显推进，则停止继续追逐 DiskANN | 1-3 天 | 中 |
-| M3 | 完成同步 IVF 家族 Pareto 曲线 | 块 4 | 在更大范围扩展前，BoundFetch 必须先胜过最强 IVF 家族对手 | 1-3 天 | 中 |
-| M4 | 保留 DiskANN 参考并补齐成本证据 | 块 5 | 若 BoundFetch 在服务和构建/启动上都落后，则收缩故事 | 1-2 天 | 中 |
-| M5 | 仅在主比较稳定后再分离后端效应 | 块 6 | 通过缩范围而不是扩矩阵来控制工作量 | 1-2 天 | 中 |
-| M6 | 添加轻量级通用性支撑 | 块 7 | 只在 M1-M5 已支撑论文时运行 | 2-4 天 | 中 |
+| M2 | 判断 CPU 调优是否仍值得继续 | 块 3 | 若 `recall@10 >= 0.98` 区间无法明显推进，则停止继续追逐 DiskANN | 1-3 天 | 中 |
+| M3 | 消费并行 baseline 结果，维护主比较结论 | 块 4 和 5 | baseline 结果由并行任务提供，本任务不阻塞其执行 | 0.5-1 天 | 低 |
+| M4 | 仅在方法线稳定后再做扩展验证 | 块 7 | 只在 M1-M3 已稳定后运行 | 2-4 天 | 中 |
 
 ## 计算与数据预算
 - 预计 GPU 小时：0

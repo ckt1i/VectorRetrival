@@ -1,22 +1,129 @@
 # Warm Serving Evaluation Analysis
 
-**Date**: 2026-04-15
+**Date**: 2026-04-16
 **System**: BoundFetch
 **Dataset**: COCO 100K
 **Protocol**: Warm steady-state only
 
 ## Executive Summary
 
-This analysis covers the warm steady-state evaluation of BoundFetch on COCO 100K, including:
-1. Main Pareto curve characterization
-2. Mechanism attribution at optimal operating points
-3. Extended crc_alpha ablation for recall improvement
+This document now contains three result blocks:
+1. Historical warm `full_preload` points collected before the rebuild investigation
+2. The reproducible `nprobe=200` rebuild sweeps used to isolate epsilon effects
+3. The current main comparison curve: `epsilon=0.90`, `nprobe=512`, `bits=4`, `clu_mode=full_preload`
 
-**Key Finding**: Setting `crc_alpha=0.05` instead of the default `0.1` improves recall@10 from 0.9021 to 0.9346 (+3.2%) with only 7.2% latency increase, and significantly improves p99 latency from 2.493ms to 1.855ms (-25.6%).
+**Current main curve**: the latest comparison uses `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90_rebuild_20260415_epssweep` and reruns `crc-alpha ∈ {0.01,0.02,0.05,0.08,0.10,0.15,0.20}` at `nprobe=512`.
 
-**New Update**: At the same `nlist=2048, nprobe=200, crc_alpha=0.05` operating point, switching `.clu` loading from `window` to `full_preload` preserves recall@10 at `0.9346` and reduces average query latency from `2.1224ms` to `1.6860ms` (-20.6%). The measured preload cost is `78.4ms` and `120.5MB` of resident `.clu` data.
+**Current best recall point**: `alpha=0.01` reaches `recall@10=0.9887` at `1.5114 ms` average latency and `2.2997 ms` p99.
 
-**Low-load retest update**: After rerunning the same workload under a low-load machine state, the preload result remains stable and the earlier `window` slowdown is confirmed to be environment noise rather than a method regression. On the low-load retest at `nprobe=200, crc_alpha=0.05`, `window` reports `recall@10=0.9346`, `avg_ms=2.125`, `p99_ms=2.487`, while `full_preload` reports `recall@10=0.9346`, `avg_ms=1.588`, `p99_ms=1.931`, with `preload_time_ms=67.588` and `preload_bytes=120459264`.
+**Current practical high-recall tradeoff**: `alpha=0.05` reaches `recall@10=0.9694` at `1.4785 ms`.
+
+**Comparison summary**:
+- Against the earlier `nprobe=200` rebuild curves, `nprobe=512` closes most of the recall gap and moves BoundFetch into the `0.97-0.99` regime.
+- Against `FAISS-IVFPQ+FlatStor`, the new curve still dominates the whole reported baseline range.
+- Against `DiskANN+FlatStor`, BoundFetch still trails at the very top end, but the gap is now narrow enough that the comparison should be made point-by-point rather than by recall band alone.
+
+---
+
+## 0. Current Main Curve (`epsilon=0.90`, `nprobe=512`, `bits=4`)
+
+### Fixed Build and Evaluation Protocol
+
+- dataset: `coco_100k`
+- rebuilt index dir: `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90_rebuild_20260415_epssweep`
+- `nprobe=512`
+- `queries=1000`
+- `clu_mode=full_preload`
+- `crc-alpha={0.01,0.02,0.05,0.08,0.10,0.15,0.20}`
+
+### Sweep Results
+
+| crc-alpha | recall@10 | avg_ms | p99_ms |
+|-----------|-----------|--------|--------|
+| 0.01 | 0.9887 | 1.5114 | 2.2997 |
+| 0.02 | 0.9848 | 1.5098 | 2.3033 |
+| 0.05 | 0.9694 | 1.4785 | 2.3044 |
+| 0.08 | 0.9194 | 0.6906 | 1.4584 |
+| 0.10 | 0.9059 | 0.6661 | 1.4146 |
+| 0.15 | 0.8685 | 0.6073 | 1.3383 |
+| 0.20 | 0.8342 | 0.5554 | 1.2663 |
+
+### Position Relative to Baselines
+
+1. `alpha=0.01` and `0.02` push BoundFetch to `0.985-0.989` recall, which is now close to the lower end of the DiskANN sweep.
+2. At these high-recall points, BoundFetch average latency is about `1.51 ms`, compared with DiskANN's `1.11-1.40 ms` in the `0.993-0.995` range.
+3. The new curve remains strictly better than FAISS on both recall and latency.
+4. The useful interpretation is now:
+   - `alpha=0.01/0.02/0.05`: high-recall comparison region
+   - `alpha=0.08+`: lower-latency operating region
+
+### Updated Baseline Comparison
+
+| System | recall@10 | avg_ms | Notes |
+|--------|-----------|--------|-------|
+| **BoundFetch (`epsilon=0.90`, `nprobe=512`, `alpha=0.01`)** | **0.9887** | **1.5114** | Current highest-recall BoundFetch point |
+| BoundFetch (`epsilon=0.90`, `nprobe=512`, `alpha=0.05`) | 0.9694 | 1.4785 | Current high-recall tradeoff point |
+| DiskANN+FlatStor (`L_search=1`) | 0.9930 | 1.1090 | Faster and slightly higher recall |
+| DiskANN+FlatStor (`L_search=15`) | 0.9950 | 1.3953 | Similar latency, higher recall |
+| FAISS-IVFPQ+FlatStor (`nprobe=32`) | 0.7470 | 1.3167 | Dominated by BoundFetch |
+
+The current `baselines_recall_qps.svg` should therefore be read as a high-recall comparison figure centered on the `epsilon=0.90, nprobe=512` BoundFetch curve.
+
+---
+
+## 0A. Phase1-Revert Sweep (`epsilon=0.75`, `nlist=2048`, `bits=4`)
+
+### Fixed Build and Evaluation Protocol
+
+- dataset: `coco_100k`
+- rebuilt index dir: `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75`
+- `nprobe=200`
+- `queries=1000`
+- `clu_mode=full_preload`
+- `crc-alpha={0.01,0.02,0.03,0.04,0.05,0.07,0.10,0.15,0.20}`
+
+### Reproducible Alpha Sweep
+
+| crc-alpha | recall@10 | avg_ms | p99_ms | preload_time_ms |
+|-----------|-----------|--------|--------|-----------------|
+| 0.01 | 0.9505 | 0.7190 | 0.9249 | 12.4895 |
+| 0.02 | 0.9467 | 0.7119 | 0.9716 | 12.6350 |
+| 0.03 | 0.9417 | 0.7008 | 0.9059 | 12.6915 |
+| 0.04 | 0.9381 | 0.6961 | 0.9104 | 12.5229 |
+| 0.05 | 0.9322 | 0.7047 | 0.9788 | 12.5600 |
+| 0.07 | 0.9217 | 0.5851 | 0.9064 | 12.2937 |
+| 0.10 | 0.9016 | 0.5550 | 0.9022 | 12.2982 |
+| 0.15 | 0.8675 | 0.5145 | 0.9107 | 12.4223 |
+| 0.20 | 0.8334 | 0.4818 | 0.9124 | 12.4999 |
+
+### Direct Comparison to Historical `full_preload`
+
+The most useful matched comparison is against the earlier low-load `full_preload` points at the same `nprobe=200` alpha settings:
+
+| alpha | historical recall@10 / avg_ms | phase1-revert recall@10 / avg_ms | delta recall | speedup |
+|-------|-------------------------------|------------------------------------|--------------|---------|
+| 0.01 | 0.9640 / 2.3660 | 0.9505 / 0.7190 | -0.0135 | 3.29x |
+| 0.02 | 0.9551 / 2.3440 | 0.9467 / 0.7119 | -0.0084 | 3.29x |
+| 0.05 | 0.9346 / 1.6090 | 0.9322 / 0.7047 | -0.0024 | 2.28x |
+| 0.10 | 0.9021 / 1.4580 | 0.9016 / 0.5550 | -0.0005 | 2.63x |
+| 0.15 | 0.8180 / 0.8310 | 0.8675 / 0.5145 | +0.0495 | 1.62x |
+| 0.20 | 0.7578 / 0.6790 | 0.8334 / 0.4818 | +0.0756 | 1.41x |
+
+Interpretation:
+
+1. The current rollback curve is now the operational Pareto curve for the reproducible pipeline.
+2. In the high-recall region (`alpha=0.01-0.05`), the rollback curve is much faster but gives up some recall relative to the historical stage.
+3. In the low-recall region (`alpha=0.15-0.20`), the rollback curve is both faster and higher recall than the historical points.
+4. Rolling Phase2 back does not materially change the `epsilon=0.75` frontier shape relative to the earlier investigation; it mainly confirms that the currently observed curve is stable under a clean rebuild of the restored layout.
+5. This rollback curve is now best treated as a diagnostic reference, not as the main figure for baseline comparison.
+
+### Comparison with the Two Baselines
+
+1. The rollback BoundFetch curve is strictly better than `FAISS-IVFPQ+FlatStor` on the reported warm points: it delivers both higher recall and higher QPS across the full FAISS sweep.
+2. The rollback curve does not catch `DiskANN+FlatStor` in absolute recall. DiskANN still occupies the `0.993-0.999` recall band, while the rollback BoundFetch curve tops out at `0.9505`.
+3. In the `0.83-0.95` recall band that is actually covered by the rollback BoundFetch curve, BoundFetch remains substantially faster than the tuned DiskANN points.
+
+The remaining sections below are kept as historical mechanism and preload notes. The new figures and the main comparison table now use the fixed rebuilt index sweep above as the current curve.
 
 ---
 
@@ -237,6 +344,58 @@ The benchmark now records:
 - `resolved_index_dir`
 - `loaded_eps_ip`
 - `loaded_d_k`
+
+---
+
+## 7. Epsilon × CRC-Alpha Sweep on Freshly Rebuilt Indexes
+
+We rebuilt five fixed-epsilon indexes under:
+
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.75_rebuild_20260415_epssweep`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.80_rebuild_20260415_epssweep`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.90_rebuild_20260415_epssweep`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.95_rebuild_20260415_epssweep`
+- `/home/zcq/VDB/test/data/COCO100k/index_fkmeans_2048_bits4_eps0.99_rebuild_20260415_epssweep`
+
+For each rebuilt index we reran the same `crc-alpha` grid:
+
+`{0.01, 0.02, 0.03, 0.04, 0.05, 0.07, 0.10, 0.15, 0.20}`
+
+with fixed:
+
+- `nlist=2048`
+- `bits=4`
+- `nprobe=200`
+- `queries=1000`
+- `clu_mode=full_preload`
+
+### High-Recall End (`alpha=0.01`)
+
+| epsilon | recall@10 | avg_ms | p99_ms |
+|---------|-----------|--------|--------|
+| 0.75 | 0.9505 | 0.7016 | 0.9065 |
+| 0.80 | 0.9523 | 0.7218 | 0.9436 |
+| 0.90 | 0.9536 | 0.8140 | 1.1098 |
+| 0.95 | 0.9539 | 0.8952 | 1.2016 |
+| 0.99 | 0.9541 | 1.0679 | 1.3492 |
+
+### Main Findings
+
+1. Raising `epsilon` from `0.75` to `0.80` is the cheapest way to recover some recall.
+   - `recall@10`: `0.9505 -> 0.9523`
+   - `avg_ms`: `0.7016 -> 0.7218`
+2. Going beyond `0.90` has rapidly diminishing returns.
+   - `0.90 -> 0.99` only adds `+0.0005` recall at `alpha=0.01`
+   - but `avg_ms` increases from `0.8140 -> 1.0679`
+3. The full Pareto curves shift mostly in parallel.
+   - Lower epsilon gives the faster curve
+   - Higher epsilon gives a slightly higher recall ceiling
+4. In the current reproducible chain, `epsilon=0.80` or `0.90` are the most reasonable follow-up choices if the goal is to trade a modest latency increase for a small recall recovery.
+
+The full sweep is stored in:
+
+- [boundfetch_epsilon_alpha_sweep.csv](/home/zcq/VDB/VectorRetrival/baselines/results/boundfetch_epsilon_alpha_sweep.csv)
+- [boundfetch_epsilon_pareto.svg](/home/zcq/VDB/VectorRetrival/baselines/results/boundfetch_epsilon_pareto.svg)
 
 ### Control Check: Reused Index Ignores Query-Time Override
 

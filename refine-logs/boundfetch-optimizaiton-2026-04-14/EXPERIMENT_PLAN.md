@@ -1,24 +1,30 @@
 # Experiment Plan
 
-**Problem**: After synchronized warm-serving tuning and `.clu` full preload, BoundFetch is clearly stronger than the IVF+PQ+FlatStor family but is still dominated by tuned DiskANN+FlatStor on COCO 100K in the `recall@10 >= 0.95` region.  
-**Method Thesis**: The preload optimization is real and worth keeping, but it does not close the remaining gap to DiskANN by itself. The next phase should split into three tracks: fair synchronized IVF-family baselines, targeted CPU-side BoundFetch optimization, and staged expansion beyond COCO 100K.  
-**Date**: 2026-04-15
+**Problem**: After synchronized warm-serving tuning, `.clu` full preload, corrected `bits=4` rebuilds, and the refreshed `epsilon=0.90, nprobe=512` main curve, BoundFetch already reaches the `0.97-0.99` recall band on COCO 100K. The remaining method task is to further reduce query-prep / probe CPU cost without changing search semantics.  
+**Method Thesis**: The current workstream is now strictly method-side. Baseline experiments are handled by a parallel task. This plan only covers finite, hotspot-driven BoundFetch optimization plus the minimal re-evaluation needed after each optimization pass.  
+**Date**: 2026-04-16
+
+## Ownership Split
+
+- **This workstream owns**: further BoundFetch optimization, especially query-prep / probe CPU hotspots.
+- **Parallel workstream owns**: baseline experiments, baseline plots/tables, and any additional baseline sweeps.
+- **Baseline-related sections below** remain as fixed inputs and coordination points, not as this workstream's execution checklist.
 
 ## Claim Map
 
 | Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
 |-------|----------------|-----------------------------|---------------|
 | C1 | Warm-resident preload of `.clu` cluster-side state is a valid BoundFetch optimization, but no longer the main missing lever. | Preload preserves recall semantics and improves latency, yet the high-recall gap to DiskANN remains. | B1, B2 |
-| C2 | The next important BoundFetch optimization target is CPU-side probe / verification cost rather than more cluster-side submit-path tuning. | Mechanism data and preload retests show cluster-side submit/parse overhead has been largely removed, while high-recall latency is still far from DiskANN. | B3 |
-| C3 | DiskANN should remain as an upper-bound graph reference, but the main method claim should be established against synchronized IVF-family baselines. | A layered comparison with IVF-family peers, plus a separate DiskANN reference table, better matches the paper's fast-build / dynamic-update thesis. | B4, B5, B6 |
+| C2 | The next important BoundFetch optimization target is the query-prep / probe CPU hot path rather than more cluster-side submit-path tuning. | R067 and the corrected `bits=4` sweep show that `.clu` I/O and rerank are no longer the main bottlenecks; the dominant query-side samples are `QuantizeQuery14Bit`, `PrepareQueryRotatedInto`, and probe itself. | B3 |
+| C3 | Baseline results should now act as fixed input evidence rather than consume further execution budget in this workstream. | The current refreshed curve is already enough to position BoundFetch; further baseline expansion is delegated to the parallel track. | B4, B5, B6 |
 
 ## Paper Storyline
 - Main paper must prove:
   - warm steady-state E2E serving remains the correct evaluation target
   - `.clu` preload is a useful completed optimization, not the final answer
-  - the next meaningful BoundFetch optimization is CPU-side probe / verification efficiency, not more blind `io_uring` micro-tuning
-  - BoundFetch remains clearly stronger than synchronized IVF-family baselines under the same warm protocol
-  - DiskANN remains a strong upper-bound graph reference, but it is not the only axis the paper should optimize against
+  - the next meaningful BoundFetch optimization is query-prep / probe efficiency, not more blind `io_uring` micro-tuning
+  - the next meaningful gain must come from method-side optimization rather than more comparison work
+  - baseline evidence remains important, but further baseline execution is not part of this workstream
 - Appendix can support:
   - additional storage-backend variants
   - residual queue-depth or mode sensitivity checks
@@ -108,7 +114,7 @@ Recommended interpretation:
 
 ### Block 3: CPU-Side BoundFetch Optimization
 - Claim tested: C2
-- Why this block exists: After preload, the remaining gap is most plausibly in probe / verification CPU cost, especially above `recall@10 = 0.95`.
+- Why this block exists: After preload, the remaining gap is most plausibly in query-prep / probe CPU cost, especially around the new `recall@10 = 0.98+` region.
 - Dataset / split / task: `coco_100k`, top-k=10, warm steady-state serving, `queries=1000`
 - Compared systems:
   - BoundFetch current best preload setting
@@ -122,24 +128,24 @@ Recommended interpretation:
   - candidates scanned / verified
 - Setup details:
   - keep `clu_mode=full_preload`
-  - anchor on the two high-value points:
-    - `nlist=2048, nprobe=200, alpha=0.02`
-    - `nlist=2048, nprobe=200, alpha=0.01`
-  - implement only changes that can plausibly reduce per-cluster or per-candidate CPU work without changing search semantics
+  - anchor on the two high-value points from the current main curve:
+    - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.02`
+    - `nlist=2048, nprobe=512, bits=4, epsilon=0.90, alpha=0.01`
+  - implement only changes that can plausibly reduce query-prep or per-cluster probe CPU work without changing search semantics
   - likely candidates:
-    - reduce redundant decode / bound-check work
-    - improve SIMD-friendly code layout in probe
-    - shrink candidate materialization and rerank work
-    - overlap payload request preparation with ongoing probe computation
+    - remove repeated work inside `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`
+    - improve SIMD-friendly data layout for query buffers and probe
+    - reduce redundant decode / bound-check work in probe
+    - consider candidate materialization and rerank only if they become visible after the first two passes
 - Success criterion:
-  - at least one `recall@10 >= 0.95` point moves materially toward DiskANN without harming recall semantics
+  - at least one `recall@10 >= 0.98` point moves materially toward DiskANN without harming recall semantics
 - Failure interpretation:
-  - if CPU-side tuning cannot move the `>=0.95` region enough, stop trying to beat DiskANN directly on warm latency
+  - if CPU-side tuning cannot move the `>=0.98` region enough, stop trying to beat DiskANN directly on warm latency
 - Table / figure target:
   - Mechanism table + refreshed high-recall Pareto
 - Priority: MUST-RUN
 
-### Block 4: Synchronized IVF-Family Baselines
+### Block 4: Synchronized IVF-Family Baselines (Parallel Track)
 - Claim tested: C3
 - Why this block exists: Before spending more time chasing DiskANN, we need to prove where BoundFetch sits among the methods it is most naturally compared against.
 - Dataset / split / task: `coco_100k`, representative warm-serving operating points
@@ -165,9 +171,9 @@ Recommended interpretation:
   - if another IVF-family method dominates BoundFetch, prioritize understanding and fixing that gap before touching more datasets
 - Table / figure target:
   - Main Pareto figure for IVF-family comparison
-- Priority: MUST-RUN
+- Priority: PARALLEL TRACK
 
-### Block 5: DiskANN Reference and Cost Table
+### Block 5: DiskANN Reference and Cost Table (Parallel Track)
 - Claim tested: C3
 - Why this block exists: DiskANN should stay visible, but as a strong graph reference alongside build/startup tradeoffs rather than the only main comparator.
 - Dataset / split / task: `coco_100k`
@@ -193,9 +199,9 @@ Recommended interpretation:
   - if BoundFetch also loses on build and startup cost, the paper scope must narrow again
 - Table / figure target:
   - Main cost table + secondary DiskANN reference figure
-- Priority: MUST-RUN
+- Priority: PARALLEL TRACK
 
-### Block 6: Storage-Backend Ablation
+### Block 6: Storage-Backend Ablation (Parallel Track)
 - Claim tested: C3
 - Why this block exists: Search-core and backend-format effects must be separated or the story will look confounded.
 - Dataset / split / task: `coco_100k`, representative warm-serving operating points
@@ -216,7 +222,7 @@ Recommended interpretation:
   - if this block becomes too expensive, keep it in appendix or reduce it to `FlatStor` vs `Lance`
 - Table / figure target:
   - Appendix storage-backend table
-- Priority: NICE-TO-HAVE
+- Priority: PARALLEL TRACK
 
 ### Block 7: Generality Check Beyond COCO 100K
 - Claim tested: supporting evidence only
@@ -249,11 +255,9 @@ Recommended interpretation:
 |-----------|------|------|---------------|------|------|
 | M0 | Re-anchor the docs after preload and retests | Update report, plan, and tracker | All future runs use the new post-preload policy | 0.5 day | Low |
 | M1 | Lock in preload as completed optimization | Blocks 1 and 2 | Do not restart submit-path tuning unless new evidence appears | 0.5-1 day | Low |
-| M2 | Decide whether CPU tuning is still worthwhile | Block 3 | If `recall@10 >= 0.95` cannot move materially, stop direct DiskANN chasing | 1-3 days | Medium |
-| M3 | Complete synchronized IVF-family Pareto curves | Block 4 | BoundFetch must beat or match the strongest IVF-family peer before wider expansion | 1-3 days | Medium |
-| M4 | Keep DiskANN as reference and add cost tradeoff evidence | Block 5 | If BoundFetch loses on both serving and build/startup, narrow the story | 1-2 days | Medium |
-| M5 | Separate backend effects only after the main comparison stabilizes | Block 6 | Reduce scope instead of expanding matrices | 1-2 days | Medium |
-| M6 | Add light generality support | Block 7 | Run only if M1-M5 already support the paper | 2-4 days | Medium |
+| M2 | Decide whether CPU tuning is still worthwhile | Block 3 | If `recall@10 >= 0.98` cannot move materially, stop direct DiskANN chasing | 1-3 days | Medium |
+| M3 | Consume parallel baseline outputs and keep the story aligned | Blocks 4 and 5 | Baseline outputs arrive externally; this workstream only updates the interpretation | 0.5-1 day | Low |
+| M4 | Add light generality support | Block 7 | Run only if M1-M3 already support the paper | 2-4 days | Medium |
 
 ## Compute and Data Budget
 - Total estimated GPU-hours: 0

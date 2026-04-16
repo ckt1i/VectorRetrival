@@ -1,12 +1,14 @@
-# Final Proposal: Warm-Resident BoundFetch and Layered Baseline Evaluation
+# Final Proposal: Continued BoundFetch Method Optimization
 
-**Date**: 2026-04-14  
-**Status**: UPDATED AFTER SYNCHRONIZED BASELINE TUNING  
+**Date**: 2026-04-16  
+**Status**: METHOD-OPTIMIZATION STAGE AFTER MAIN-CURVE REFRESH  
 **Target Venue**: SIGMOD / VLDB / systems-data crossover
+
+> Ownership note: baseline experiments and their maintenance have been split into a parallel task. This proposal defines only the current method-optimization workstream and treats baseline results as fixed input evidence.
 
 ## Problem Anchor
 - Bottom-line problem: In production vector retrieval, the query path should be evaluated as `search + payload delivery`, not vector search in isolation.
-- Must-solve bottleneck: After synchronized warm-serving tuning, BoundFetch clearly outperforms the IVF+PQ+FlatStor baseline family but is still dominated by tuned DiskANN+FlatStor on COCO 100K. The next step is to determine whether a minimal warm-resident preload of `.clu` quantized vectors and raw address metadata can close enough of that serving gap to recover a useful system position.
+- Must-solve bottleneck: After preload, corrected `bits=4` rebuilds, and the refreshed `epsilon=0.90, nprobe=512` curve, BoundFetch already sits in the `0.97-0.99` recall band. The remaining bottleneck is query-side CPU hot-path cost, especially query preparation and probe.
 - Non-goals:
   - cold-start latency or drop-cache protocols
   - removing DiskANN from comparison just because it is currently stronger
@@ -17,7 +19,7 @@
   - warm steady-state is the only required serving protocol
   - the codebase should remain single-node and modest in complexity
   - payload data should remain on the normal serving path; only lightweight cluster-side metadata may be promoted into memory
-- Success condition: Either show that BoundFetch with warm-resident cluster metadata reaches a useful non-dominated region relative to DiskANN while remaining clearly stronger than IVF-family baselines, or show an explicit build-time / simplicity / serving tradeoff where DiskANN remains the search upper bound but not the full-system winner on all axes.
+- Success condition: Move the current high-recall BoundFetch points leftward under the same search semantics, or show clean evidence that the remaining query-side CPU hotspots have been squeezed enough that further low-level work is not justified.
 
 ## Technical Gap
 The latest synchronized baseline results change the story in an important way:
@@ -27,16 +29,16 @@ The latest synchronized baseline results change the story in an important way:
 3. The remaining gap is unlikely to be closed by more queue-depth or submit-path micro-tuning alone; the current evidence points to structural per-query work in the `.clu` path.
 4. Search-core effects and storage-format effects are now entangled. If we compare `BoundFetch + FlatStor` against `DiskANN + FlatStor`, we still do not know how much comes from the search strategy versus the backend format.
 
-So the next paper-quality move is not to widen the system. It is to make one small structural improvement to BoundFetch and to redesign the baseline logic so that strong comparisons remain fair and interpretable.
+So the next paper-quality move is not to widen the experiment matrix. It is to apply one narrow round of hotspot-driven method optimization to BoundFetch itself.
 
 ## Method Thesis
-- One-sentence thesis: The smallest next intervention is a warm-resident cluster cache that preloads `.clu` quantized vectors and raw address blocks before query execution, so BoundFetch can remove repeated cluster-side read/parse work from the hot path without preloading payload bodies.
-- Why this is the smallest adequate intervention: It directly targets the current structural disadvantage against DiskANN, which already benefits from having its compressed search-side representation resident in memory.
-- Why the evaluation plan must change too: The baseline story should separate two axes, search-core quality and storage-backend quality, instead of exploding into a large matrix that is expensive to build and hard to interpret.
+- One-sentence thesis: The smallest next intervention is to reduce per-query fixed CPU work and probe hot-path cost while keeping the current preload-enabled `bits=4` serving path unchanged.
+- Why this is the smallest adequate intervention: preload has already removed cluster-side I/O and parse from the main bottleneck; the profiler now points to `QuantizeQuery14Bit`, `PrepareQueryRotatedInto`, and probe itself.
+- Why baseline planning is no longer part of this proposal: baseline execution has been delegated to a parallel workstream; this proposal only covers method-side improvement.
 
 ## Contribution Focus
-- Dominant contribution: A warm-resident BoundFetch serving path that caches cluster-side quantized vectors and address metadata before queries, while keeping payload access on the normal integrated path.
-- Optional supporting contribution: A layered baseline methodology that keeps DiskANN as a required strong reference, keeps IVF+PQ/RQ as lower search baselines, and isolates storage-format effects in a separate comparison block.
+- Dominant contribution: a finite, profiler-guided CPU hot-path optimization route for BoundFetch on top of the current serving path.
+- Optional supporting contribution: none in this workstream.
 - Explicit non-contributions:
   - claiming pure ANN superiority over tuned graph indexes
   - claiming FlatStor is the only meaningful storage backend
@@ -47,11 +49,11 @@ So the next paper-quality move is not to widen the system. It is to make one sma
 - Frozen / reused backbone:
   - Existing IVF-based BoundFetch retrieval framework
   - Existing `.clu` / payload storage pipeline
-  - Existing warm benchmark harness and synchronized baseline scripts
+  - Existing warm benchmark harness and completed baseline results
 - New trainable components: none
 - New system changes:
-  - one warm-resident cluster cache for `.clu` quantized vectors
-  - one warm-resident cache for raw address blocks or decode-ready address metadata
+  - tighter per-query preparation
+  - tighter query buffer / probe layout
 - Tempting additions intentionally not used:
   - full payload preloading
   - new index families inside BoundFetch
@@ -80,13 +82,10 @@ So the next paper-quality move is not to widen the system. It is to make one sma
   - it is not a generic cache story
   - it specifically rebalances what must remain on the hot path in an integrated vector-plus-payload system
 
-### Baseline Philosophy
-- Keep DiskANN in the paper as the strong serving upper baseline even if it currently wins.
-- Do not let FlatStor be the only backend used in the final comparison story.
-- Use a layered baseline structure:
-  - Main search-core comparison: BoundFetch vs IVF+PQ/RQ vs DiskANN under one chosen serving backend or one clearly documented backend policy
-  - Storage-backend comparison: compare `FlatStor`, `Lance`, and optionally `Parquet` for one or two representative search cores
-  - Build/index comparison: compare build time, index size, and resident preload size separately from query latency
+### Baseline Input Contract
+- DiskANN, FAISS, and IVF+RQ/ConANN results remain fixed comparison inputs.
+- Any further baseline reruns, sweeps, or figure maintenance are outside this workstream.
+- This proposal only requires re-measuring the optimized BoundFetch points against the already established reporting format.
 
 ### Integration into the Downstream Pipeline
 - BoundFetch should still be positioned as a serving-path system, not a standalone ANN core.
@@ -94,13 +93,10 @@ So the next paper-quality move is not to widen the system. It is to make one sma
 - The paper should explicitly report the preload memory footprint and preload time so this optimization remains honest.
 
 ### Execution-Facing Plan
-- Implement cluster-side preload first; do not start with a new round of low-level `io_uring` tuning.
-- Measure the latency breakdown before and after preload to verify that the removed work is actually on the critical path.
-- Only after the preload results are known should we decide whether further BoundFetch tuning is worthwhile.
-- Rework the baseline suite into a staged plan:
-  - keep DiskANN as a must-report reference
-  - keep IVF+PQ or IVF+RQ as the weaker classical family
-  - move backend-format comparisons into a separate supporting block instead of a full matrix
+- Run R068 first: tighten `QuantizeQuery14Bit` and `PrepareQueryRotatedInto`.
+- Only if R068 yields a clear gain, run R069: improve query/probe data layout and SIMD friendliness.
+- Run R070 only if rerank or candidate materialization becomes newly visible after the first two passes.
+- Do not start new baseline sweeps inside this workstream.
 
 ### Failure Modes and Diagnostics
 - Failure mode: preloading `.clu` metadata changes little.

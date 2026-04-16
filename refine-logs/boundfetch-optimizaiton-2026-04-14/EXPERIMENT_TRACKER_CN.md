@@ -1,6 +1,6 @@
 # 实验追踪表
 
-**日期**：2026-04-15
+**日期**：2026-04-16
 **系统**：BoundFetch
 **协议**：仅暖稳态
 
@@ -20,6 +20,20 @@
 - 对于 `recall@10 >= 0.95` 区间，BoundFetch 的下一步优化目标应切换到 probe / verification 的 CPU 路径。
 - 主论文对比应开始转向“同步调参后的 IVF 家族基线”，同时保留 DiskANN 作为强图算法上界参考，而不是唯一主目标。
 - 更大数据集的扩展是需要的，但应该放在 COCO 100K 主故事稳定之后。
+
+## 2026-04-16 主曲线更新
+
+- 当前主曲线已更新为 `epsilon=0.90, nprobe=512, bits=4, clu_mode=full_preload`。
+- BoundFetch 当前最高召回点为 `alpha=0.01`：`0.9887 / 1.5114ms / 2.2997ms`。
+- 当前实用高召回点为 `alpha=0.05`：`0.9694 / 1.4785ms / 2.3044ms`。
+- 在这条新主曲线上，BoundFetch 已明显支配已报告的 FAISS-IVFPQ 基线，并与 DiskANN 进入点对点比较区间。
+- R067 的 profiling 说明，后续 CPU 优化应优先落在 `QuantizeQuery14Bit`、`PrepareQueryRotatedInto` 与 probe 路径本身，而不是 rerank 或 `.clu` I/O。
+
+## 当前分工
+
+- **本任务**：继续优化 BoundFetch 方法本身。
+- **并行任务**：运行并维护全部 baseline 实验。
+- 因此，下面与 baseline 相关的条目对本任务而言只保留状态记录和结果输入含义，不再构成当前待执行清单。
 
 ## 同步规则
 
@@ -102,38 +116,38 @@
 
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
-| R057 | M7 | 主搜索核心表 | 选择主后端策略 | coco_100k | 可比性说明 | 必须 | 待运行 | 如果可行，优先选择共享 `Lance` 后端 |
-| R058 | M7 | 主搜索核心表 | 已选策略上BoundFetch最佳预加载点 | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 必须 | 待运行 | 主表点 |
-| R059 | M7 | 主搜索核心表 | 已选策略上IVF+PQ或IVF+RQ | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 必须 | 待运行 | 较低经典基线 |
-| R060 | M7 | 主搜索核心表 | 已选策略上DiskANN或作为 `DiskANN+FlatStor` 上参考 | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 必须 | 待运行 | 必须保留在范围内 |
-| R061 | M7 | 存储消融 | BoundFetch 在 `FlatStor` 和 `Lance` 上对比 | coco_100k | recall@10, e2e_ms, startup_time, file_size | 必须 | 待运行 | 仅从2个后端开始 |
-| R062 | M7 | 存储消融 | IVF基线在 `FlatStor` 和 `Lance` 上对比 | coco_100k | recall@10, e2e_ms, startup_time, file_size | 必须 | 待运行 | 将后端效应与搜索核心效应分离 |
-| R063 | M7 | 可选存储消融 | 如果集成成本低廉则添加 `Parquet` | coco_100k | recall@10, e2e_ms, startup_time, file_size | 可选 | 待运行 | 不要阻塞主故事 |
+| R057 | M7 | 主搜索核心表 | 选择主后端策略 | coco_100k | 可比性说明 | 并行 | 外部维护 | baseline 并行任务维护 |
+| R058 | M7 | 主搜索核心表 | 已选策略上BoundFetch最佳预加载点 | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 并行 | 外部维护 | baseline 并行任务维护 |
+| R059 | M7 | 主搜索核心表 | 已选策略上IVF+PQ或IVF+RQ | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 并行 | 外部维护 | baseline 并行任务维护 |
+| R060 | M7 | 主搜索核心表 | 已选策略上DiskANN或作为 `DiskANN+FlatStor` 上参考 | coco_100k | recall@10, e2e_ms, p99_ms, build_time | 并行 | 外部维护 | baseline 并行任务维护 |
+| R061 | M7 | 存储消融 | BoundFetch 在 `FlatStor` 和 `Lance` 上对比 | coco_100k | recall@10, e2e_ms, startup_time, file_size | 并行 | 外部维护 | baseline 并行任务维护 |
+| R062 | M7 | 存储消融 | IVF基线在 `FlatStor` 和 `Lance` 上对比 | coco_100k | recall@10, e2e_ms, startup_time, file_size | 并行 | 外部维护 | baseline 并行任务维护 |
+| R063 | M7 | 可选存储消融 | 如果集成成本低廉则添加 `Parquet` | coco_100k | recall@10, e2e_ms, startup_time, file_size | 并行 | 外部维护 | baseline 并行任务维护 |
 
 ## M8: 构建和启动成本表
 
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
-| R064 | M8 | 构建成本表 | BoundFetch构建和预加载成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 必须 | 待运行 | 即使DiskANN仍在服务上获胜也需要 |
-| R065 | M8 | 构建成本表 | DiskANN构建和启动成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 必须 | 待运行 | 强对比轴 |
-| R066 | M8 | 构建成本表 | IVF家族基线构建和启动成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 必须 | 待运行 | 完成权衡表 |
+| R064 | M8 | 构建成本表 | BoundFetch构建和预加载成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 并行 | 已完成 | 结果已写入 `analysis.md`，由 baseline 并行任务维护主成本表 |
+| R065 | M8 | 构建成本表 | DiskANN构建和启动成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 并行 | 外部维护 | baseline 并行任务维护 |
+| R066 | M8 | 构建成本表 | IVF家族基线构建和启动成本 | coco_100k | build_time, peak_RSS, index_bytes, preload_bytes, preload_time | 并行 | 已完成 | 结果已写入 `analysis.md`，由 baseline 并行任务维护主成本表 |
 
 ## M9: BoundFetch 的 CPU 侧优化
 
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
 | R067 | M9 | 热路径重新剖析 | BoundFetch `full_preload`, `alpha=0.02`, `epsilon=0.75`, `bits=4` | coco_100k | probe_ms, rerank_cpu_ms, candidate_count | 必须 | 已完成 | 新主锚点：`0.9519 / 1.772ms / 2.078ms`；`perf` 显示 query 侧 CPU 主要耗在 `QuantizeQuery14Bit` 和 `PrepareQueryRotatedInto`，整段 benchmark 的头号样本仍是 GT `L2Sqr` |
-| R068 | M9 | CPU 优化 pass 1 | BoundFetch + 减少重复 decode / check | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 保持搜索语义不变 |
-| R069 | M9 | CPU 优化 pass 2 | BoundFetch + 更适合 SIMD 的 probe 数据布局 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 仅在 R068 方向正确时继续 |
-| R070 | M9 | CPU 优化 pass 3 | BoundFetch + 降低 candidate materialization / rerank 成本 | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | 必须 | 待运行 | 若收益微弱则停止 |
+| R068 | M9 | CPU 优化 pass 1 | BoundFetch + 收紧每查询预处理开销 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 直接针对 `QuantizeQuery14Bit` 与 `PrepareQueryRotatedInto`，目标是在不改语义下减少每查询固定成本 |
+| R069 | M9 | CPU 优化 pass 2 | BoundFetch + probe 数据布局 / SIMD 友好优化 | coco_100k | recall@10, e2e_ms, p99_ms, probe_ms | 必须 | 待运行 | 仅在 R068 明显减少 query-prep 成本后继续 |
+| R070 | M9 | CPU 优化 pass 3 | BoundFetch + 仅在必要时收紧 candidate materialization | coco_100k | recall@10, e2e_ms, p99_ms, rerank_cpu_ms | 必须 | 待运行 | 当前优先级最低；若 rerank 仍接近 0.01ms，可直接跳过 |
 
 ## M10: 同步 IVF 家族 Pareto
 
 | 运行ID | 里程碑 | 目的 | 系统/变体 | 数据集 | 指标 | 优先级 | 状态 | 备注 |
 |--------|--------|------|----------|--------|------|--------|------|------|
-| R071 | M10 | 基线曲线 | 在最终 warm 协议下重新调 FAISS-IVFPQ | coco_100k | recall@10, e2e_ms, p99_ms | 必须 | 待运行 | 使用与 BoundFetch 相同的报告流水线 |
-| R072 | M10 | 基线曲线 | 同步 sweep 的 IVF+RQ 或 ConANN | coco_100k | recall@10, e2e_ms, p99_ms | 必须 | 待运行 | 选择工程成本最低但可信的第二个 IVF 家族基线 |
-| R073 | M10 | 合并 IVF 家族图 | BoundFetch + FAISS + IVF+RQ/ConANN | coco_100k | 非支配点 | 必须 | 待运行 | 作为主家族对比 Pareto 图 |
+| R071 | M10 | 基线曲线 | 在最终 warm 协议下重新调 FAISS-IVFPQ | coco_100k | recall@10, e2e_ms, p99_ms | 并行 | 已完成 | 当前主曲线对 FAISS 全段形成支配；由 baseline 并行任务维护 |
+| R072 | M10 | 基线曲线 | 同步 sweep 的 IVF+RQ 或 ConANN | coco_100k | recall@10, e2e_ms, p99_ms | 并行 | 已完成 | 同步 baseline 调参已完成；由 baseline 并行任务维护 |
+| R073 | M10 | 合并 IVF 家族图 | BoundFetch + FAISS + IVF+RQ/ConANN | coco_100k | 非支配点 | 并行 | 已完成 | 作为当前主家族对比图；由 baseline 并行任务维护 |
 
 ## M11: 数据集扩展
 
@@ -162,20 +176,21 @@
 
 ## 当前解读
 
-- 当前最实用的 BoundFetch preload-on 权衡点：`nprobe=200, alpha=0.05`，`0.9346 / 1.609ms / 1.946ms`
-- 当前主表 / Pareto 锚点：修正后的 `bits=4`、`nprobe=200`、`alpha=0.02`、`epsilon=0.75`，`0.9519 / 1.772ms / 2.078ms`
-- 当前最实用的 BoundFetch preload-on 高召回点：修正后的 `bits=4`、`nprobe=200`、`alpha=0.02`、`epsilon=0.85`，`0.9556 / 1.857ms / 2.259ms`
-- 当前更高召回的 preload-on 点：`nprobe=200, alpha=0.01`，`0.9640 / 2.366ms / 2.830ms`
+- 当前主表 / Pareto 锚点：`bits=4`、`epsilon=0.90`、`nprobe=512`、`alpha=0.05`，`0.9694 / 1.4785ms / 2.3044ms`
+- 当前最高召回点：`bits=4`、`epsilon=0.90`、`nprobe=512`、`alpha=0.01`，`0.9887 / 1.5114ms / 2.2997ms`
+- 当前次高召回点：`bits=4`、`epsilon=0.90`、`nprobe=512`、`alpha=0.02`，`0.9848 / 1.5098ms / 2.3033ms`
+- 修正后 `bits=4`、`nprobe=200`、`epsilon=0.75~0.85` 曲线现在作为可复现实验链和 epsilon 机理参考，而不是主对比图
 - 当前低延迟区域最强 DiskANN 点：`L_search=5`，`0.993 / 1.159ms / 1.901ms`
 - 当前实际结论：
   - BoundFetch 已击败观察到的 IVF 家族基线
-  - `full_preload` 值得保留，但它没有消除与 DiskANN 的高召回差距
-  - 下一步底层杠杆是 CPU 搜索成本，而不是更多 cluster 侧 I/O 路径工作
-  - 同步 IVF 家族调参现在比更大规模的数据集扩展更优先
+  - `full_preload` 值得保留，但它已经不是继续提速的主杠杆
+  - BoundFetch 已进入与 DiskANN 的点对点比较区间，但在最高召回端仍略落后
+  - 下一步底层杠杆是 query-prep / probe CPU 成本，而不是更多 cluster 侧 I/O 路径工作
+  - baseline 主结果现在作为固定输入保留，本任务的主优先级已经转为有限轮次 CPU 热路径优化
   - 运行时 FastScan epsilon 已确认是索引构建阶段写入的属性，而不是查询阶段可覆盖的参数
   - 先前的 `index_fkmeans_2048_eps*` sweep 实际误建成了 `bits=1`，因此只能作为定位问题的调试记录，不能作为最终服务结论
   - 修正后的 `bits=4` sweep 表明，epsilon 不仅影响 Stage 1 `safe_out`，也会真实减少 Stage 2 负载
-  - 在新的 `epsilon=0.75` 锚点下，查询瓶颈仍然是 CPU：`probe_ms=1.500`、`uring_submit_ms=0.089`、`rerank_cpu_ms=0.012`；query 热点主要落在每查询预处理 (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`)，而不是 `.clu` I/O
+  - 在最新 profiling 下，查询瓶颈仍然是 CPU：`probe_ms` 远大于 `uring_submit_ms` 和 `rerank_cpu_ms`；热点主要落在每查询预处理 (`QuantizeQuery14Bit` + `PrepareQueryRotatedInto`) 与 probe 本身，而不是 `.clu` I/O
   - 历史 `index_fkmeans_2048` 的 clustering 工件已经导出，因此下一轮 epsilon Pareto 刷新可以保持在同一份 `fkmeans` clustering 和目标 `bits=4` 路径上
 
 ## 决策约束

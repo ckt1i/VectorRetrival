@@ -1,8 +1,8 @@
 # BoundFetch 研究精化与实验规划 — 中文文档索引
 
 **项目名称**：BoundFetch
-**完成日期**：2026-04-10
-**状态**：方法就绪，准备开始实验
+**完成日期**：2026-04-16
+**状态**：方法继续优化进行中；baseline 任务已拆分为并行主线
 
 ---
 
@@ -34,7 +34,7 @@
 
 ### 实验规划文档
 
-4. **[EXPERIMENT_PLAN_CN.md](EXPERIMENT_PLAN_CN.md)** — 详细实验计划
+4. **[EXPERIMENT_PLAN_CN.md](EXPERIMENT_PLAN_CN.md)** — 方法优化实验计划
    - 6 个要验证的声称与对应实验
    - 硬件与环境要求
    - 8 个数据集说明
@@ -43,12 +43,12 @@
    - 4 阶段运行顺序
    - 计算预算估计
 
-5. **[EXPERIMENT_TRACKER_CN.md](EXPERIMENT_TRACKER_CN.md)** — 实验追踪表
+5. **[EXPERIMENT_TRACKER_CN.md](EXPERIMENT_TRACKER_CN.md)** — 方法优化追踪表
    - 完整的检查清单格式
    - 4 个阶段的具体任务分解
    - 论文图表清单
 
-6. **[PIPELINE_SUMMARY_CN.md](PIPELINE_SUMMARY_CN.md)** — 管道总结
+6. **[PIPELINE_SUMMARY_CN.md](PIPELINE_SUMMARY_CN.md)** — 方法优化一页总结
    - 一页纸总结问题、方法、贡献、声称
    - 6 个必须证明的声称列表
    - 首先启动的 3 个实验
@@ -69,7 +69,12 @@
 → 完整阅读所有 3 个核心文档（FINAL_PROPOSAL + REFINEMENT_REPORT + REVIEW_SUMMARY）
 
 ### 如果你要开始做实验
-→ 从 [EXPERIMENT_PLAN_CN.md](EXPERIMENT_PLAN_CN.md) 的第 1-2 阶段开始，使用 [EXPERIMENT_TRACKER_CN.md](EXPERIMENT_TRACKER_CN.md) 跟踪进度
+→ 从 [EXPERIMENT_PLAN_CN.md](EXPERIMENT_PLAN_CN.md) 的 CPU 优化部分开始，使用 [EXPERIMENT_TRACKER_CN.md](EXPERIMENT_TRACKER_CN.md) 跟踪进度
+
+## 当前分工说明
+
+- 方法优化主线：由当前 refine 文档维护
+- baseline 主线：由并行任务维护，参考 [BASELINE_PLAN_CN.md](BASELINE_PLAN_CN.md)
 
 ---
 

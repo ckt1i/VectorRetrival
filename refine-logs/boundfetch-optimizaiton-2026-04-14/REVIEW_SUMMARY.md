@@ -1,8 +1,8 @@
 # Review Summary
 
-**Problem**: Re-anchor BoundFetch after synchronized warm-serving baseline tuning.  
-**Initial Approach**: Continue the earlier warm-only thesis without re-evaluating it against tuned DiskANN and without separating storage-format effects from search-core effects.  
-**Date**: 2026-04-14  
+**Problem**: Re-anchor all refine documents around the current method-optimization-only workstream.  
+**Initial Approach**: Continue to treat baseline expansion and method optimization as one mixed execution track.  
+**Date**: 2026-04-16  
 **Rounds**: 2 local refinement rounds  
 **Final Verdict**: READY FOR NEXT EXECUTION ROUND
 
@@ -11,6 +11,11 @@
 - Must-solve bottleneck: determine whether one minimal structural change can move BoundFetch closer to the tuned DiskANN frontier, while keeping the comparison story fair and interpretable.
 - Non-goals: cold-start, removing stronger baselines, and full-matrix benchmarking over every search/storage pairing.
 - Constraints: warm-only environment, no `sudo`, modest engineering budget, one compact paper story.
+
+## Current Ownership Conclusion
+- Baseline experiments now belong to a parallel task.
+- These refine documents now serve the method-optimization track only.
+- Baseline evidence remains important, but it is external input rather than the active execution scope here.
 
 ## Round-by-Round Resolution Log
 
@@ -40,5 +45,5 @@
   - honest treatment of DiskANN as the strong reference
   - cleaner separation between search-core comparisons and backend-format comparisons
 - Remaining weaknesses:
-  - current BoundFetch still loses to the tuned DiskANN frontier
-  - the paper needs either a stronger serving point after preload or a compelling build-time / simplicity advantage
+  - query-prep / probe CPU remains the main open optimization target
+  - coordination risk remains if baseline and method tasks are not documented as separate ownership tracks

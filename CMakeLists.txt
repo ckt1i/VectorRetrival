@@ -383,8 +383,12 @@ if(VDB_BUILD_TESTS)
     add_test(NAME test_transpose COMMAND test_transpose)
 
     add_executable(test_prepare_query tests/simd/prepare_query_test.cpp)
-    target_link_libraries(test_prepare_query PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    target_link_libraries(test_prepare_query PRIVATE vdb_simd vdb_storage GTest::gtest GTest::gtest_main)
     add_test(NAME test_prepare_query COMMAND test_prepare_query)
+
+    add_executable(test_ip_exrabitq tests/simd/ip_exrabitq_test.cpp)
+    target_link_libraries(test_ip_exrabitq PRIVATE vdb_simd GTest::gtest GTest::gtest_main)
+    add_test(NAME test_ip_exrabitq COMMAND test_ip_exrabitq)
 
     # -------------------------------------------------------------------------
     # Codec tests (Phase 3)

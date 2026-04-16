@@ -53,7 +53,10 @@ TEST_F(ClusterStoreTest, Writer_EmptyCluster) {
     ASSERT_TRUE(writer.BeginCluster(0, 0, centroid).ok());
 
     std::vector<RaBitQCode> codes;
-    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    {
+        const auto s = writer.WriteVectors(codes);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+    }
 
     EncodedAddressColumn blocks;
     ASSERT_TRUE(writer.WriteAddressBlocks(blocks).ok());
@@ -226,7 +229,10 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes) {
     ClusterStoreWriter writer;
     ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
     ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
-    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    {
+        const auto s = writer.WriteVectors(codes);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+    }
     ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
     ASSERT_TRUE(writer.EndCluster().ok());
     ASSERT_TRUE(writer.Finalize("c.dat").ok());
@@ -279,7 +285,10 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes_Batch) {
     ClusterStoreWriter writer;
     ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
     ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
-    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    {
+        const auto s = writer.WriteVectors(codes);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+    }
     ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
     ASSERT_TRUE(writer.EndCluster().ok());
     ASSERT_TRUE(writer.Finalize("c.dat").ok());
@@ -308,6 +317,72 @@ TEST_F(ClusterStoreTest, Reader_LoadCodes_Batch) {
     }
 }
 
+TEST_F(ClusterStoreTest, Reader_LoadCodes_Batch_Bits4Roundtrip) {
+    const Dim dim = 64;
+    const uint32_t N = 37;
+    std::string path = TestPath("test_bits4.clu");
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(42);
+    RaBitQEncoder encoder(dim, rotation, 4);
+
+    std::mt19937 rng(1234);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    std::vector<float> centroid(dim, 0.0f);
+    std::vector<RaBitQCode> codes;
+    for (uint32_t i = 0; i < N; ++i) {
+        std::vector<float> vec(dim);
+        for (uint32_t d = 0; d < dim; ++d) vec[d] = dist(rng);
+        codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+    }
+
+    std::vector<AddressEntry> addrs;
+    uint64_t off = 0;
+    for (uint32_t i = 0; i < N; ++i) {
+        uint32_t sz = dim * 4u + i;
+        addrs.push_back({off, sz});
+        off += sz;
+    }
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
+
+    RaBitQConfig config{4, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
+    ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
+    {
+        const auto s = writer.WriteVectors(codes);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+    }
+    ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
+    ASSERT_TRUE(writer.EndCluster().ok());
+    ASSERT_TRUE(writer.Finalize("c.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+    ASSERT_TRUE(reader.EnsureClusterLoaded(0).ok());
+
+    std::vector<uint32_t> indices = {0, 1, 15, 31, 36};
+    std::vector<RaBitQCode> out_codes;
+    ASSERT_TRUE(reader.LoadCodes(0, indices, out_codes).ok());
+
+    for (size_t i = 0; i < indices.size(); ++i) {
+        const uint32_t idx = indices[i];
+        EXPECT_FLOAT_EQ(out_codes[i].norm, codes[idx].norm);
+        EXPECT_EQ(out_codes[i].sum_x, codes[idx].sum_x);
+        ASSERT_EQ(out_codes[i].code.size(), 1u);
+        ASSERT_FALSE(codes[idx].code.empty());
+        EXPECT_EQ(out_codes[i].code[0], codes[idx].code[0]);
+        EXPECT_EQ(out_codes[i].ex_code, codes[idx].ex_code);
+        EXPECT_EQ(out_codes[i].ex_sign, codes[idx].ex_sign);
+        EXPECT_FLOAT_EQ(out_codes[i].xipnorm, codes[idx].xipnorm);
+
+        const auto addr = reader.GetAddress(0, idx);
+        EXPECT_EQ(addr.offset, addrs[idx].offset);
+        EXPECT_EQ(addr.size, addrs[idx].size);
+    }
+}
+
 TEST_F(ClusterStoreTest, Reader_GetAddress) {
     const Dim dim = 32;
     const uint32_t N = 100;
@@ -315,7 +390,7 @@ TEST_F(ClusterStoreTest, Reader_GetAddress) {
 
     RotationMatrix rotation(dim);
     rotation.GenerateRandom(42);
-    RaBitQEncoder encoder(dim, rotation);
+    RaBitQEncoder encoder(dim, rotation, 4);
 
     std::mt19937 rng(222);
     std::normal_distribution<float> dist(0.0f, 1.0f);
@@ -342,7 +417,10 @@ TEST_F(ClusterStoreTest, Reader_GetAddress) {
     ClusterStoreWriter writer;
     ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
     ASSERT_TRUE(writer.BeginCluster(7, N, centroid.data()).ok());
-    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    {
+        const auto s = writer.WriteVectors(codes);
+        ASSERT_TRUE(s.ok()) << s.ToString();
+    }
     ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
     ASSERT_TRUE(writer.EndCluster().ok());
     ASSERT_TRUE(writer.Finalize("c7.dat").ok());
@@ -872,11 +950,10 @@ TEST_F(ClusterStoreTest, ParseClusterBlock_MatchesEnsureClusterLoaded) {
         ASSERT_TRUE(reader.ParseClusterBlock(
             k, std::move(block_buf), loc->size, pc).ok());
 
-        // --- Verify v7 consistency ---
+        // --- Verify new layout consistency ---
         EXPECT_EQ(pc.num_records, N);
         EXPECT_EQ(pc.decoded_addresses.size(), N);
 
-        // v7: Check FastScan block fields
         uint32_t expected_blocks = (N + 31) / 32;
         EXPECT_EQ(pc.num_fastscan_blocks, expected_blocks);
         EXPECT_GT(pc.fastscan_block_size, 0u);
@@ -987,6 +1064,119 @@ TEST_F(ClusterStoreTest, FullPreload_MatchesEnsureClusterLoaded) {
             ASSERT_TRUE(reader.LoadCodes(k, {i}, loaded).ok());
             EXPECT_FLOAT_EQ(resident_norm, loaded[0].norm)
                 << "cluster " << k << " record " << i << " norm mismatch";
+        }
+    }
+}
+
+TEST_F(ClusterStoreTest, ParseClusterBlock_Bits4MatchesLoadedData) {
+    const Dim dim = 64;
+    const uint32_t N = 37;
+    std::string path = TestPath("parse_bits4.clu");
+
+    RotationMatrix rotation(dim);
+    rotation.GenerateRandom(9);
+    RaBitQEncoder encoder(dim, rotation, 4);
+
+    std::mt19937 rng(999);
+    std::normal_distribution<float> dist(0.0f, 1.0f);
+
+    std::vector<float> centroid(dim, 0.0f);
+    std::vector<RaBitQCode> codes;
+    for (uint32_t i = 0; i < N; ++i) {
+        std::vector<float> vec(dim);
+        for (uint32_t d = 0; d < dim; ++d) vec[d] = dist(rng);
+        codes.push_back(encoder.Encode(vec.data(), centroid.data()));
+    }
+
+    std::vector<AddressEntry> addrs;
+    uint64_t off = 0;
+    for (uint32_t i = 0; i < N; ++i) {
+        addrs.push_back({off, dim * 4u + i * 3u});
+        off += dim * 4u + i * 3u;
+    }
+    auto addr_blocks = AddressColumn::Encode(addrs, 64, 1);
+
+    RaBitQConfig config{4, 64, 5.75f};
+    ClusterStoreWriter writer;
+    ASSERT_TRUE(writer.Open(path, 1, dim, config).ok());
+    ASSERT_TRUE(writer.BeginCluster(0, N, centroid.data()).ok());
+    ASSERT_TRUE(writer.WriteVectors(codes).ok());
+    ASSERT_TRUE(writer.WriteAddressBlocks(addr_blocks).ok());
+    ASSERT_TRUE(writer.EndCluster().ok());
+    ASSERT_TRUE(writer.Finalize("c.dat").ok());
+
+    ClusterStoreReader reader;
+    ASSERT_TRUE(reader.Open(path).ok());
+    ASSERT_TRUE(reader.EnsureClusterLoaded(0).ok());
+    auto loc = reader.GetBlockLocation(0);
+    ASSERT_TRUE(loc.has_value());
+
+    constexpr size_t kAlignment = 4096;
+    const size_t alloc_size = static_cast<size_t>(loc->size);
+    const size_t padded_size =
+        ((alloc_size + kAlignment - 1) / kAlignment) * kAlignment;
+    auto* raw_block = static_cast<uint8_t*>(std::aligned_alloc(kAlignment, padded_size));
+    ASSERT_NE(raw_block, nullptr);
+    query::AlignedBufPtr block_buf(raw_block);
+    const ssize_t bytes = ::pread(reader.clu_fd(), block_buf.get(), alloc_size,
+                                  static_cast<off_t>(loc->offset));
+    ASSERT_EQ(bytes, static_cast<ssize_t>(alloc_size));
+
+    query::ParsedCluster parsed;
+    ASSERT_TRUE(reader.ParseClusterBlock(0, std::move(block_buf), loc->size, parsed).ok());
+    ASSERT_EQ(parsed.num_records, N);
+    ASSERT_NE(parsed.exrabitq_entries, nullptr);
+
+    for (uint32_t i = 0; i < N; ++i) {
+        std::vector<RaBitQCode> loaded;
+        ASSERT_TRUE(reader.LoadCodes(0, {i}, loaded).ok());
+        const auto ex_view = parsed.exrabitq_view(i, dim);
+        ASSERT_NE(ex_view.code_abs, nullptr);
+        ASSERT_NE(ex_view.sign, nullptr);
+        EXPECT_TRUE(std::equal(ex_view.code_abs, ex_view.code_abs + dim,
+                               loaded[0].ex_code.begin()));
+        EXPECT_TRUE(std::equal(ex_view.sign, ex_view.sign + dim,
+                               loaded[0].ex_sign.begin()));
+        EXPECT_FLOAT_EQ(ex_view.xipnorm, loaded[0].xipnorm);
+        EXPECT_EQ(parsed.decoded_addresses[i].offset, addrs[i].offset);
+        EXPECT_EQ(parsed.decoded_addresses[i].size, addrs[i].size);
+    }
+}
+
+TEST_F(ClusterStoreTest, ParsedClusterExRaBitQViewMatchesLegacyAccessors) {
+    constexpr Dim dim = 32;
+    constexpr uint32_t num_records = 5;
+    const uint32_t ex_entry_size = 2 * dim + sizeof(float);
+    std::vector<uint8_t> ex_entries(static_cast<size_t>(num_records) * ex_entry_size, 0);
+    query::ParsedCluster pc;
+    pc.exrabitq_entries = ex_entries.data();
+    pc.exrabitq_entry_size = ex_entry_size;
+
+    for (uint32_t i = 0; i < num_records; ++i) {
+        for (uint32_t d = 0; d < dim; ++d) {
+            ex_entries[static_cast<size_t>(i) * ex_entry_size + d] =
+                static_cast<uint8_t>((i * 13u + d * 7u) & 0x0F);
+            ex_entries[static_cast<size_t>(i) * ex_entry_size + dim + d] =
+                static_cast<uint8_t>((i + d) & 1u);
+        }
+        const float xipnorm = 0.25f * static_cast<float>(i + 1);
+        std::memcpy(ex_entries.data() + static_cast<size_t>(i) * ex_entry_size + 2 * dim,
+                    &xipnorm, sizeof(float));
+    }
+
+    for (uint32_t i = 0; i < num_records; ++i) {
+        const query::ParsedCluster::ExRaBitQView view = pc.exrabitq_view(i, dim);
+        ASSERT_NE(view.code_abs, nullptr);
+        ASSERT_NE(view.sign, nullptr);
+        EXPECT_EQ(view.code_abs, pc.ex_code(i));
+        EXPECT_EQ(view.sign, pc.ex_sign(i, dim));
+        EXPECT_FLOAT_EQ(view.xipnorm, pc.xipnorm(i, dim));
+
+        for (uint32_t d = 0; d < dim; ++d) {
+            EXPECT_EQ(view.code_abs[d], pc.ex_code(i)[d])
+                << "record=" << i << " dim=" << d;
+            EXPECT_EQ(view.sign[d], pc.ex_sign(i, dim)[d])
+                << "record=" << i << " dim=" << d;
         }
     }
 }
