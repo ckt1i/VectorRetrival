@@ -42,6 +42,11 @@
 - 新增主实验和扩展实验各自的预期结果定义，明确：
   - 主实验用于观察 `topk=10/50/100` 下搜索核与 E2E 的扩展趋势
   - 扩展实验用于分离 backend 对 `payload_fetch_ms / e2e_ms / p99_ms` 的影响
+- 将实验执行粒度进一步细化，明确：
+  - 不再把整套主实验压成单个长任务
+  - 主实验按 `dataset -> gate -> method -> topk -> summarize` 分层拆开
+  - 扩展实验按 `dataset -> operating point selection -> backend replay -> summarize` 分层拆开
+  - 允许每个主数据集单独完成、单独出小报告、单独进入后续 backend 扩展
 - 新增正式实验运行矩阵与顺序，覆盖：
   - 搜索核 benchmark
   - 联动式 `search + payload` E2E benchmark

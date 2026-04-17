@@ -182,6 +182,49 @@
 - 对每个 `topk` 都完整跑 `FlatStor / Lance / Parquet`
 - 否决原因：矩阵膨胀明显，而且 backend 结论容易被大 `topk` 的 fetch 规模主导
 
+### 8.1 主实验执行粒度进一步按数据集拆分
+
+选择：
+- `8.7` 之后的执行任务不再以“整套主实验”作为最小单元
+- 改为以 `dataset` 为一级验收边界：
+  - `COCO 100K`
+  - `MS MARCO Passage`
+  - `Deep8M-synth`
+  - `Amazon ESCI`
+- 每个数据集内部再拆成：
+  - gate run
+  - `topk=10`
+  - `topk=50`
+  - `topk=100`
+  - dataset-level summary / short report
+
+原因：
+- 当前 `8.7` 过大，任一数据集失败会阻塞整批实验
+- 数据集级拆分后，已完成数据集可以先单独验收、单独画图、单独写结论
+- 这与当前 `coco_100k` 已经单独形成结果的现状一致
+
+备选方案：
+- 继续保持“整套主实验一次跑完”
+- 否决原因：失败恢复粒度太粗，且任务状态无法准确反映局部完成成果
+
+### 8.2 每个主数据集在 sweep 前增加 gate run
+
+选择：
+- 每个主数据集在正式 sweep 前必须先通过一组单点 gate：
+  - 单点 vector-search
+  - 单点 coupled E2E
+  - metric schema 检查
+  - top ids / gt / labels / payload alignment 检查
+- 只有 gate 通过后，才允许进入该数据集的全量 `nprobe` 或 `L_search` sweep
+
+原因：
+- 现有 `msmarco_passage` 已暴露出 query/gt/index alignment 问题
+- 单点 gate 可以把“runner bug”和“长时间 sweep”解耦，避免数小时后才发现基本契约错误
+
+备选方案：
+- 数据准备完成后直接进入 sweep
+- 否决原因：错误发现过晚，排障成本高，而且浪费运行时间
+
 ### 9. 扩展实验的 storage backend 比较采用 recall-matched operating points，而不是原始参数对齐
 
 选择：
@@ -235,13 +278,23 @@
 流程：
 1. 冻结数据集、encoder、baseline registry
 2. 为主数据集补齐 `gt_top100.npy`
-3. 对每个 `dataset × method × topk`：
+3. 按数据集顺序执行：
+   - `COCO 100K`
+   - `MS MARCO Passage`
+   - `Deep8M-synth`
+   - `Amazon ESCI`
+4. 每个数据集内部先做 gate：
+   - 单点 vector-search
+   - 单点 coupled E2E
+   - metric / id / gt / payload alignment 检查
+5. gate 通过后，再对该数据集按 `topk=10 / 50 / 100` 展开主 sweep：
    - 固定 `nlist`
    - 固定主 backend `FlatStor`
    - 固定 `candidate_budget`
    - sweep `nprobe` 或 `L_search`
-4. 先跑 vector-search，再跑 coupled E2E
-5. 聚合生成按 `topk` 分层的主实验 summary 与 plots
+6. 对该数据集先跑 vector-search，再跑 coupled E2E
+7. 每个数据集完成后立即生成 dataset-level summary、Pareto 图和 short report
+8. 四个主数据集都完成后，再汇总生成 main-suite summary 与 plots
 
 参数：
 - 数据集：
@@ -268,6 +321,7 @@
 - `topk` 增大时，`ann_core_ms`、`payload_fetch_ms`、`e2e_ms` 整体单调上升
 - `topk=10` 将成为后续 backend 扩展实验的 serving anchor
 - `topk=50/100` 将提供结果规模扩展趋势，而不是替代 top-10 serving 口径
+- 单个主数据集失败不应阻塞其它数据集已经完成结果的归档与分析
 
 ### Extended Experiments
 
@@ -275,14 +329,16 @@
 - 在真实 serving 口径 `topk=10` 下，隔离不同 payload backend 对端到端性能的影响
 
 流程：
-1. 使用主实验 `topk=10` 的 search sweep 结果
+1. 使用各主数据集 `topk=10` 的 search sweep 结果
 2. 对每个 `dataset × method` 选择最接近目标 recall 的点：
    - `recall@10 ≈ 0.80`
    - `recall@10 ≈ 0.90`
    - `recall@10 ≈ 0.95`
-3. 用这些 operating points 重放 `FlatStor / Lance / Parquet`
-4. 聚合生成 backend 对比 summary、plot-ready CSV 和 narrative analysis
-5. 只有主实验和 backend 扩展稳定后，才继续 appendix 数据集
+3. 先按数据集写 operating-point manifest
+4. 再按数据集重放 `FlatStor / Lance / Parquet`
+5. 每个数据集完成后立即生成 backend comparison summary
+6. 所有主数据集 backend replay 完成后，再汇总 plot-ready CSV 和 narrative analysis
+7. 只有主实验和 backend 扩展稳定后，才继续 appendix 数据集
 
 参数：
 - 固定 `topk=10`

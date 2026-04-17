@@ -53,14 +53,107 @@
 ## 8. Batch Execution And Validation
 
 - [x] 8.1 Run the first batch on `COCO 100K` for the mandatory non-BoundFetch baseline suite and at least one primary payload backend
-- [ ] 8.2 Prepare and validate `MS MARCO Passage` for baseline-ready search, coupled E2E, and label-aware outputs
+- [x] 8.2 Prepare and validate `MS MARCO Passage` for baseline-ready search, coupled E2E, and label-aware outputs
 - [x] 8.3 Prepare and validate `Deep8M-synth` across the three payload-size tiers and storage/backend comparisons
-- [ ] 8.4 Prepare and validate `Amazon ESCI` for baseline-ready search, coupled E2E, and label-aware outputs
+- [x] 8.4 Prepare and validate `Amazon ESCI` for baseline-ready search, coupled E2E, and label-aware outputs
 - [x] 8.5 Materialize appendix dataset manifests and sanity-run hooks for `LAION subset`, `Clotho`, and `MSR-VTT`, gated behind the primary suite
 - [x] 8.6 Freeze the main-experiment search controls with `topk ∈ {10,50,100}`, `candidate_budget ∈ {100,250,500}` mapped to `topk`, `FlatStor` as the primary backend, and dataset-specific `nlist` values (`COCO=2048`, `Deep8M=12800`, `MS MARCO=16384`, `Amazon ESCI=8192` unless cardinality review changes it)
-- [ ] 8.7 Run the main experiment suite for each `dataset × method × topk` by varying only `nprobe` on the frozen `nlist` values, and vary only `L_search` for DiskANN if it remains active
-- [ ] 8.8 Aggregate the main experiment suite into `topk=10 / 50 / 100` summaries and plots, and use the top-10 results as the only source for backend operating-point selection
-- [ ] 8.9 Select the extended-experiment backend operating points by targeting `recall@10 ≈ 0.80`, `0.90`, and `0.95` for each `dataset × method`, with explicit `unreached` or `best-effort` handling when needed
-- [ ] 8.10 Run `FlatStor`, `Lance`, and `Parquet` only on the selected top-10 recall-matched operating points instead of replaying a full parameter grid
-- [ ] 8.11 Aggregate the extended backend experiment into payload/backend comparison summaries and plot-ready CSVs that remain distinct from the main experiment suite
-- [ ] 8.12 Gate appendix-dataset execution on successful completion of both the main experiment suite and the top-10 backend extension suite
+
+### 8.7 COCO 100K Main Experiment
+
+- [ ] 8.7.1 Run `coco_100k` gate vector-search and coupled E2E checks before the full sweep
+- [ ] 8.7.2 Run `coco_100k × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [ ] 8.7.3 Run `coco_100k × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
+- [ ] 8.7.4 Run `coco_100k × diskann × topk=10` on the frozen `L_search` grid if DiskANN remains active
+- [ ] 8.7.4a Immediately aggregate the completed `coco_100k × topk=10` slice and generate its Pareto plot before proceeding
+- [ ] 8.7.5 Run `coco_100k × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [ ] 8.7.6 Run `coco_100k × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
+- [ ] 8.7.7 Run `coco_100k × diskann × topk=50` on the frozen `L_search` grid if DiskANN remains active
+- [ ] 8.7.7a Immediately aggregate the completed `coco_100k × topk=50` slice and generate its Pareto plot before proceeding
+- [ ] 8.7.8 Run `coco_100k × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [ ] 8.7.9 Run `coco_100k × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
+- [ ] 8.7.10 Run `coco_100k × diskann × topk=100` on the frozen `L_search` grid if DiskANN remains active
+- [ ] 8.7.10a Immediately aggregate the completed `coco_100k × topk=100` slice and generate its Pareto plot before proceeding
+- [ ] 8.7.11 Merge the three `coco_100k` top-k slices into a dataset-level main-experiment summary
+- [ ] 8.7.12 Write a short `coco_100k` result report and reference it from the formal-study outputs
+
+### 8.8 MS MARCO Passage Main Experiment
+
+- [ ] 8.8.1 Run `msmarco_passage` gate vector-search and coupled E2E checks before the full sweep
+- [ ] 8.8.2 Fix and validate query/ground-truth/index alignment if the gate run fails
+- [ ] 8.8.3 Run `msmarco_passage × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [ ] 8.8.4 Run `msmarco_passage × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
+- [ ] 8.8.4a Immediately aggregate the completed `msmarco_passage × topk=10` slice and generate its Pareto plot before proceeding
+- [ ] 8.8.5 Run `msmarco_passage × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [ ] 8.8.6 Run `msmarco_passage × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
+- [ ] 8.8.6a Immediately aggregate the completed `msmarco_passage × topk=50` slice and generate its Pareto plot before proceeding
+- [ ] 8.8.7 Run `msmarco_passage × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [ ] 8.8.8 Run `msmarco_passage × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
+- [ ] 8.8.8a Immediately aggregate the completed `msmarco_passage × topk=100` slice and generate its Pareto plot before proceeding
+- [ ] 8.8.9 Merge the three `msmarco_passage` top-k slices into a dataset-level main-experiment summary
+- [ ] 8.8.10 Write a short `msmarco_passage` result report
+
+### 8.9 Deep8M-synth Main Experiment
+
+- [ ] 8.9.1 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `256B` payload tier
+- [ ] 8.9.2 Run `deep8m_synth` main sweep for the `256B` payload tier across `topk=10/50/100`
+- [ ] 8.9.2a Immediately aggregate each completed `deep8m_synth × 256B × topk` slice and generate its Pareto plot
+- [ ] 8.9.3 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `4KB` payload tier
+- [ ] 8.9.4 Run `deep8m_synth` main sweep for the `4KB` payload tier across `topk=10/50/100`
+- [ ] 8.9.4a Immediately aggregate each completed `deep8m_synth × 4KB × topk` slice and generate its Pareto plot
+- [ ] 8.9.5 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `64KB` payload tier
+- [ ] 8.9.6 Run `deep8m_synth` main sweep for the `64KB` payload tier across `topk=10/50/100`
+- [ ] 8.9.6a Immediately aggregate each completed `deep8m_synth × 64KB × topk` slice and generate its Pareto plot
+- [ ] 8.9.7 Merge all `deep8m_synth` payload-tier and top-k slices into a dataset-level main-experiment summary
+- [ ] 8.9.8 Write a short `deep8m_synth` result report
+
+### 8.10 Amazon ESCI Main Experiment
+
+- [ ] 8.10.1 Run `amazon_esci` gate vector-search and coupled E2E checks before the full sweep
+- [ ] 8.10.2 Validate label-aware outputs and fix query/ground-truth/index alignment if the gate run fails
+- [ ] 8.10.3 Run `amazon_esci × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [ ] 8.10.4 Run `amazon_esci × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
+- [ ] 8.10.4a Immediately aggregate the completed `amazon_esci × topk=10` slice and generate its Pareto plot before proceeding
+- [ ] 8.10.5 Run `amazon_esci × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [ ] 8.10.6 Run `amazon_esci × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
+- [ ] 8.10.6a Immediately aggregate the completed `amazon_esci × topk=50` slice and generate its Pareto plot before proceeding
+- [ ] 8.10.7 Run `amazon_esci × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [ ] 8.10.8 Run `amazon_esci × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
+- [ ] 8.10.8a Immediately aggregate the completed `amazon_esci × topk=100` slice and generate its Pareto plot before proceeding
+- [ ] 8.10.9 Merge the three `amazon_esci` top-k slices into a dataset-level main-experiment summary
+- [ ] 8.10.10 Write a short `amazon_esci` result report
+
+### 8.11 Main Experiment Aggregation
+
+- [ ] 8.11.1 Merge the already-emitted dataset-local `topk=10` summaries into a unified main-suite table
+- [ ] 8.11.2 Merge the already-emitted dataset-local `topk=50` summaries into a unified main-suite table
+- [ ] 8.11.3 Merge the already-emitted dataset-local `topk=100` summaries into a unified main-suite table
+- [ ] 8.11.4 Generate only global main-suite comparison figures from the merged summaries, without replacing the dataset-local Pareto plots
+- [ ] 8.11.5 Write the main-suite narrative report using the dataset-level reports as inputs
+
+### 8.12 Extended Experiment Operating Point Selection
+
+- [ ] 8.12.1 Select `coco_100k` top-10 operating points at `recall@10 ≈ 0.80 / 0.90 / 0.95`
+- [ ] 8.12.2 Select `msmarco_passage` top-10 operating points at `recall@10 ≈ 0.80 / 0.90 / 0.95`
+- [ ] 8.12.3 Select `deep8m_synth` top-10 operating points at `recall@10 ≈ 0.80 / 0.90 / 0.95`
+- [ ] 8.12.4 Select `amazon_esci` top-10 operating points at `recall@10 ≈ 0.80 / 0.90 / 0.95`
+- [ ] 8.12.5 Write a unified operating-point manifest with `matched`, `best-effort`, and `unreached` states
+
+### 8.13 Extended Experiment Backend Replay
+
+- [ ] 8.13.1 Replay `FlatStor / Lance / Parquet` on the selected `coco_100k` top-10 operating points
+- [ ] 8.13.2 Replay `FlatStor / Lance / Parquet` on the selected `msmarco_passage` top-10 operating points
+- [ ] 8.13.3 Replay `FlatStor / Lance / Parquet` on the selected `deep8m_synth` top-10 operating points
+- [ ] 8.13.4 Replay `FlatStor / Lance / Parquet` on the selected `amazon_esci` top-10 operating points
+
+### 8.14 Extended Experiment Aggregation
+
+- [ ] 8.14.1 Aggregate dataset-level backend comparison summaries
+- [ ] 8.14.2 Generate backend comparison plot-ready CSVs and figures
+- [ ] 8.14.3 Write the backend comparison narrative report
+
+### 8.15 Appendix Gate
+
+- [ ] 8.15.1 Verify that all main-experiment dataset blocks are complete
+- [ ] 8.15.2 Verify that all backend extension dataset blocks are complete
+- [ ] 8.15.3 Gate appendix-dataset execution on successful completion of the main and extended experiment suites

@@ -148,13 +148,16 @@ baseline/backend 写出的格式化数据建议统一放在：
 
 1. BoundFetch
 2. IVFPQ + rerank
-3. IVFPQR
-4. IVF-RQ
-5. DiskANN
-6. ConANN 可选
-7. 外部 RaBitQ 可选
+3. IVF + RaBitQ + rerank
+4. DiskANN
+5. ConANN 可选
 
 每个方法都必须输出统一格式的 CSV。
+
+补充冻结规则：
+
+- 正式 IVF 系 baseline 的量化 bit 统一固定为 `4`
+- `ResidualQuantizer / LocalSearchQuantizer / IVFPQR` 不进入本轮正式 baseline 执行顺序
 
 ### Phase 5：跑联动式 E2E baseline
 
@@ -178,6 +181,13 @@ baseline/backend 写出的格式化数据建议统一放在：
 - `overlap_ratio`（若系统支持）
 - `e2e_ms`
 
+存储与搜索核组合规则修订为：
+
+- `Lance`：原始向量与原始数据在同一 Lance 数据集内以两列共存
+- `FlatStor / Parquet`：只负责原始数据列存，原始向量仍由独立 disk vector plane 提供
+- 如果 `Lance` 官方实现原生支持 `IVF + RaBitQ`，则 Lance 端到端实验统一优先使用 Lance 原生搜索实现
+- 在该条件满足时，不再在 Lance 路径下外挂 Faiss 或自建 IVF+RaBitQ 搜索核
+
 ### Phase 6：跑 payload backend 微基准
 
 payload backend 按固定顺序执行：
@@ -193,6 +203,11 @@ payload backend 按固定顺序执行：
 - 不用于主表替代正式 E2E
 
 输入可以使用统一的 top-k ids 或预生成 id 列表。
+
+解释口径固定为：
+
+- 该阶段比较的是 payload backend 与物理布局语义的综合差异
+- 不要求 `FlatStor / Parquet` 强行模拟 Lance 的“向量列 + 数据列共存”布局
 
 ### Phase 7：结果汇总
 

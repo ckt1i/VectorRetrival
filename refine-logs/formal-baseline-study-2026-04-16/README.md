@@ -17,8 +17,9 @@ Files:
   - Defines datasets, payload forms, embedding generation, and synthetic data
     policy.
 - `03_BASELINE_METHODS_CN.md`
-  - Defines the vector-search baseline families, storage backends, and what is
-    considered main-table vs reference-only.
+  - Defines the vector-search baseline families, the fixed 4-bit IVF baseline
+    policy, storage backend semantics, and what is considered main-table vs
+    reference-only.
 - `04_EXECUTION_PLAYBOOK_CN.md`
   - Defines the execution order, output files, and experiment recording rules.
 - `05_RUN_STATUS_TEMPLATE.csv`
@@ -39,6 +40,8 @@ Scope:
 - Main goal:
   - Build a defensible formal baseline suite for BoundFetch as an integrated
     vector-search-plus-payload system.
+  - Freeze the current formal comparison around `IVF+PQ`, `IVF+RaBitQ`, and
+    `DiskANN`, with 4-bit as the official IVF-side quantization budget.
 - Not in scope:
   - Replacing the active BoundFetch optimization plan.
   - Expanding into a full `search x storage x dataset` Cartesian matrix.

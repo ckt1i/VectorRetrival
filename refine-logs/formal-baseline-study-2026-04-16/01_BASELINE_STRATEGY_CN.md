@@ -32,13 +32,18 @@
 
 - BoundFetch
 - Faiss IVFPQ + rerank
-- Faiss IVFPQR
-- Faiss IVFResidualQuantizer 或 IVFLocalSearchQuantizer
+- IVF + RaBitQ + rerank
+
+其中：
+
+- `IVF + RaBitQ + rerank` 当前按“自建 baseline”规划，后续单开 propose 实现。
+- `ResidualQuantizer / LocalSearchQuantizer` 不再进入正式 baseline 套餐。
+- 正式 IVF 系 baseline 的量化口径统一冻结为 `4-bit`。
 
 可选增强项：
 
 - ConANN + Faiss IVF
-- 外部 IVF + RaBitQ / Extended-RaBitQ
+- DiskANN
 
 ### Layer B：强参考方法
 
@@ -66,10 +71,17 @@
 - Lance
 - Parquet
 
+存储语义修订为：
+
+- `Lance`：原始向量与原始数据作为两列，统一写入同一 Lance 数据集。
+- `FlatStor / Parquet`：当前正式口径下只存原始数据列，不把原始向量并入同一列存文件。
+- 原始向量默认由独立的 disk vector plane 提供，用于 rerank 或向量侧复查。
+
 主建议：
 
 - 主表默认只放 1 个主后端
 - 其余后端放单独的 storage ablation 表
+- 如果 `Lance` 官方库原生支持 `IVF + RaBitQ`，则 `Lance` 上的端到端搜索优先直接使用 Lance 原生实现，不再额外叠加 Faiss 或自建 IVF+RaBitQ 搜索核。
 
 ### Layer D：E2E 与成本表
 
@@ -107,6 +119,8 @@
 - 不把 DiskANN 从对比中删掉。
 - 不只用 COCO 100K 一套数据讲完全部故事。
 - 不再把只有 Faiss IVFPQ 一个 IVF baseline 的配置称为“正式 baseline”。
+- 不再把 `ResidualQuantizer / LocalSearchQuantizer` 作为正式主 baseline。
+- 不默认要求 `FlatStor / Parquet` 与 `Lance` 采用相同的向量-数据共存布局。
 
 ## 6. 推荐的论文叙事
 

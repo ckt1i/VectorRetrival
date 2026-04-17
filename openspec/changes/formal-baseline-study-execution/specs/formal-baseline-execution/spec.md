@@ -49,6 +49,19 @@ The formal baseline study SHALL split its execution into a primary experiment su
 - **AND** it SHALL select operating points from the main experiment's top-10 search results
 - **AND** it SHALL replay those points on `FlatStor`, `Lance`, and `Parquet`
 
+### Requirement: Main-experiment execution SHALL be summarized incrementally by dataset and top-k
+The formal baseline study SHALL not defer all main-experiment organization until every primary dataset has completed. Instead, each completed `dataset × topk` slice SHALL be summarized immediately so that partial progress remains usable and auditable.
+
+#### Scenario: A dataset top-k sweep finishes on the primary backend
+- **WHEN** a main-experiment sweep for one `dataset × topk` combination has completed across the required active methods on the primary backend
+- **THEN** the study SHALL immediately aggregate the corresponding vector-search and coupled E2E outputs for that same `dataset × topk`
+- **AND** it SHALL generate a dataset-local Pareto-ready summary before scheduling later datasets or later global summaries
+
+#### Scenario: A dataset finishes one top-k tier before the others
+- **WHEN** one dataset has completed `topk=10` but its `topk=50` and `topk=100` runs are still pending
+- **THEN** the completed `topk=10` slice SHALL already be eligible for summary generation and Pareto plotting
+- **AND** the study SHALL NOT require `topk=50` and `topk=100` to finish before preserving the `topk=10` result for that dataset
+
 ### Requirement: Main experiments SHALL use a frozen operating-point policy
 The formal baseline study SHALL freeze the primary search controls before main-experiment execution so that recall-latency trade-offs are comparable across systems and top-k regimes.
 

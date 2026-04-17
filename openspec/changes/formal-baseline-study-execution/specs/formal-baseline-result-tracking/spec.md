@@ -44,6 +44,16 @@ The formal baseline study SHALL aggregate per-run outputs into study-level summa
 - **THEN** the aggregator SHALL first update summary CSVs and plots under `/home/zcq/VDB/baselines/formal-study/outputs/`
 - **AND** only after that step may selected results be backfilled into `/home/zcq/VDB/baselines/results/`
 
+#### Scenario: Dataset-local top-k summaries are emitted as soon as a slice completes
+- **WHEN** a single `dataset × topk` slice of the main experiment has finished
+- **THEN** the aggregator SHALL immediately write the corresponding dataset-local summary CSVs under `/home/zcq/VDB/baselines/formal-study/outputs/`
+- **AND** it SHALL do so without waiting for the remaining datasets in the main suite to complete
+
+#### Scenario: Dataset-local Pareto plots are emitted per top-k slice
+- **WHEN** a single `dataset × topk` slice of the main experiment has finished and its summary CSV is available
+- **THEN** the aggregator SHALL generate a Pareto plot for that same `dataset × topk` slice
+- **AND** the plot SHALL be stored alongside the formal-study outputs so it can be reviewed before the full main-suite aggregation finishes
+
 #### Scenario: Narrative analysis updates target stable destinations
 - **WHEN** formal-study results are promoted beyond the workspace
 - **THEN** the aggregator SHALL update the intended narrative destinations such as `analysis.md` or other study-facing summaries
