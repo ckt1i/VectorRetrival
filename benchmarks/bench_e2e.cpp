@@ -331,6 +331,8 @@ struct RoundMetrics {
     double overlap_ratio = 0;
     double preload_time_ms = 0;
     double preload_bytes = 0;
+    double resident_cluster_mem_bytes = 0;
+    bool query_uses_resident_clusters = false;
 };
 
 // ============================================================================
@@ -348,7 +350,8 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
 
     Log("\n[%s] Querying %u vectors...\n", label, Q);
 
-    if (search_cfg.clu_read_mode == CluReadMode::FullPreload &&
+    if (!search_cfg.use_resident_clusters &&
+        search_cfg.clu_read_mode == CluReadMode::FullPreload &&
         !index.segment().resident_preload_enabled()) {
         auto preload_status = index.segment().PreloadAllClusters();
         if (!preload_status.ok()) {
@@ -513,6 +516,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.overlap_ratio = (sum_total > 0) ? 1.0 - sum_io_wait / sum_total : 0.0;
     m.preload_time_ms = index.segment().resident_preload_time_ms();
     m.preload_bytes = static_cast<double>(index.segment().resident_preload_bytes());
+    m.resident_cluster_mem_bytes =
+        static_cast<double>(index.segment().resident_cluster_mem_bytes());
+    m.query_uses_resident_clusters = search_cfg.use_resident_clusters;
 
     Log("  %s: recall@1=%.4f @5=%.4f @10=%.4f\n", label,
         m.recall_at[0], m.recall_at[1], m.recall_at[2]);
@@ -596,6 +602,8 @@ int main(int argc, char* argv[]) {
         GetStringArg(argc, argv, "--submission-mode", "shared");
     std::string arg_clu_read_mode =
         GetStringArg(argc, argv, "--clu-read-mode", "window");
+    int arg_use_resident_clusters =
+        GetIntArg(argc, argv, "--use-resident-clusters", 0);
 
     bool arg_cold = HasFlag(argc, argv, "--cold");
     bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
@@ -614,6 +622,13 @@ int main(int argc, char* argv[]) {
         std::fprintf(stderr,
                      "Invalid --clu-read-mode: %s (expected window or full_preload)\n",
                      arg_clu_read_mode.c_str());
+        return 1;
+    }
+    if (arg_use_resident_clusters != 0 &&
+        arg_use_resident_clusters != 1) {
+        std::fprintf(stderr,
+                     "Invalid --use-resident-clusters: %d (expected 0 or 1)\n",
+                     arg_use_resident_clusters);
         return 1;
     }
     if (arg_assignment_factor != 1 && arg_assignment_factor != 2) {
@@ -1078,6 +1093,7 @@ int main(int argc, char* argv[]) {
         (arg_clu_read_mode == "full_preload")
             ? CluReadMode::FullPreload
             : CluReadMode::Window;
+    search_cfg.use_resident_clusters = (arg_use_resident_clusters != 0);
     search_cfg.crc_params = &calib_results;
     search_cfg.initial_prefetch = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--initial-prefetch", 16));
@@ -1087,6 +1103,23 @@ int main(int argc, char* argv[]) {
         GetIntArg(argc, argv, "--refill-count", 8));
     search_cfg.submit_batch_size = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--submit-batch", 8));
+
+    if (search_cfg.use_resident_clusters) {
+        if (search_cfg.clu_read_mode != CluReadMode::FullPreload) {
+            std::fprintf(stderr,
+                         "Resident cluster mode requires --clu-read-mode full_preload\n");
+            return 1;
+        }
+        if (!index.segment().resident_preload_enabled()) {
+            auto preload_status = index.segment().PreloadAllClusters();
+            if (!preload_status.ok()) {
+                std::fprintf(stderr,
+                             "Failed to preload resident clusters before benchmark: %s\n",
+                             preload_status.ToString().c_str());
+                return 1;
+            }
+        }
+    }
 
     // ================================================================
     // nprobe sweep mode (tasks 3.2–3.4)
@@ -1108,7 +1141,8 @@ int main(int argc, char* argv[]) {
                          "rair_lambda,rair_strict_second_choice,"
                          "avg_duplicate_candidates,avg_deduplicated_candidates,"
                          "avg_unique_fetch_candidates,index_source,resolved_index_dir,"
-                         "loaded_eps_ip,loaded_d_k,preload_time_ms,preload_bytes\n";
+                         "loaded_eps_ip,loaded_d_k,preload_time_ms,preload_bytes,"
+                         "resident_cluster_mem_bytes,query_uses_resident_clusters\n";
         }
 
         // Warmup query count for sweep (100 or all if Q < 100)
@@ -1160,7 +1194,9 @@ int main(int argc, char* argv[]) {
                       << index.conann().epsilon() << ","
                       << index.conann().d_k() << ","
                       << sm.preload_time_ms << ","
-                      << sm.preload_bytes << "\n";
+                      << sm.preload_bytes << ","
+                      << sm.resident_cluster_mem_bytes << ","
+                      << (sm.query_uses_resident_clusters ? 1 : 0) << "\n";
             sweep_csv.flush();
         }
 
@@ -1253,8 +1289,12 @@ int main(int argc, char* argv[]) {
         index.rair_lambda(), index.rair_strict_second_choice() ? 1 : 0);
     Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
         metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
-    Log("  clu_mode=%s  preload_time=%.3f ms  preload_bytes=%.0f\n",
-        arg_clu_read_mode.c_str(), metrics.preload_time_ms, metrics.preload_bytes);
+    Log("  clu_mode=%s  resident=%d  preload_time=%.3f ms  preload_bytes=%.0f  resident_mem=%.0f\n",
+        arg_clu_read_mode.c_str(),
+        metrics.query_uses_resident_clusters ? 1 : 0,
+        metrics.preload_time_ms,
+        metrics.preload_bytes,
+        metrics.resident_cluster_mem_bytes);
     Log("  safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n",
         metrics.avg_safe_in, metrics.avg_safe_out, metrics.avg_uncertain);
     Log("  s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n",
@@ -1315,7 +1355,8 @@ int main(int argc, char* argv[]) {
         f << "    " << JBool("sqpoll_requested", arg_sqpoll) << ",\n";
         f << "    " << JBool("sqpoll_effective", cluster_reader.sqpoll_enabled()) << ",\n";
         f << "    " << JStr("submission_mode", arg_submission_mode) << ",\n";
-        f << "    " << JStr("clu_read_mode", arg_clu_read_mode) << "\n";
+        f << "    " << JStr("clu_read_mode", arg_clu_read_mode) << ",\n";
+        f << "    " << JBool("use_resident_clusters", search_cfg.use_resident_clusters) << "\n";
         f << "  },\n";
         f << "  \"crc_config\": {\n";
         f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
@@ -1356,6 +1397,8 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("p99_query_time_ms", metrics.p99) << ",\n";
         f << "    " << JNum("preload_time_ms", metrics.preload_time_ms) << ",\n";
         f << "    " << JNum("preload_bytes", metrics.preload_bytes) << ",\n";
+        f << "    " << JNum("resident_cluster_mem_bytes", metrics.resident_cluster_mem_bytes) << ",\n";
+        f << "    " << JBool("query_uses_resident_clusters", metrics.query_uses_resident_clusters) << ",\n";
         f << "    " << JInt("num_queries", Q) << "\n";
         f << "  },\n";
 

@@ -143,10 +143,17 @@ class Segment {
     double resident_preload_time_ms() const {
         return clu_reader_.resident_preload_time_ms();
     }
+    uint64_t resident_cluster_mem_bytes() const {
+        return clu_reader_.resident_cluster_mem_bytes();
+    }
 
     const ClusterStoreReader::ResidentClusterView* GetResidentClusterView(
         uint32_t cluster_id) const {
         return clu_reader_.GetResidentClusterView(cluster_id);
+    }
+    const query::ParsedCluster* GetResidentParsedCluster(
+        uint32_t cluster_id) const {
+        return clu_reader_.GetResidentParsedCluster(cluster_id);
     }
 
     // ---- DataFileReader forwarding ----

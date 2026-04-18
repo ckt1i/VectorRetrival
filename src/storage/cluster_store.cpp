@@ -392,12 +392,15 @@ ClusterStoreReader::ClusterStoreReader(ClusterStoreReader&& other) noexcept
       loaded_clusters_(std::move(other.loaded_clusters_)),
       resident_file_buffer_(std::move(other.resident_file_buffer_)),
       resident_clusters_(std::move(other.resident_clusters_)),
+      resident_parsed_clusters_(std::move(other.resident_parsed_clusters_)),
       resident_preload_ready_(other.resident_preload_ready_),
       resident_preload_bytes_(other.resident_preload_bytes_),
+      resident_cluster_mem_bytes_(other.resident_cluster_mem_bytes_),
       resident_preload_time_ms_(other.resident_preload_time_ms_) {
     other.fd_ = -1;
     other.resident_preload_ready_ = false;
     other.resident_preload_bytes_ = 0;
+    other.resident_cluster_mem_bytes_ = 0;
     other.resident_preload_time_ms_ = 0.0;
 }
 
@@ -411,12 +414,15 @@ ClusterStoreReader& ClusterStoreReader::operator=(
         loaded_clusters_ = std::move(other.loaded_clusters_);
         resident_file_buffer_ = std::move(other.resident_file_buffer_);
         resident_clusters_ = std::move(other.resident_clusters_);
+        resident_parsed_clusters_ = std::move(other.resident_parsed_clusters_);
         resident_preload_ready_ = other.resident_preload_ready_;
         resident_preload_bytes_ = other.resident_preload_bytes_;
+        resident_cluster_mem_bytes_ = other.resident_cluster_mem_bytes_;
         resident_preload_time_ms_ = other.resident_preload_time_ms_;
         other.fd_ = -1;
         other.resident_preload_ready_ = false;
         other.resident_preload_bytes_ = 0;
+        other.resident_cluster_mem_bytes_ = 0;
         other.resident_preload_time_ms_ = 0.0;
     }
     return *this;
@@ -429,9 +435,11 @@ void ClusterStoreReader::Close() {
     }
     loaded_clusters_.clear();
     resident_clusters_.clear();
+    resident_parsed_clusters_.clear();
     resident_file_buffer_.clear();
     resident_preload_ready_ = false;
     resident_preload_bytes_ = 0;
+    resident_cluster_mem_bytes_ = 0;
     resident_preload_time_ms_ = 0.0;
     cluster_index_.clear();
     file_version_ = 0;
@@ -1038,6 +1046,8 @@ Status ClusterStoreReader::PreloadAllClusters() {
     }
 
     std::map<uint32_t, ResidentClusterView> resident_clusters;
+    std::map<uint32_t, query::ParsedCluster> resident_parsed_clusters;
+    uint64_t resident_cluster_mem_bytes = 0;
     for (const auto& entry : info_.lookup_table) {
         if (entry.block_offset + entry.block_size >
             static_cast<uint64_t>(resident_file_buffer_.size())) {
@@ -1062,13 +1072,20 @@ Status ClusterStoreReader::PreloadAllClusters() {
         view.raw_addresses = parsed.raw_addresses;
         view.address_page_size = parsed.address_page_size;
         view.addresses_are_raw_v2 = parsed.addresses_are_raw_v2;
-        view.decoded_addresses = std::move(parsed.decoded_addresses);
+        view.decoded_addresses = parsed.decoded_addresses;
         resident_clusters[entry.cluster_id] = std::move(view);
+        resident_cluster_mem_bytes += entry.block_size;
+        resident_cluster_mem_bytes +=
+            static_cast<uint64_t>(parsed.decoded_addresses.size()) *
+            sizeof(AddressEntry);
+        resident_parsed_clusters.emplace(entry.cluster_id, std::move(parsed));
     }
 
     resident_clusters_ = std::move(resident_clusters);
+    resident_parsed_clusters_ = std::move(resident_parsed_clusters);
     resident_preload_ready_ = true;
     resident_preload_bytes_ = static_cast<uint64_t>(resident_file_buffer_.size());
+    resident_cluster_mem_bytes_ = resident_cluster_mem_bytes;
     resident_preload_time_ms_ = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t0).count();
     return Status::OK();
@@ -1078,6 +1095,13 @@ const ClusterStoreReader::ResidentClusterView*
 ClusterStoreReader::GetResidentClusterView(uint32_t cluster_id) const {
     auto it = resident_clusters_.find(cluster_id);
     if (it == resident_clusters_.end()) return nullptr;
+    return &it->second;
+}
+
+const query::ParsedCluster* ClusterStoreReader::GetResidentParsedCluster(
+    uint32_t cluster_id) const {
+    auto it = resident_parsed_clusters_.find(cluster_id);
+    if (it == resident_parsed_clusters_.end()) return nullptr;
     return &it->second;
 }
 

@@ -165,6 +165,8 @@ class ClusterStoreReader {
     uint64_t resident_preload_bytes() const { return resident_preload_bytes_; }
     double resident_preload_time_ms() const { return resident_preload_time_ms_; }
     const ResidentClusterView* GetResidentClusterView(uint32_t cluster_id) const;
+    const query::ParsedCluster* GetResidentParsedCluster(uint32_t cluster_id) const;
+    uint64_t resident_cluster_mem_bytes() const { return resident_cluster_mem_bytes_; }
     bool is_open() const { return fd_ >= 0; }
 
  private:
@@ -187,8 +189,10 @@ class ClusterStoreReader {
     std::map<uint32_t, ClusterData> loaded_clusters_;
     std::vector<uint8_t> resident_file_buffer_;
     std::map<uint32_t, ResidentClusterView> resident_clusters_;
+    std::map<uint32_t, query::ParsedCluster> resident_parsed_clusters_;
     bool resident_preload_ready_ = false;
     uint64_t resident_preload_bytes_ = 0;
+    uint64_t resident_cluster_mem_bytes_ = 0;
     double resident_preload_time_ms_ = 0.0;
 
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }

@@ -40,6 +40,7 @@ struct SearchConfig {
     uint32_t refill_threshold = 2;     // Refill when inflight_clusters drops below
     uint32_t refill_count = 2;         // Number of clusters to refill per check
     CluReadMode clu_read_mode = CluReadMode::Window;
+    bool use_resident_clusters = false;
 
     // CRC early stop parameters (nullptr = use legacy d_k early stop)
     const index::CalibrationResults* crc_params = nullptr;

@@ -81,7 +81,6 @@ OverlapScheduler::~OverlapScheduler() {
 SearchResults OverlapScheduler::Search(const float* query_vec) {
     // Reset per-query state
     ready_clusters_.clear();
-    resident_query_clusters_.clear();
     submitted_candidate_offsets_.clear();
     CleanupPendingSlots();
     next_to_submit_ = 0;
@@ -90,8 +89,14 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
 
     auto t_search_start = std::chrono::steady_clock::now();
 
-    if (config_.clu_read_mode == CluReadMode::FullPreload &&
-        !index_.segment().resident_preload_enabled()) {
+    if (config_.use_resident_clusters) {
+        if (!index_.segment().resident_preload_enabled()) {
+            std::fprintf(stderr,
+                         "FATAL: resident cluster mode requires preloaded clusters before search\n");
+            std::abort();
+        }
+    } else if (config_.clu_read_mode == CluReadMode::FullPreload &&
+               !index_.segment().resident_preload_enabled()) {
         Status s = index_.segment().PreloadAllClusters();
         if (!s.ok()) {
             std::fprintf(stderr,
@@ -330,18 +335,15 @@ void OverlapScheduler::PrefetchClusters(
 }
 
 const ParsedCluster* OverlapScheduler::GetResidentParsedCluster(
-    uint32_t cluster_id) {
-    auto it = resident_query_clusters_.find(cluster_id);
-    if (it != resident_query_clusters_.end()) {
-        return &it->second;
+    uint32_t cluster_id) const {
+    if (config_.use_resident_clusters) {
+        return index_.segment().GetResidentParsedCluster(cluster_id);
     }
     const auto* resident = index_.segment().GetResidentClusterView(cluster_id);
     if (resident == nullptr) {
         return nullptr;
     }
-    auto [inserted_it, _] = resident_query_clusters_.emplace(
-        cluster_id, resident->ToParsedCluster());
-    return &inserted_it->second;
+    return index_.segment().GetResidentParsedCluster(cluster_id);
 }
 
 // ============================================================================

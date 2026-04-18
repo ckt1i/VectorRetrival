@@ -1037,17 +1037,18 @@ TEST_F(ClusterStoreTest, FullPreload_MatchesEnsureClusterLoaded) {
     ASSERT_TRUE(reader.PreloadAllClusters().ok());
     ASSERT_TRUE(reader.resident_preload_enabled());
     EXPECT_GT(reader.resident_preload_bytes(), 0u);
+    EXPECT_GT(reader.resident_cluster_mem_bytes(), 0u);
 
     for (uint32_t k = 0; k < K; ++k) {
         ASSERT_TRUE(reader.EnsureClusterLoaded(k).ok());
         const auto* resident = reader.GetResidentClusterView(k);
+        const auto* resident_pc = reader.GetResidentParsedCluster(k);
         ASSERT_NE(resident, nullptr);
+        ASSERT_NE(resident_pc, nullptr);
 
         EXPECT_EQ(resident->num_records, cluster_sizes[k]);
         EXPECT_EQ(resident->decoded_addresses.size(), cluster_sizes[k]);
-
-        query::ParsedCluster resident_pc = resident->ToParsedCluster();
-        EXPECT_EQ(resident_pc.num_fastscan_blocks, (cluster_sizes[k] + 31) / 32);
+        EXPECT_EQ(resident_pc->num_fastscan_blocks, (cluster_sizes[k] + 31) / 32);
 
         for (uint32_t i = 0; i < cluster_sizes[k]; ++i) {
             auto sync_addr = reader.GetAddress(k, i);
@@ -1058,7 +1059,7 @@ TEST_F(ClusterStoreTest, FullPreload_MatchesEnsureClusterLoaded) {
 
             uint32_t block_idx = i / 32;
             uint32_t vec_in_block = i % 32;
-            float resident_norm = resident_pc.norm_oc(block_idx, vec_in_block);
+            float resident_norm = resident_pc->norm_oc(block_idx, vec_in_block);
 
             std::vector<rabitq::RaBitQCode> loaded;
             ASSERT_TRUE(reader.LoadCodes(k, {i}, loaded).ok());
