@@ -69,6 +69,9 @@ class OverlapScheduler {
     void ProbeAndDrainInterleaved(SearchContext& ctx,
                                    class RerankConsumer& reranker,
                                    const std::vector<ClusterID>& sorted_clusters);
+    void ProbeResidentThinPath(SearchContext& ctx,
+                               class RerankConsumer& reranker,
+                               const std::vector<ClusterID>& sorted_clusters);
     void FinalDrain(SearchContext& ctx, class RerankConsumer& reranker);
     void DispatchCompletion(uint64_t slot_token, SearchContext& ctx,
                             class RerankConsumer& reranker);
@@ -111,6 +114,24 @@ class OverlapScheduler {
     IoUringReader* fixed_buffer_reader_ = nullptr;
     bool fixed_vec_buffers_enabled_ = false;
 
+    struct ResidentScratch {
+        std::vector<IoCompletion> completions;
+    };
+    ResidentScratch resident_scratch_;
+
+    struct QueryWrapper {
+        rabitq::PreparedQuery prepared;
+        std::vector<float> rotated_q;
+    };
+
+    struct PreparedClusterQueryView {
+        rabitq::PreparedQuery* prepared = nullptr;
+        float margin_factor = 0.0f;
+    };
+    PreparedClusterQueryView PrepareClusterQueryView(const SearchContext& ctx,
+                                                     uint32_t cluster_id);
+    QueryWrapper query_wrapper_;
+
     // Sliding window state (reset per Search() call)
     std::unordered_map<uint32_t, ParsedCluster> ready_clusters_;
     std::unordered_set<uint64_t> submitted_candidate_offsets_;
@@ -133,8 +154,6 @@ class OverlapScheduler {
     // FastScan classification, and reusable PreparedQuery buffer.
     rabitq::RaBitQEstimator estimator_;  // for PrepareQueryInto in ProbeCluster
     index::ClusterProber prober_;
-    rabitq::PreparedQuery pq_;           // reused across ProbeCluster calls (avoids alloc)
-    std::vector<float> rotated_q_;       // P^T × query, computed once per Search() (Hadamard)
 };
 
 }  // namespace query

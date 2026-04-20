@@ -143,6 +143,67 @@ static std::string NormalizePath(const std::string& path) {
     return normalized.lexically_normal().string();
 }
 
+static std::string CrcParamsSidecarPath(const std::string& index_dir) {
+    return index_dir + "/crc_calibration_params.bin";
+}
+
+static Status WriteCalibrationResults(const std::string& path,
+                                      const CalibrationResults& results) {
+    std::ofstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        return Status::IOError("Failed to create CRC calibration sidecar: " +
+                               path);
+    }
+
+    const uint32_t magic = 0x43524350u;  // "CRCP"
+    const uint32_t version = 1;
+    f.write(reinterpret_cast<const char*>(&magic), sizeof(magic));
+    f.write(reinterpret_cast<const char*>(&version), sizeof(version));
+    f.write(reinterpret_cast<const char*>(&results), sizeof(results));
+    if (!f.good()) {
+        return Status::IOError("Failed to write CRC calibration sidecar: " +
+                               path);
+    }
+    return Status::OK();
+}
+
+static Status ReadCalibrationResults(const std::string& path,
+                                     CalibrationResults* results) {
+    if (results == nullptr) {
+        return Status::InvalidArgument("results must not be null");
+    }
+
+    std::ifstream f(path, std::ios::binary);
+    if (!f.is_open()) {
+        return Status::IOError("Failed to open CRC calibration sidecar: " +
+                               path);
+    }
+
+    uint32_t magic = 0;
+    uint32_t version = 0;
+    f.read(reinterpret_cast<char*>(&magic), sizeof(magic));
+    f.read(reinterpret_cast<char*>(&version), sizeof(version));
+    if (!f.good()) {
+        return Status::IOError("Failed to read CRC calibration sidecar header: " +
+                               path);
+    }
+    if (magic != 0x43524350u) {
+        return Status::InvalidArgument(
+            "CRC calibration sidecar has invalid magic: " + path);
+    }
+    if (version != 1) {
+        return Status::InvalidArgument(
+            "CRC calibration sidecar has unsupported version: " + path);
+    }
+
+    f.read(reinterpret_cast<char*>(results), sizeof(*results));
+    if (!f.good()) {
+        return Status::IOError(
+            "Failed to read CRC calibration sidecar payload: " + path);
+    }
+    return Status::OK();
+}
+
 // ============================================================================
 // JSONL field parsing (no JSON library)
 // ============================================================================
@@ -273,8 +334,27 @@ struct QueryResult {
     std::vector<float> predicted_dists;
     double query_time_ms;
     double io_wait_ms;
+    double coarse_select_ms = 0;
+    double coarse_score_ms = 0;
+    double coarse_topn_ms = 0;
     double probe_time_ms;
+    double probe_prepare_ms = 0;
+    double probe_stage1_ms = 0;
+    double probe_stage1_estimate_ms = 0;
+    double probe_stage1_mask_ms = 0;
+    double probe_stage1_iterate_ms = 0;
+    double probe_stage1_classify_only_ms = 0;
+    double probe_stage2_ms = 0;
+    double probe_classify_ms = 0;
+    double probe_submit_ms = 0;
     double rerank_cpu_ms = 0;
+    double prefetch_submit_ms = 0;
+    double prefetch_wait_ms = 0;
+    double safein_payload_prefetch_ms = 0;
+    double candidate_collect_ms = 0;
+    double pool_vector_read_ms = 0;
+    double rerank_compute_ms = 0;
+    double remaining_payload_fetch_ms = 0;
     double uring_prep_ms = 0;
     double uring_submit_ms = 0;
     double parse_cluster_ms = 0;
@@ -292,6 +372,10 @@ struct QueryResult {
     uint32_t duplicate_candidates = 0;
     uint32_t deduplicated_candidates = 0;
     uint32_t unique_fetch_candidates = 0;
+    uint32_t num_candidates_buffered = 0;
+    uint32_t num_candidates_reranked = 0;
+    uint32_t num_safein_payload_prefetched = 0;
+    uint32_t num_remaining_payload_fetches = 0;
     uint32_t false_safeout;       // GT IDs missing from predicted results
     uint32_t false_safein_upper;  // safe_in - hits_in_topk (upper bound)
 };
@@ -302,12 +386,32 @@ struct QueryResult {
 
 struct RoundMetrics {
     double recall_at[3] = {};          // recall@1, @5, @10
+    bool recall_available = true;
     double avg_query_ms = 0;
     double p50 = 0, p95 = 0, p99 = 0;
     double avg_io_wait = 0;
     double avg_cpu = 0;
+    double avg_coarse_select = 0;
+    double avg_coarse_score = 0;
+    double avg_coarse_topn = 0;
     double avg_probe = 0;
+    double avg_probe_prepare = 0;
+    double avg_probe_stage1 = 0;
+    double avg_probe_stage1_estimate = 0;
+    double avg_probe_stage1_mask = 0;
+    double avg_probe_stage1_iterate = 0;
+    double avg_probe_stage1_classify_only = 0;
+    double avg_probe_stage2 = 0;
+    double avg_probe_classify = 0;
+    double avg_probe_submit = 0;
     double avg_rerank_cpu = 0;
+    double avg_prefetch_submit = 0;
+    double avg_prefetch_wait = 0;
+    double avg_safein_payload_prefetch = 0;
+    double avg_candidate_collect = 0;
+    double avg_pool_vector_read = 0;
+    double avg_rerank_compute = 0;
+    double avg_remaining_payload_fetch = 0;
     double avg_uring_prep = 0;
     double avg_uring_submit = 0;
     double avg_parse_cluster = 0;
@@ -323,6 +427,10 @@ struct RoundMetrics {
     double avg_duplicate_candidates = 0;
     double avg_deduplicated_candidates = 0;
     double avg_unique_fetch_candidates = 0;
+    double avg_candidates_buffered = 0;
+    double avg_candidates_reranked = 0;
+    double avg_safein_payload_prefetched = 0;
+    double avg_remaining_payload_fetches = 0;
     double avg_false_safeout = 0;
     double avg_false_safein_upper = 0;
     uint64_t total_final_safein = 0;   // absolute count: S1 SafeIn + S2 SafeIn
@@ -346,7 +454,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     const float* queries, uint32_t Q, Dim dim,
     const std::vector<int64_t>& qry_ids_data,
     const std::vector<std::vector<int64_t>>& gt_topk,
-    const std::vector<std::vector<float>>& gt_dists) {
+    const std::vector<std::vector<float>>& gt_dists,
+    bool recall_available) {
+    (void)gt_dists;
 
     Log("\n[%s] Querying %u vectors...\n", label, Q);
 
@@ -380,8 +490,27 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.query_id = qry_ids_data[qi];
         qr.query_time_ms = results.stats().total_time_ms;
         qr.io_wait_ms = results.stats().io_wait_time_ms;
+        qr.coarse_select_ms = results.stats().coarse_select_ms;
+        qr.coarse_score_ms = results.stats().coarse_score_ms;
+        qr.coarse_topn_ms = results.stats().coarse_topn_ms;
         qr.probe_time_ms = results.stats().probe_time_ms;
+        qr.probe_prepare_ms = results.stats().probe_prepare_ms;
+        qr.probe_stage1_ms = results.stats().probe_stage1_ms;
+        qr.probe_stage1_estimate_ms = results.stats().probe_stage1_estimate_ms;
+        qr.probe_stage1_mask_ms = results.stats().probe_stage1_mask_ms;
+        qr.probe_stage1_iterate_ms = results.stats().probe_stage1_iterate_ms;
+        qr.probe_stage1_classify_only_ms = results.stats().probe_stage1_classify_only_ms;
+        qr.probe_stage2_ms = results.stats().probe_stage2_ms;
+        qr.probe_classify_ms = results.stats().probe_classify_ms;
+        qr.probe_submit_ms = results.stats().probe_submit_ms;
         qr.rerank_cpu_ms = results.stats().rerank_cpu_ms;
+        qr.prefetch_submit_ms = results.stats().prefetch_submit_ms;
+        qr.prefetch_wait_ms = results.stats().prefetch_wait_ms;
+        qr.safein_payload_prefetch_ms = results.stats().safein_payload_prefetch_ms;
+        qr.candidate_collect_ms = results.stats().candidate_collect_ms;
+        qr.pool_vector_read_ms = results.stats().pool_vector_read_ms;
+        qr.rerank_compute_ms = results.stats().rerank_compute_ms;
+        qr.remaining_payload_fetch_ms = results.stats().remaining_payload_fetch_ms;
         qr.uring_prep_ms = results.stats().uring_prep_ms;
         qr.uring_submit_ms = results.stats().uring_submit_ms;
         qr.parse_cluster_ms = results.stats().parse_cluster_ms;
@@ -399,6 +528,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.duplicate_candidates = results.stats().duplicate_candidates;
         qr.deduplicated_candidates = results.stats().deduplicated_candidates;
         qr.unique_fetch_candidates = results.stats().unique_fetch_candidates;
+        qr.num_candidates_buffered = results.stats().buffered_candidates;
+        qr.num_candidates_reranked = results.stats().reranked_candidates;
+        qr.num_safein_payload_prefetched = results.stats().total_safein_payload_prefetched;
+        qr.num_remaining_payload_fetches = results.stats().total_payload_fetched;
 
         for (uint32_t j = 0; j < results.size(); ++j) {
             qr.predicted_dists.push_back(results[j].distance);
@@ -409,7 +542,7 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         }
 
         // False SafeOut: GT IDs not found in predicted results
-        {
+        if (recall_available && qi < gt_topk.size()) {
             uint32_t gt_k = std::min(search_cfg.top_k,
                 static_cast<uint32_t>(gt_topk[qi].size()));
             std::unordered_set<int64_t> pred_set(
@@ -433,15 +566,18 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
 
     // Compute metrics
     RoundMetrics m;
+    m.recall_available = recall_available;
     uint32_t recall_K[3] = {1, 5, 10};
     double recall_sum[3] = {0, 0, 0};
-    for (uint32_t qi = 0; qi < Q; ++qi) {
-        for (int r = 0; r < 3; ++r) {
-            recall_sum[r] += ComputeRecallAtK(qresults[qi].predicted_ids,
-                                               gt_topk[qi], recall_K[r]);
+    if (recall_available) {
+        for (uint32_t qi = 0; qi < Q; ++qi) {
+            for (int r = 0; r < 3; ++r) {
+                recall_sum[r] += ComputeRecallAtK(qresults[qi].predicted_ids,
+                                                  gt_topk[qi], recall_K[r]);
+            }
         }
+        for (int r = 0; r < 3; ++r) m.recall_at[r] = recall_sum[r] / Q;
     }
-    for (int r = 0; r < 3; ++r) m.recall_at[r] = recall_sum[r] / Q;
 
     std::vector<double> query_times(Q);
     for (uint32_t qi = 0; qi < Q; ++qi) query_times[qi] = qresults[qi].query_time_ms;
@@ -455,10 +591,23 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_s2_si = 0, sum_s2_so = 0, sum_s2_unc = 0;
     double sum_dup = 0, sum_dedup = 0, sum_unique_fetch = 0;
     double sum_false_so = 0, sum_false_si = 0;
-    double sum_io_wait = 0, sum_probe = 0, sum_rerank_cpu = 0, sum_total = 0;
+    double sum_io_wait = 0, sum_total = 0;
+    double sum_coarse_select = 0, sum_coarse_score = 0, sum_coarse_topn = 0;
+    double sum_probe = 0, sum_probe_prepare = 0;
+    double sum_probe_stage1 = 0, sum_probe_stage1_estimate = 0;
+    double sum_probe_stage1_mask = 0, sum_probe_stage1_iterate = 0;
+    double sum_probe_stage1_classify_only = 0, sum_probe_stage2 = 0;
+    double sum_probe_classify = 0, sum_probe_submit = 0;
+    double sum_rerank_cpu = 0;
+    double sum_prefetch_submit = 0, sum_prefetch_wait = 0;
+    double sum_safein_payload_prefetch = 0, sum_candidate_collect = 0;
+    double sum_pool_vector_read = 0, sum_rerank_compute = 0;
+    double sum_remaining_payload_fetch = 0;
     double sum_uring_prep = 0, sum_uring_submit = 0;
     double sum_parse_cluster = 0, sum_fetch_missing = 0;
     double sum_submit_calls = 0;
+    double sum_candidates_buffered = 0, sum_candidates_reranked = 0;
+    double sum_safein_payload_prefetched = 0, sum_remaining_payload_fetches = 0;
     uint32_t early_count = 0;
     double sum_skipped = 0;
     for (uint32_t qi = 0; qi < Q; ++qi) {
@@ -475,13 +624,36 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_false_so += qresults[qi].false_safeout;
         sum_false_si += qresults[qi].false_safein_upper;
         sum_io_wait += qresults[qi].io_wait_ms;
+        sum_coarse_select += qresults[qi].coarse_select_ms;
+        sum_coarse_score += qresults[qi].coarse_score_ms;
+        sum_coarse_topn += qresults[qi].coarse_topn_ms;
         sum_probe += qresults[qi].probe_time_ms;
+        sum_probe_prepare += qresults[qi].probe_prepare_ms;
+        sum_probe_stage1 += qresults[qi].probe_stage1_ms;
+        sum_probe_stage1_estimate += qresults[qi].probe_stage1_estimate_ms;
+        sum_probe_stage1_mask += qresults[qi].probe_stage1_mask_ms;
+        sum_probe_stage1_iterate += qresults[qi].probe_stage1_iterate_ms;
+        sum_probe_stage1_classify_only += qresults[qi].probe_stage1_classify_only_ms;
+        sum_probe_stage2 += qresults[qi].probe_stage2_ms;
+        sum_probe_classify += qresults[qi].probe_classify_ms;
+        sum_probe_submit += qresults[qi].probe_submit_ms;
         sum_rerank_cpu += qresults[qi].rerank_cpu_ms;
+        sum_prefetch_submit += qresults[qi].prefetch_submit_ms;
+        sum_prefetch_wait += qresults[qi].prefetch_wait_ms;
+        sum_safein_payload_prefetch += qresults[qi].safein_payload_prefetch_ms;
+        sum_candidate_collect += qresults[qi].candidate_collect_ms;
+        sum_pool_vector_read += qresults[qi].pool_vector_read_ms;
+        sum_rerank_compute += qresults[qi].rerank_compute_ms;
+        sum_remaining_payload_fetch += qresults[qi].remaining_payload_fetch_ms;
         sum_uring_prep += qresults[qi].uring_prep_ms;
         sum_uring_submit += qresults[qi].uring_submit_ms;
         sum_parse_cluster += qresults[qi].parse_cluster_ms;
         sum_fetch_missing += qresults[qi].fetch_missing_ms;
         sum_submit_calls += qresults[qi].submit_calls;
+        sum_candidates_buffered += qresults[qi].num_candidates_buffered;
+        sum_candidates_reranked += qresults[qi].num_candidates_reranked;
+        sum_safein_payload_prefetched += qresults[qi].num_safein_payload_prefetched;
+        sum_remaining_payload_fetches += qresults[qi].num_remaining_payload_fetches;
         sum_total += qresults[qi].query_time_ms;
         if (qresults[qi].early_stopped) {
             early_count++;
@@ -491,8 +663,27 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
 
     m.avg_io_wait = sum_io_wait / Q;
     m.avg_cpu = (sum_total - sum_io_wait) / Q;
+    m.avg_coarse_select = sum_coarse_select / Q;
+    m.avg_coarse_score = sum_coarse_score / Q;
+    m.avg_coarse_topn = sum_coarse_topn / Q;
     m.avg_probe = sum_probe / Q;
+    m.avg_probe_prepare = sum_probe_prepare / Q;
+    m.avg_probe_stage1 = sum_probe_stage1 / Q;
+    m.avg_probe_stage1_estimate = sum_probe_stage1_estimate / Q;
+    m.avg_probe_stage1_mask = sum_probe_stage1_mask / Q;
+    m.avg_probe_stage1_iterate = sum_probe_stage1_iterate / Q;
+    m.avg_probe_stage1_classify_only = sum_probe_stage1_classify_only / Q;
+    m.avg_probe_stage2 = sum_probe_stage2 / Q;
+    m.avg_probe_classify = sum_probe_classify / Q;
+    m.avg_probe_submit = sum_probe_submit / Q;
     m.avg_rerank_cpu = sum_rerank_cpu / Q;
+    m.avg_prefetch_submit = sum_prefetch_submit / Q;
+    m.avg_prefetch_wait = sum_prefetch_wait / Q;
+    m.avg_safein_payload_prefetch = sum_safein_payload_prefetch / Q;
+    m.avg_candidate_collect = sum_candidate_collect / Q;
+    m.avg_pool_vector_read = sum_pool_vector_read / Q;
+    m.avg_rerank_compute = sum_rerank_compute / Q;
+    m.avg_remaining_payload_fetch = sum_remaining_payload_fetch / Q;
     m.avg_uring_prep = sum_uring_prep / Q;
     m.avg_uring_submit = sum_uring_submit / Q;
     m.avg_parse_cluster = sum_parse_cluster / Q;
@@ -508,6 +699,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_duplicate_candidates = sum_dup / Q;
     m.avg_deduplicated_candidates = sum_dedup / Q;
     m.avg_unique_fetch_candidates = sum_unique_fetch / Q;
+    m.avg_candidates_buffered = sum_candidates_buffered / Q;
+    m.avg_candidates_reranked = sum_candidates_reranked / Q;
+    m.avg_safein_payload_prefetched = sum_safein_payload_prefetched / Q;
+    m.avg_remaining_payload_fetches = sum_remaining_payload_fetches / Q;
     m.avg_false_safeout = sum_false_so / Q;
     m.avg_false_safein_upper = sum_false_si / Q;
     m.total_final_safein = static_cast<uint64_t>(sum_si + sum_s2_si);
@@ -520,12 +715,30 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         static_cast<double>(index.segment().resident_cluster_mem_bytes());
     m.query_uses_resident_clusters = search_cfg.use_resident_clusters;
 
-    Log("  %s: recall@1=%.4f @5=%.4f @10=%.4f\n", label,
-        m.recall_at[0], m.recall_at[1], m.recall_at[2]);
+    if (m.recall_available) {
+        Log("  %s: recall@1=%.4f @5=%.4f @10=%.4f\n", label,
+            m.recall_at[0], m.recall_at[1], m.recall_at[2]);
+    } else {
+        Log("  %s: recall skipped (query-only mode)\n", label);
+    }
     Log("  %s: avg=%.3f ms  p50=%.3f  p95=%.3f  p99=%.3f\n", label,
         m.avg_query_ms, m.p50, m.p95, m.p99);
+    Log("  %s: coarse_select=%.3f ms  score=%.3f ms  topn=%.3f ms\n",
+        label, m.avg_coarse_select, m.avg_coarse_score, m.avg_coarse_topn);
     Log("  %s: io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms  rerank_cpu=%.3f ms\n", label,
         m.avg_io_wait, m.avg_cpu, m.avg_probe, m.avg_rerank_cpu);
+    Log("  %s: probe_prepare=%.3f ms  stage1=%.3f ms  stage2=%.3f ms  classify=%.3f ms  submit=%.3f ms\n",
+        label, m.avg_probe_prepare, m.avg_probe_stage1, m.avg_probe_stage2,
+        m.avg_probe_classify, m.avg_probe_submit);
+    Log("  %s: stage1_estimate=%.3f ms  stage1_mask=%.3f ms  stage1_iterate=%.3f ms  stage1_classify=%.3f ms\n",
+        label, m.avg_probe_stage1_estimate, m.avg_probe_stage1_mask,
+        m.avg_probe_stage1_iterate, m.avg_probe_stage1_classify_only);
+    Log("  %s: prefetch_submit=%.3f ms  prefetch_wait=%.3f ms  safein_payload_prefetch=%.3f ms\n",
+        label, m.avg_prefetch_submit, m.avg_prefetch_wait,
+        m.avg_safein_payload_prefetch);
+    Log("  %s: candidate_collect=%.3f ms  pool_vector_read=%.3f ms  rerank_compute=%.3f ms  remaining_payload_fetch=%.3f ms\n",
+        label, m.avg_candidate_collect, m.avg_pool_vector_read,
+        m.avg_rerank_compute, m.avg_remaining_payload_fetch);
     Log("  %s: uring_prep=%.3f ms  uring_submit=%.3f ms  parse_cluster=%.3f ms  fetch_missing=%.3f ms\n",
         label, m.avg_uring_prep, m.avg_uring_submit, m.avg_parse_cluster, m.avg_fetch_missing);
     Log("  %s: submit_calls=%.1f\n", label, m.avg_submit_calls);
@@ -536,6 +749,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     Log("  %s: duplicate_candidates=%.1f  deduplicated=%.1f  unique_fetch=%.1f\n",
         label, m.avg_duplicate_candidates, m.avg_deduplicated_candidates,
         m.avg_unique_fetch_candidates);
+    Log("  %s: buffered=%.1f  reranked=%.1f  safein_payload_prefetched=%.1f  remaining_payload_fetches=%.1f\n",
+        label, m.avg_candidates_buffered, m.avg_candidates_reranked,
+        m.avg_safein_payload_prefetched, m.avg_remaining_payload_fetches);
     Log("  %s: false_safeout=%.2f  false_safein_upper=%.1f  total_safein=%lu\n",
         label, m.avg_false_safeout, m.avg_false_safein_upper,
         static_cast<unsigned long>(m.total_final_safein));
@@ -621,11 +837,17 @@ int main(int argc, char* argv[]) {
         GetStringArg(argc, argv, "--clu-read-mode", "window");
     int arg_use_resident_clusters =
         GetIntArg(argc, argv, "--use-resident-clusters", 0);
+    int arg_query_only = GetIntArg(argc, argv, "--query-only", 0);
+    int arg_skip_gt = GetIntArg(argc, argv, "--skip-gt", 0);
+    int arg_fine_grained_timing =
+        GetIntArg(argc, argv, "--fine-grained-timing", 1);
 
     bool arg_cold = HasFlag(argc, argv, "--cold");
     bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
     bool arg_iopoll = HasFlag(argc, argv, "--iopoll");
     bool arg_sqpoll = HasFlag(argc, argv, "--sqpoll");
+    const bool query_only_mode = (arg_query_only != 0);
+    const bool skip_gt = query_only_mode || (arg_skip_gt != 0);
 
     if (arg_submission_mode != "shared" &&
         arg_submission_mode != "isolated") {
@@ -813,43 +1035,44 @@ int main(int argc, char* argv[]) {
     // Phase B: Brute-Force Ground Truth
     // ================================================================
     const uint32_t GT_K = static_cast<uint32_t>(arg_topk);
-    Log("\n[Phase B] Computing brute-force ground truth (top-%u)...\n", GT_K);
-
-    auto t_bf_start = std::chrono::steady_clock::now();
-
     std::vector<std::vector<int64_t>> gt_topk(Q);
     std::vector<std::vector<float>> gt_dists(Q);
-    for (uint32_t qi = 0; qi < Q; ++qi) {
-        const float* qvec = qry_emb.data.data() + static_cast<size_t>(qi) * dim;
+    double brute_force_time_ms = 0.0;
+    if (!skip_gt) {
+        Log("\n[Phase B] Computing brute-force ground truth (top-%u)...\n", GT_K);
+        auto t_bf_start = std::chrono::steady_clock::now();
+        for (uint32_t qi = 0; qi < Q; ++qi) {
+            const float* qvec = qry_emb.data.data() + static_cast<size_t>(qi) * dim;
 
-        // Compute distances to all images
-        std::vector<std::pair<float, int64_t>> dists(N);
-        for (uint32_t j = 0; j < N; ++j) {
-            const float* ivec = img_emb.data.data() + static_cast<size_t>(j) * dim;
-            dists[j] = {L2Sqr(qvec, ivec, dim), img_ids.data[j]};
+            std::vector<std::pair<float, int64_t>> dists(N);
+            for (uint32_t j = 0; j < N; ++j) {
+                const float* ivec = img_emb.data.data() + static_cast<size_t>(j) * dim;
+                dists[j] = {L2Sqr(qvec, ivec, dim), img_ids.data[j]};
+            }
+
+            std::partial_sort(dists.begin(), dists.begin() + GT_K, dists.end(),
+                [](const auto& a, const auto& b) { return a.first < b.first; });
+
+            gt_topk[qi].resize(GT_K);
+            gt_dists[qi].resize(GT_K);
+            for (uint32_t k = 0; k < GT_K; ++k) {
+                gt_topk[qi][k] = dists[k].second;
+                gt_dists[qi][k] = dists[k].first;
+            }
+
+            if ((qi + 1) % 100 == 0 || qi + 1 == Q) {
+                double elapsed = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t_bf_start).count();
+                Log("  GT progress: %u/%u (%.0f ms)\n", qi + 1, Q, elapsed);
+            }
         }
-
-        // Partial sort for top-K
-        std::partial_sort(dists.begin(), dists.begin() + GT_K, dists.end(),
-            [](const auto& a, const auto& b) { return a.first < b.first; });
-
-        gt_topk[qi].resize(GT_K);
-        gt_dists[qi].resize(GT_K);
-        for (uint32_t k = 0; k < GT_K; ++k) {
-            gt_topk[qi][k] = dists[k].second;
-            gt_dists[qi][k] = dists[k].first;
-        }
-
-        if ((qi + 1) % 100 == 0 || qi + 1 == Q) {
-            double elapsed = std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - t_bf_start).count();
-            Log("  GT progress: %u/%u (%.0f ms)\n", qi + 1, Q, elapsed);
-        }
+        brute_force_time_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_bf_start).count();
+        Log("  Brute-force time: %.1f ms\n", brute_force_time_ms);
+    } else {
+        Log("\n[Phase B] Skipped brute-force ground truth (%s)\n",
+            query_only_mode ? "--query-only enabled" : "--skip-gt enabled");
     }
-
-    double brute_force_time_ms = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - t_bf_start).count();
-    Log("  Brute-force time: %.1f ms\n", brute_force_time_ms);
 
     // ================================================================
     // Phase C: Build Index (skipped when --index-dir is provided)
@@ -970,97 +1193,40 @@ int main(int argc, char* argv[]) {
         index_source.c_str(), resolved_index_dir.c_str());
 
     CalibrationResults calib_results;
-    {
-        Log("\n[Phase C.5] CRC calibration from precomputed scores...\n");
+    bool crc_loaded = false;
+    bool crc_sidecar_loaded = false;
+    if (arg_crc_enable) {
+        Log("\n[Phase C.5] Loading CRC parameters...\n");
         auto t_crc_start = std::chrono::steady_clock::now();
-
-        uint32_t nlist = index.nlist();
-
-        // Load precomputed CRC scores from build output
-        std::string scores_path = index_dir + "/crc_scores.bin";
-        std::vector<QueryScores> crc_scores;
-        uint32_t scores_nlist, scores_top_k;
-        s = CrcCalibrator::ReadScores(scores_path, crc_scores,
-                                      scores_nlist, scores_top_k);
-        if (!s.ok()) {
-            Log("  Failed to load %s: %s\n", scores_path.c_str(),
-                s.ToString().c_str());
-            Log("  Falling back to inline RaBitQ calibration...\n");
-
-            // Fallback: compute scores inline (load clusters, no GT needed)
-            auto& seg = index.segment();
-
-            struct PerClusterInfo {
-                const uint8_t* codes_block = nullptr;
-                uint32_t count = 0;
-                uint32_t global_start = 0;
-            };
-            std::vector<PerClusterInfo> cluster_infos(nlist);
-
-            uint32_t num_words = (static_cast<uint32_t>(dim) + 63) / 64;
-            uint32_t code_entry_size = num_words * sizeof(uint64_t)
-                                       + sizeof(float) + sizeof(uint32_t);
-            uint32_t global_offset = 0;
-
-            std::vector<uint32_t> all_ids;
-            all_ids.reserve(N);
-
-            for (uint32_t cid = 0; cid < nlist; ++cid) {
-                s = seg.EnsureClusterLoaded(cid);
-                if (!s.ok()) continue;
-
-                uint32_t count = seg.GetNumRecords(cid);
-                cluster_infos[cid].codes_block = seg.GetCodePtr(cid, 0);
-                cluster_infos[cid].count = count;
-                cluster_infos[cid].global_start = global_offset;
-
-                for (uint32_t i = 0; i < count; ++i) {
-                    all_ids.push_back(global_offset + i);
-                }
-                global_offset += count;
-            }
-
-            std::vector<ClusterData> clusters(nlist);
-            for (uint32_t cid = 0; cid < nlist; ++cid) {
-                auto& ci = cluster_infos[cid];
-                clusters[cid].vectors = nullptr;
-                clusters[cid].ids = all_ids.data() + ci.global_start;
-                clusters[cid].count = ci.count;
-                clusters[cid].codes_block = ci.codes_block;
-                clusters[cid].code_entry_size = code_entry_size;
-            }
-
-            std::vector<float> centroids_flat(static_cast<size_t>(nlist) * dim);
-            for (uint32_t cid = 0; cid < nlist; ++cid) {
-                std::memcpy(centroids_flat.data() + static_cast<size_t>(cid) * dim,
-                            index.centroid(cid), dim * sizeof(float));
-            }
-
-            CrcCalibrator::Config crc_cfg;
-            crc_cfg.alpha = arg_crc_alpha;
-            crc_cfg.top_k = GT_K;
-            crc_cfg.calib_ratio = arg_crc_calib;
-            crc_cfg.tune_ratio = arg_crc_tune;
-            crc_cfg.seed = static_cast<uint64_t>(arg_seed);
-
-            auto [cal, eval] = CrcCalibrator::CalibrateWithRaBitQ(
-                crc_cfg, qry_emb.data.data(), Q, dim,
-                centroids_flat.data(), nlist, clusters,
-                index.rotation());
-            calib_results = cal;
-
+        const std::string params_path = CrcParamsSidecarPath(index_dir);
+        s = ReadCalibrationResults(params_path, &calib_results);
+        if (s.ok()) {
+            crc_loaded = true;
+            crc_sidecar_loaded = true;
             double crc_time_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - t_crc_start).count();
-
-            Log("  CRC calibration done (%.1f ms, inline fallback)\n", crc_time_ms);
+            Log("  CRC parameters loaded (%.1f ms, sidecar=%s)\n",
+                crc_time_ms, params_path.c_str());
             Log("  d_min=%.6f  d_max=%.6f  lamhat=%.6f\n",
-                cal.d_min, cal.d_max, cal.lamhat);
-            Log("  kreg=%u  reg_lambda=%.6f\n", cal.kreg, cal.reg_lambda);
-            Log("  eval: FNR=%.4f  avg_probed=%.1f  test_size=%u\n",
-                eval.actual_fnr, eval.avg_probed, eval.test_size);
-            Log("  eval: recall@1=%.4f  @5=%.4f  @10=%.4f\n",
-                eval.recall_at_1, eval.recall_at_5, eval.recall_at_10);
+                calib_results.d_min, calib_results.d_max, calib_results.lamhat);
+            Log("  kreg=%u  reg_lambda=%.6f\n",
+                calib_results.kreg, calib_results.reg_lambda);
         } else {
+            Log("  CRC sidecar unavailable, rebuilding once from scores: %s\n",
+                s.ToString().c_str());
+
+            std::string scores_path = index_dir + "/crc_scores.bin";
+            std::vector<QueryScores> crc_scores;
+            uint32_t scores_nlist = 0, scores_top_k = 0;
+            s = CrcCalibrator::ReadScores(scores_path, crc_scores,
+                                          scores_nlist, scores_top_k);
+            if (!s.ok()) {
+                std::fprintf(stderr,
+                             "CRC enabled but failed to load precomputed scores from %s: %s\n",
+                             scores_path.c_str(), s.ToString().c_str());
+                return 1;
+            }
+
             Log("  Loaded %zu queries from %s (nlist=%u, top_k=%u)\n",
                 crc_scores.size(), scores_path.c_str(), scores_nlist, scores_top_k);
 
@@ -1074,12 +1240,19 @@ int main(int argc, char* argv[]) {
             auto [cal, eval] = CrcCalibrator::Calibrate(
                 crc_cfg, crc_scores, scores_nlist);
             calib_results = cal;
+            crc_loaded = true;
+
+            Status write_status = WriteCalibrationResults(params_path, calib_results);
+            if (!write_status.ok()) {
+                std::fprintf(stderr, "Failed to persist CRC calibration sidecar: %s\n",
+                             write_status.ToString().c_str());
+                return 1;
+            }
 
             double crc_time_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - t_crc_start).count();
-
-            Log("  CRC calibration done (%.1f ms, from precomputed scores)\n",
-                crc_time_ms);
+            Log("  CRC parameters rebuilt and persisted (%.1f ms, sidecar=%s)\n",
+                crc_time_ms, params_path.c_str());
             Log("  d_min=%.6f  d_max=%.6f  lamhat=%.6f\n",
                 cal.d_min, cal.d_max, cal.lamhat);
             Log("  kreg=%u  reg_lambda=%.6f\n", cal.kreg, cal.reg_lambda);
@@ -1088,6 +1261,8 @@ int main(int argc, char* argv[]) {
             Log("  eval: recall@1=%.4f  @5=%.4f  @10=%.4f\n",
                 eval.recall_at_1, eval.recall_at_5, eval.recall_at_10);
         }
+    } else {
+        Log("\n[Phase C.5] Skipped CRC parameter load (--crc 0)\n");
     }
 
     // ================================================================
@@ -1161,7 +1336,8 @@ int main(int argc, char* argv[]) {
             ? CluReadMode::FullPreload
             : CluReadMode::Window;
     search_cfg.use_resident_clusters = (arg_use_resident_clusters != 0);
-    search_cfg.crc_params = &calib_results;
+    search_cfg.enable_fine_grained_timing = (arg_fine_grained_timing != 0);
+    search_cfg.crc_params = crc_loaded ? &calib_results : nullptr;
     search_cfg.initial_prefetch = static_cast<uint32_t>(
         GetIntArg(argc, argv, "--initial-prefetch", 16));
     search_cfg.refill_threshold = static_cast<uint32_t>(
@@ -1224,14 +1400,16 @@ int main(int argc, char* argv[]) {
             {
                 auto [wq, wm] = RunQueryRound(
                     "SWEEP-WARMUP", index, cluster_reader, data_reader.get(), search_cfg,
-                    qry_emb.data.data(), sw_warmup, dim, qry_ids_vec, gt_topk, gt_dists);
+                    qry_emb.data.data(), sw_warmup, dim, qry_ids_vec, gt_topk, gt_dists,
+                    !skip_gt);
                 (void)wq; (void)wm;
             }
 
             // Measurement round
             auto [sq, sm] = RunQueryRound(
                 "SWEEP-MEASURE", index, cluster_reader, data_reader.get(), search_cfg,
-                qry_emb.data.data(), sw_measure, dim, qry_ids_vec, gt_topk, gt_dists);
+                qry_emb.data.data(), sw_measure, dim, qry_ids_vec, gt_topk, gt_dists,
+                !skip_gt);
 
             double safe_out_rate = (sm.avg_probed > 0)
                 ? sm.avg_safe_out / sm.avg_probed * 100.0 : 0.0;
@@ -1274,7 +1452,7 @@ int main(int argc, char* argv[]) {
     // Single round: CRC early stop + dynamic SafeOut
     auto [qresults, metrics] = RunQueryRound(
         arg_cold ? "HOT" : "CRC", index, cluster_reader, data_reader.get(), search_cfg,
-        qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
+        qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists, !skip_gt);
 
     // ================================================================
     // Phase D2: Cold-read round (optional)
@@ -1302,7 +1480,7 @@ int main(int argc, char* argv[]) {
 
         auto [cold_qresults, cm] = RunQueryRound(
             "COLD", index, cluster_reader, data_reader.get(), search_cfg,
-            qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists);
+            qry_emb.data.data(), Q, dim, qry_ids_vec, gt_topk, gt_dists, !skip_gt);
         cold_metrics = cm;
 
         Log("\n╔══════════════════════════════════════════════════════════╗\n");
@@ -1338,12 +1516,19 @@ int main(int argc, char* argv[]) {
     // Phase E: Summary Output
     // ================================================================
     Log("\n=== Summary ===\n");
-    Log("  recall@1=%.4f  recall@5=%.4f  recall@10=%.4f\n",
-        metrics.recall_at[0], metrics.recall_at[1], metrics.recall_at[2]);
+    if (metrics.recall_available) {
+        Log("  recall@1=%.4f  recall@5=%.4f  recall@10=%.4f\n",
+            metrics.recall_at[0], metrics.recall_at[1], metrics.recall_at[2]);
+    } else {
+        Log("  recall skipped (query-only mode)\n");
+    }
     Log("  avg_query=%.3f ms  p50=%.3f  p95=%.3f  p99=%.3f\n",
         metrics.avg_query_ms, metrics.p50, metrics.p95, metrics.p99);
     Log("  build_time=%.1f ms  brute_force=%.1f ms\n",
         training_time_ms, brute_force_time_ms);
+    Log("  benchmark_mode=%s  gt_mode=%s\n",
+        query_only_mode ? "query_only" : "full_e2e",
+        skip_gt ? "skipped" : "computed");
     Log("  index_source=%s  resolved_index_dir=%s\n",
         index_source.c_str(), resolved_index_dir.c_str());
     Log("  loaded_eps_ip=%.6f  loaded_d_k=%.6f\n",
@@ -1354,8 +1539,16 @@ int main(int argc, char* argv[]) {
         ClusteringSourceName(index.clustering_source()));
     Log("  rair_lambda=%.3f  rair_strict_second_choice=%d\n",
         index.rair_lambda(), index.rair_strict_second_choice() ? 1 : 0);
-    Log("  io_wait=%.3f ms  cpu=%.3f ms  probe=%.3f ms\n",
-        metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_probe);
+    Log("  io_wait=%.3f ms  cpu=%.3f ms  coarse_select=%.3f ms  score=%.3f ms  topn=%.3f ms  probe=%.3f ms\n",
+        metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_coarse_select,
+        metrics.avg_coarse_score, metrics.avg_coarse_topn, metrics.avg_probe);
+    Log("  fine_grained_timing=%d\n", search_cfg.enable_fine_grained_timing ? 1 : 0);
+    Log("  probe_prepare=%.3f ms  probe_stage1=%.3f ms  probe_stage2=%.3f ms  probe_classify=%.3f ms  probe_submit=%.3f ms\n",
+        metrics.avg_probe_prepare, metrics.avg_probe_stage1, metrics.avg_probe_stage2,
+        metrics.avg_probe_classify, metrics.avg_probe_submit);
+    Log("  stage1_estimate=%.3f ms  stage1_mask=%.3f ms  stage1_iterate=%.3f ms  stage1_classify=%.3f ms\n",
+        metrics.avg_probe_stage1_estimate, metrics.avg_probe_stage1_mask,
+        metrics.avg_probe_stage1_iterate, metrics.avg_probe_stage1_classify_only);
     Log("  clu_mode=%s  resident=%d  preload_time=%.3f ms  preload_bytes=%.0f  resident_mem=%.0f\n",
         arg_clu_read_mode.c_str(),
         metrics.query_uses_resident_clusters ? 1 : 0,
@@ -1389,6 +1582,8 @@ int main(int argc, char* argv[]) {
         f << "  " << JStr("dataset", ds_name) << ",\n";
         f << "  " << JStr("dataset_path", data_dir) << ",\n";
         f << "  " << JStr("timestamp", ts) << ",\n";
+        f << "  " << JStr("benchmark_mode", query_only_mode ? "query_only" : "full_e2e") << ",\n";
+        f << "  " << JStr("gt_mode", skip_gt ? "skipped" : "computed") << ",\n";
         f << "  " << JStr("index_source", index_source) << ",\n";
         f << "  " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
         f << "  " << JInt("num_images", N) << ",\n";
@@ -1430,9 +1625,11 @@ int main(int argc, char* argv[]) {
         f << "    " << JBool("sqpoll_effective", cluster_reader.sqpoll_enabled()) << ",\n";
         f << "    " << JStr("submission_mode", arg_submission_mode) << ",\n";
         f << "    " << JStr("clu_read_mode", arg_clu_read_mode) << ",\n";
-        f << "    " << JBool("use_resident_clusters", search_cfg.use_resident_clusters) << "\n";
+        f << "    " << JBool("use_resident_clusters", search_cfg.use_resident_clusters) << ",\n";
+        f << "    " << JBool("enable_fine_grained_timing", search_cfg.enable_fine_grained_timing) << "\n";
         f << "  },\n";
         f << "  \"crc_config\": {\n";
+        f << "    " << JBool("enabled", arg_crc_enable != 0) << ",\n";
         f << "    " << JNum("alpha", arg_crc_alpha) << ",\n";
         f << "    " << JNum("calib_ratio", arg_crc_calib) << ",\n";
         f << "    " << JNum("tune_ratio", arg_crc_tune) << "\n";
@@ -1466,6 +1663,7 @@ int main(int argc, char* argv[]) {
         f << "    " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
         f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
         f << "    " << JNum("loaded_d_k", index.conann().d_k()) << ",\n";
+        f << "    " << JBool("recall_available", metrics.recall_available) << ",\n";
         f << "    " << JNum("recall_at_1", metrics.recall_at[0]) << ",\n";
         f << "    " << JNum("recall_at_5", metrics.recall_at[1]) << ",\n";
         f << "    " << JNum("recall_at_10", metrics.recall_at[2]) << ",\n";
@@ -1497,13 +1695,36 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("total_final_safein", static_cast<int64_t>(metrics.total_final_safein)) << ",\n";
         f << "    " << JNum("avg_io_wait_ms", metrics.avg_io_wait) << ",\n";
         f << "    " << JNum("avg_cpu_time_ms", metrics.avg_cpu) << ",\n";
+        f << "    " << JNum("avg_coarse_select_ms", metrics.avg_coarse_select) << ",\n";
+        f << "    " << JNum("avg_coarse_score_ms", metrics.avg_coarse_score) << ",\n";
+        f << "    " << JNum("avg_coarse_topn_ms", metrics.avg_coarse_topn) << ",\n";
         f << "    " << JNum("avg_probe_time_ms", metrics.avg_probe) << ",\n";
+        f << "    " << JNum("avg_probe_prepare_ms", metrics.avg_probe_prepare) << ",\n";
+        f << "    " << JNum("avg_probe_stage1_ms", metrics.avg_probe_stage1) << ",\n";
+        f << "    " << JNum("avg_probe_stage1_estimate_ms", metrics.avg_probe_stage1_estimate) << ",\n";
+        f << "    " << JNum("avg_probe_stage1_mask_ms", metrics.avg_probe_stage1_mask) << ",\n";
+        f << "    " << JNum("avg_probe_stage1_iterate_ms", metrics.avg_probe_stage1_iterate) << ",\n";
+        f << "    " << JNum("avg_probe_stage1_classify_only_ms", metrics.avg_probe_stage1_classify_only) << ",\n";
+        f << "    " << JNum("avg_probe_stage2_ms", metrics.avg_probe_stage2) << ",\n";
+        f << "    " << JNum("avg_probe_classify_ms", metrics.avg_probe_classify) << ",\n";
+        f << "    " << JNum("avg_probe_submit_ms", metrics.avg_probe_submit) << ",\n";
         f << "    " << JNum("avg_rerank_cpu_ms", metrics.avg_rerank_cpu) << ",\n";
+        f << "    " << JNum("avg_prefetch_submit_ms", metrics.avg_prefetch_submit) << ",\n";
+        f << "    " << JNum("avg_prefetch_wait_ms", metrics.avg_prefetch_wait) << ",\n";
+        f << "    " << JNum("avg_safein_payload_prefetch_ms", metrics.avg_safein_payload_prefetch) << ",\n";
+        f << "    " << JNum("avg_candidate_collect_ms", metrics.avg_candidate_collect) << ",\n";
+        f << "    " << JNum("avg_pool_vector_read_ms", metrics.avg_pool_vector_read) << ",\n";
+        f << "    " << JNum("avg_rerank_compute_ms", metrics.avg_rerank_compute) << ",\n";
+        f << "    " << JNum("avg_remaining_payload_fetch_ms", metrics.avg_remaining_payload_fetch) << ",\n";
         f << "    " << JNum("avg_uring_prep_ms", metrics.avg_uring_prep) << ",\n";
         f << "    " << JNum("avg_uring_submit_ms", metrics.avg_uring_submit) << ",\n";
         f << "    " << JNum("avg_parse_cluster_ms", metrics.avg_parse_cluster) << ",\n";
         f << "    " << JNum("avg_fetch_missing_ms", metrics.avg_fetch_missing) << ",\n";
         f << "    " << JNum("avg_submit_calls", metrics.avg_submit_calls) << ",\n";
+        f << "    " << JNum("avg_candidates_buffered", metrics.avg_candidates_buffered) << ",\n";
+        f << "    " << JNum("avg_candidates_reranked", metrics.avg_candidates_reranked) << ",\n";
+        f << "    " << JNum("avg_safein_payload_prefetched", metrics.avg_safein_payload_prefetched) << ",\n";
+        f << "    " << JNum("avg_remaining_payload_fetches", metrics.avg_remaining_payload_fetches) << ",\n";
         f << "    " << JNum("early_stopped_pct", metrics.early_pct) << ",\n";
         f << "    " << JNum("avg_clusters_skipped", metrics.avg_skipped) << ",\n";
         f << "    " << JNum("overlap_ratio", metrics.overlap_ratio) << "\n";
@@ -1518,14 +1739,17 @@ int main(int argc, char* argv[]) {
             first = false;
 
             const auto& qr = qresults[qi];
-            double r10 = ComputeRecallAtK(qr.predicted_ids, gt_topk[qi], 10);
-            bool hit1 = !qr.predicted_ids.empty() && !gt_topk[qi].empty() &&
+            double r10 = metrics.recall_available
+                ? ComputeRecallAtK(qr.predicted_ids, gt_topk[qi], 10)
+                : 0.0;
+            bool hit1 = metrics.recall_available &&
+                        !qr.predicted_ids.empty() && !gt_topk[qi].empty() &&
                         qr.predicted_ids[0] == gt_topk[qi][0];
             double cpu_ms = qr.query_time_ms - qr.io_wait_ms;
 
             f << "    {\n";
             f << "      " << JInt("query_id", qr.query_id) << ",\n";
-            f << "      " << JArr64("gt_top10_ids", gt_topk[qi]) << ",\n";
+            f << "      " << JArr64("gt_top10_ids", metrics.recall_available ? gt_topk[qi] : std::vector<int64_t>{}) << ",\n";
             f << "      " << JArr64("predicted_top10_ids", qr.predicted_ids) << ",\n";
             f << "      " << JArrF("predicted_top10_distances", qr.predicted_dists) << ",\n";
             f << "      " << JBool("hit_at_1", hit1) << ",\n";
@@ -1533,6 +1757,30 @@ int main(int argc, char* argv[]) {
             f << "      " << JNum("query_time_ms", qr.query_time_ms) << ",\n";
             f << "      " << JNum("io_wait_ms", qr.io_wait_ms) << ",\n";
             f << "      " << JNum("cpu_time_ms", cpu_ms) << ",\n";
+            f << "      " << JNum("coarse_select_ms", qr.coarse_select_ms) << ",\n";
+            f << "      " << JNum("coarse_score_ms", qr.coarse_score_ms) << ",\n";
+            f << "      " << JNum("coarse_topn_ms", qr.coarse_topn_ms) << ",\n";
+            f << "      " << JNum("probe_ms", qr.probe_time_ms) << ",\n";
+            f << "      " << JNum("probe_prepare_ms", qr.probe_prepare_ms) << ",\n";
+            f << "      " << JNum("probe_stage1_ms", qr.probe_stage1_ms) << ",\n";
+            f << "      " << JNum("probe_stage1_estimate_ms", qr.probe_stage1_estimate_ms) << ",\n";
+            f << "      " << JNum("probe_stage1_mask_ms", qr.probe_stage1_mask_ms) << ",\n";
+            f << "      " << JNum("probe_stage1_iterate_ms", qr.probe_stage1_iterate_ms) << ",\n";
+            f << "      " << JNum("probe_stage1_classify_only_ms", qr.probe_stage1_classify_only_ms) << ",\n";
+            f << "      " << JNum("probe_stage2_ms", qr.probe_stage2_ms) << ",\n";
+            f << "      " << JNum("probe_classify_ms", qr.probe_classify_ms) << ",\n";
+            f << "      " << JNum("probe_submit_ms", qr.probe_submit_ms) << ",\n";
+            f << "      " << JNum("prefetch_submit_ms", qr.prefetch_submit_ms) << ",\n";
+            f << "      " << JNum("prefetch_wait_ms", qr.prefetch_wait_ms) << ",\n";
+            f << "      " << JNum("safein_payload_prefetch_ms", qr.safein_payload_prefetch_ms) << ",\n";
+            f << "      " << JNum("candidate_collect_ms", qr.candidate_collect_ms) << ",\n";
+            f << "      " << JNum("pool_vector_read_ms", qr.pool_vector_read_ms) << ",\n";
+            f << "      " << JNum("rerank_compute_ms", qr.rerank_compute_ms) << ",\n";
+            f << "      " << JNum("remaining_payload_fetch_ms", qr.remaining_payload_fetch_ms) << ",\n";
+            f << "      " << JInt("num_candidates_buffered", qr.num_candidates_buffered) << ",\n";
+            f << "      " << JInt("num_candidates_reranked", qr.num_candidates_reranked) << ",\n";
+            f << "      " << JInt("num_safein_payload_prefetched", qr.num_safein_payload_prefetched) << ",\n";
+            f << "      " << JInt("num_remaining_payload_fetches", qr.num_remaining_payload_fetches) << ",\n";
             f << "      " << JBool("early_stopped", qr.early_stopped) << ",\n";
             f << "      " << JInt("clusters_skipped", qr.clusters_skipped) << "\n";
             f << "    }";
@@ -1541,6 +1789,8 @@ int main(int argc, char* argv[]) {
 
         // CRC calibration
         f << "  \"crc_calibration\": {\n";
+        f << "    " << JBool("loaded", crc_loaded) << ",\n";
+        f << "    " << JBool("loaded_from_sidecar", crc_sidecar_loaded) << ",\n";
         f << "    " << JNum("d_min", calib_results.d_min) << ",\n";
         f << "    " << JNum("d_max", calib_results.d_max) << ",\n";
         f << "    " << JNum("lamhat", calib_results.lamhat) << ",\n";

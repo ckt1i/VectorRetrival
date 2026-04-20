@@ -41,6 +41,7 @@ struct SearchConfig {
     uint32_t refill_count = 2;         // Number of clusters to refill per check
     CluReadMode clu_read_mode = CluReadMode::Window;
     bool use_resident_clusters = false;
+    bool enable_fine_grained_timing = true;
 
     // CRC early stop parameters (nullptr = use legacy d_k early stop)
     const index::CalibrationResults* crc_params = nullptr;
@@ -61,14 +62,29 @@ struct SearchStats {
     uint32_t total_reranked = 0;
     uint32_t total_payload_prefetched = 0;
     uint32_t total_payload_fetched = 0;
+    uint32_t total_safein_payload_prefetched = 0;
     uint32_t total_submit_calls = 0;
     uint32_t duplicate_candidates = 0;
     uint32_t deduplicated_candidates = 0;
     uint32_t unique_fetch_candidates = 0;
+    uint32_t buffered_candidates = 0;
+    uint32_t reranked_candidates = 0;
     bool early_stopped = false;
     uint32_t clusters_skipped = 0;
     uint32_t crc_clusters_probed = 0;
+    double coarse_select_ms = 0;
+    double coarse_score_ms = 0;
+    double coarse_topn_ms = 0;
     double probe_time_ms = 0;
+    double probe_prepare_ms = 0;
+    double probe_stage1_ms = 0;
+    double probe_stage1_estimate_ms = 0;
+    double probe_stage1_mask_ms = 0;
+    double probe_stage1_iterate_ms = 0;
+    double probe_stage1_classify_only_ms = 0;
+    double probe_stage2_ms = 0;
+    double probe_classify_ms = 0;
+    double probe_submit_ms = 0;
     double rerank_time_ms = 0;
     double rerank_cpu_ms = 0;
     double total_time_ms = 0;
@@ -78,10 +94,17 @@ struct SearchStats {
     uint32_t s2_safe_out = 0;
     uint32_t s2_uncertain = 0;
     // Fine-grained timing breakdown (ms)
-    double uring_prep_ms = 0;    // io_uring PrepRead() calls in AsyncIOSink::OnCandidate()
+    double uring_prep_ms = 0;    // io_uring PrepRead() calls in AsyncIOSink batch submit path
     double uring_submit_ms = 0;  // reader_.Submit() calls in pipeline
     double parse_cluster_ms = 0; // ParseClusterBlock() in DispatchCompletion()
     double fetch_missing_ms = 0; // FetchMissingPayloads() wall time
+    double prefetch_submit_ms = 0;          // Reserved field: disabled in low-overhead benchmark path
+    double prefetch_wait_ms = 0;            // Reserved field: disabled in low-overhead benchmark path
+    double safein_payload_prefetch_ms = 0;  // Reserved field: disabled in low-overhead benchmark path
+    double candidate_collect_ms = 0;        // Organize buffered candidates before batch rerank
+    double pool_vector_read_ms = 0;         // Batch read/visit of prefetched vectors from memory pool
+    double rerank_compute_ms = 0;           // Batch L2/top-k compute
+    double remaining_payload_fetch_ms = 0;  // Final missing payload fetch
 };
 
 class SearchContext {

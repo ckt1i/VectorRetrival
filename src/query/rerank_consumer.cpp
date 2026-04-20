@@ -1,7 +1,9 @@
 #include "vdb/query/rerank_consumer.h"
 
+#include <chrono>
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 #include <unordered_set>
 
 #include "vdb/common/distance.h"
@@ -15,26 +17,34 @@ RerankConsumer::RerankConsumer(SearchContext& ctx, Dim dim)
 RerankConsumer::~RerankConsumer() = default;
 
 void RerankConsumer::ConsumeVec(uint8_t* buf, AddressEntry addr) {
-    const float* vec = reinterpret_cast<const float*>(buf);
-    float dist = L2Sqr(ctx_.query_vec(), vec, dim_);
-    ctx_.collector().TryInsert(dist, addr);
-    ctx_.stats().total_reranked++;
+    uint32_t aligned_vec_bytes = (vec_bytes_ + 4095u) & ~4095u;
+    uint8_t* vec_copy = static_cast<uint8_t*>(
+        std::aligned_alloc(4096, aligned_vec_bytes));
+    std::memcpy(vec_copy, buf, vec_bytes_);
+    buffered_candidates_.push_back(
+        BufferedCandidate{addr, AlignedBufPtr(vec_copy)});
+    ctx_.stats().buffered_candidates++;
 }
 
 void RerankConsumer::ConsumeAll(uint8_t* buf, AddressEntry addr) {
     const float* vec = reinterpret_cast<const float*>(buf);
-    float dist = L2Sqr(ctx_.query_vec(), vec, dim_);
-    bool entered = ctx_.collector().TryInsert(dist, addr);
+    uint32_t aligned_vec_bytes = (vec_bytes_ + 4095u) & ~4095u;
+    uint8_t* vec_copy = static_cast<uint8_t*>(
+        std::aligned_alloc(4096, aligned_vec_bytes));
+    std::memcpy(vec_copy, vec, vec_bytes_);
+    buffered_candidates_.push_back(
+        BufferedCandidate{addr, AlignedBufPtr(vec_copy)});
+    ctx_.stats().buffered_candidates++;
 
-    if (entered && addr.size > vec_bytes_) {
+    if (addr.size > vec_bytes_) {
         // Copy payload portion to cache (aligned for consistency)
         uint32_t payload_len = addr.size - vec_bytes_;
         uint32_t alloc_len = (payload_len + 4095u) & ~4095u;
         uint8_t* pbuf = static_cast<uint8_t*>(std::aligned_alloc(4096, alloc_len));
         std::memcpy(pbuf, buf + vec_bytes_, payload_len);
         payload_cache_[addr.offset] = AlignedBufPtr(pbuf);
+        ctx_.stats().total_safein_payload_prefetched++;
     }
-    ctx_.stats().total_reranked++;
 }
 
 void RerankConsumer::ConsumePayload(uint8_t* buf, AddressEntry addr) {
@@ -71,6 +81,41 @@ void RerankConsumer::CleanupUnusedCache(
             ++it;
         }
     }
+}
+
+void RerankConsumer::ExecuteBuffered() {
+    auto collect_start = std::chrono::steady_clock::now();
+    std::sort(buffered_candidates_.begin(), buffered_candidates_.end(),
+              [](const BufferedCandidate& a, const BufferedCandidate& b) {
+                  return a.addr.offset < b.addr.offset;
+              });
+    ctx_.stats().candidate_collect_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - collect_start).count();
+
+    auto read_start = std::chrono::steady_clock::now();
+    volatile uint64_t touch_bytes = 0;
+    for (const auto& candidate : buffered_candidates_) {
+        touch_bytes += candidate.addr.size;
+        (void)touch_bytes;
+    }
+    ctx_.stats().pool_vector_read_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - read_start).count();
+
+    auto compute_start = std::chrono::steady_clock::now();
+    for (const auto& candidate : buffered_candidates_) {
+        const float* vec = reinterpret_cast<const float*>(candidate.vec_buf.get());
+        float dist = L2Sqr(ctx_.query_vec(), vec, dim_);
+        ctx_.collector().TryInsert(dist, candidate.addr);
+        ctx_.stats().total_reranked++;
+        ctx_.stats().reranked_candidates++;
+    }
+    ctx_.stats().rerank_compute_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - compute_start).count();
+    buffered_candidates_.clear();
+}
+
+uint32_t RerankConsumer::BufferedCount() const {
+    return static_cast<uint32_t>(buffered_candidates_.size());
 }
 
 }  // namespace query

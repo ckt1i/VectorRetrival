@@ -200,6 +200,7 @@ class RaBitQEstimator {
     uint8_t bits_;                // M: quantization bits
     uint32_t words_per_plane_;    // ceil(dim / 64)
     float inv_sqrt_dim_;          // 1 / √dim  (precomputed)
+    mutable std::vector<int16_t> quant_scratch_;
 };
 
 }  // namespace rabitq

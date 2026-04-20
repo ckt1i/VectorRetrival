@@ -52,8 +52,13 @@ int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
 /// @param dim           Vector dimensionality
 /// @return              Quantization step width (for de-quantization: value ≈ quant * width)
 float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
-                          int16_t* VDB_RESTRICT quant_out,
-                          Dim dim);
+                        int16_t* VDB_RESTRICT quant_out,
+                        Dim dim);
+
+float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
+                                float vmax,
+                                int16_t* VDB_RESTRICT quant_out,
+                                Dim dim);
 
 /// Compute a 16-bit (or 32-bit) SafeOut bitmask for a batch of FastScan dists.
 ///

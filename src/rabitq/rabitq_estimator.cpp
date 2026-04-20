@@ -24,7 +24,9 @@ RaBitQEstimator::RaBitQEstimator(Dim dim, uint8_t bits)
     : dim_(dim),
       bits_(bits),
       words_per_plane_((dim + 63) / 64),
-      inv_sqrt_dim_(1.0f / std::sqrt(static_cast<float>(dim))) {}
+      inv_sqrt_dim_(1.0f / std::sqrt(static_cast<float>(dim))) {
+    quant_scratch_.resize(dim_);
+}
 
 // ============================================================================
 // PrepareQuery
@@ -149,17 +151,26 @@ void RaBitQEstimator::PrepareQueryInto(
         pq->sign_code[w] = 0;
     }
     // inv_norm=1.0f: rotated is already unit-length; the multiply is a no-op
-    pq->sum_q = simd::SimdNormalizeSignSum(
-        pq->rotated.data(), 1.0f,
-        pq->sign_code.data(), words_per_plane_,
-        static_cast<uint32_t>(L));
+    simd::NormalizeSignSumResult norm_result =
+        simd::SimdNormalizeSignSumMaxAbs(
+            pq->rotated.data(), 1.0f,
+            pq->sign_code.data(), words_per_plane_,
+            static_cast<uint32_t>(L));
+    pq->sum_q = norm_result.sum;
 
-    // FastScan query quantization + LUT
-    pq->quant_query.resize(L);
-    pq->fs_width = simd::QuantizeQuery14Bit(
-        pq->rotated.data(), pq->quant_query.data(), dim_);
+    // FastScan query quantization + LUT. Reuse estimator scratch so the
+    // resident query path does not retain a long-lived quant buffer in pq.
+    if (quant_scratch_.size() < L) {
+        quant_scratch_.resize(L);
+    }
+    pq->fs_width = simd::QuantizeQuery14BitWithMax(
+        pq->rotated.data(), norm_result.max_abs, quant_scratch_.data(), dim_);
+    pq->quant_query.clear();
 
     const size_t lut_size = static_cast<size_t>(dim_) * 8;
+    if (pq->fastscan_lut.capacity() < lut_size + 63) {
+        pq->fastscan_lut.reserve(lut_size + 63);
+    }
     pq->fastscan_lut.resize(lut_size + 63);
     uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
     uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
@@ -171,7 +182,7 @@ void RaBitQEstimator::PrepareQueryInto(
 #endif
 
     pq->fs_shift = simd::BuildFastScanLUT(
-        pq->quant_query.data(), pq->lut_aligned, dim_);
+        quant_scratch_.data(), pq->lut_aligned, dim_);
 }
 
 // ============================================================================
@@ -211,18 +222,26 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
         pq->sign_code[w] = 0;
     }
     float inv_norm = (pq->norm_qc > 1e-30f) ? (1.0f / pq->norm_qc) : 1.0f;
-    pq->sum_q = simd::SimdNormalizeSignSum(
-        pq->rotated.data(), inv_norm,
-        pq->sign_code.data(), words_per_plane_,
-        static_cast<uint32_t>(L));
+    simd::NormalizeSignSumResult norm_result =
+        simd::SimdNormalizeSignSumMaxAbs(
+            pq->rotated.data(), inv_norm,
+            pq->sign_code.data(), words_per_plane_,
+            static_cast<uint32_t>(L));
+    pq->sum_q = norm_result.sum;
     // pq->rotated now holds the normalized diff = P^T × (q̄)
 
     // Step 3: FastScan quantization + LUT (identical to PrepareQueryInto)
-    pq->quant_query.resize(L);
-    pq->fs_width = simd::QuantizeQuery14Bit(
-        pq->rotated.data(), pq->quant_query.data(), dim_);
+    if (quant_scratch_.size() < L) {
+        quant_scratch_.resize(L);
+    }
+    pq->fs_width = simd::QuantizeQuery14BitWithMax(
+        pq->rotated.data(), norm_result.max_abs, quant_scratch_.data(), dim_);
+    pq->quant_query.clear();
 
     const size_t lut_size = static_cast<size_t>(dim_) * 8;
+    if (pq->fastscan_lut.capacity() < lut_size + 63) {
+        pq->fastscan_lut.reserve(lut_size + 63);
+    }
     pq->fastscan_lut.resize(lut_size + 63);
     uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
     uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
@@ -232,7 +251,7 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
 #endif
 
     pq->fs_shift = simd::BuildFastScanLUT(
-        pq->quant_query.data(), pq->lut_aligned, dim_);
+        quant_scratch_.data(), pq->lut_aligned, dim_);
 }
 
 // ============================================================================

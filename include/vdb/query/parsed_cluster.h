@@ -116,6 +116,21 @@ struct ParsedCluster {
         }
         return decoded_addresses[vec_idx];
     }
+
+    void DecodeAddressBatch(const uint32_t* vec_idxs,
+                            uint32_t count,
+                            AddressEntry* out) const {
+        if (addresses_are_raw_v2 && raw_addresses != nullptr) {
+            for (uint32_t i = 0; i < count; ++i) {
+                out[i] = storage::AddressColumn::DecodeRawEntryV2(
+                    raw_addresses[vec_idxs[i]], address_page_size);
+            }
+            return;
+        }
+        for (uint32_t i = 0; i < count; ++i) {
+            out[i] = decoded_addresses[vec_idxs[i]];
+        }
+    }
 };
 
 }  // namespace query

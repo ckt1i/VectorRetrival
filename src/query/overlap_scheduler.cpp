@@ -55,8 +55,12 @@ OverlapScheduler::OverlapScheduler(index::IvfIndex& index,
       prober_(index.conann(), index.dim(),
               index.segment().rabitq_config().bits) {
     if (index.used_hadamard()) {
-        rotated_q_.resize(index.dim());
+        query_wrapper_.rotated_q.resize(index.dim());
     }
+    ready_clusters_.reserve(std::max(1u, config_.prefetch_depth + config_.initial_prefetch));
+    submitted_candidate_offsets_.reserve(
+        static_cast<size_t>(std::max(1u, config_.nprobe)) * 256);
+    resident_scratch_.completions.resize(128);
     if (use_crc_) {
         crc_stopper_ = index::CrcStopper(*config.crc_params, index.nlist());
         est_heap_.reserve(est_top_k_);
@@ -109,18 +113,29 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
 
     // Phase 1.3: precompute P^T × query once when Hadamard rotation is used
     if (index_.used_hadamard()) {
-        index_.rotation().Apply(query_vec, rotated_q_.data());
+        index_.rotation().Apply(query_vec, query_wrapper_.rotated_q.data());
     }
 
     SearchContext ctx(query_vec, config_);
     RerankConsumer reranker(ctx, index_.dim());
 
+    auto coarse_start = std::chrono::steady_clock::now();
     auto sorted_clusters = index_.FindNearestClusters(
         ctx.query_vec(), config_.nprobe);
+    ctx.stats().coarse_score_ms = index_.last_coarse_score_ms();
+    ctx.stats().coarse_topn_ms = index_.last_coarse_topn_ms();
+    ctx.stats().coarse_select_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - coarse_start).count();
 
     PrefetchClusters(ctx, sorted_clusters);
-    ProbeAndDrainInterleaved(ctx, reranker, sorted_clusters);
+    if (config_.use_resident_clusters &&
+        config_.clu_read_mode == CluReadMode::FullPreload) {
+        ProbeResidentThinPath(ctx, reranker, sorted_clusters);
+    } else {
+        ProbeAndDrainInterleaved(ctx, reranker, sorted_clusters);
+    }
     FinalDrain(ctx, reranker);
+    reranker.ExecuteBuffered();
 
     auto results = ctx.collector().Finalize();
 
@@ -129,12 +144,109 @@ SearchResults OverlapScheduler::Search(const float* query_vec) {
         FetchMissingPayloads(ctx, reranker, results);
         ctx.stats().fetch_missing_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - tf0).count();
+        ctx.stats().remaining_payload_fetch_ms = ctx.stats().fetch_missing_ms;
     }
     auto sr = AssembleResults(reranker, results);
     sr.stats() = ctx.stats();
     sr.stats().total_time_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - t_search_start).count();
     return sr;
+}
+
+void OverlapScheduler::ProbeResidentThinPath(
+    SearchContext& ctx, RerankConsumer& reranker,
+    const std::vector<ClusterID>& sorted_clusters) {
+    auto& comps = resident_scratch_.completions;
+    uint32_t vec_flush_threshold =
+        (config_.submit_batch_size == 0) ? 1u : config_.submit_batch_size;
+    if (config_.io_queue_depth > 0) {
+        vec_flush_threshold = std::min(vec_flush_threshold, config_.io_queue_depth);
+    }
+
+    auto record_submit = [&](AsyncReader& reader) {
+        auto ts0 = std::chrono::steady_clock::now();
+        uint32_t submitted = reader.Submit();
+        ctx.stats().uring_submit_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - ts0).count();
+        ctx.stats().total_io_submitted += submitted;
+        if (submitted > 0) {
+            ctx.stats().total_submit_calls++;
+        }
+    };
+
+    auto drain_reader = [&](AsyncReader& reader, bool wait_for_one) {
+        uint32_t n = 0;
+        auto tw0 = std::chrono::steady_clock::now();
+        if (wait_for_one) {
+            n = reader.WaitAndPoll(comps.data(),
+                                   static_cast<uint32_t>(comps.size()));
+            double wait_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tw0).count();
+            ctx.stats().io_wait_time_ms += wait_ms;
+        } else {
+            n = reader.Poll(comps.data(), static_cast<uint32_t>(comps.size()));
+        }
+        for (uint32_t j = 0; j < n; ++j) {
+            DispatchCompletion(comps[j].user_data, ctx, reranker);
+        }
+    };
+
+    for (size_t i = 0; i < sorted_clusters.size(); ++i) {
+        uint32_t cid = sorted_clusters[i];
+        const ParsedCluster* cluster = GetResidentParsedCluster(cid);
+        if (cluster == nullptr) {
+            std::fprintf(stderr,
+                         "FATAL: resident cluster view missing for cluster %u\n",
+                         cid);
+            std::abort();
+        }
+
+        auto tp0 = std::chrono::steady_clock::now();
+        ProbeCluster(*cluster, cid, ctx, reranker);
+        (void)tp0;
+
+        if (isolated_submission_mode_) {
+            bool vec_batch_ready = data_reader_.prepped() >= vec_flush_threshold;
+            if (vec_batch_ready) {
+                record_submit(data_reader_);
+                drain_reader(data_reader_, /*wait_for_one=*/false);
+            }
+        } else if (cluster_reader_.prepped() >= vec_flush_threshold) {
+            record_submit(cluster_reader_);
+            drain_reader(cluster_reader_, /*wait_for_one=*/false);
+        }
+
+        if (config_.early_stop) {
+            if (use_crc_) {
+                float est_kth = (est_heap_.size() >= est_top_k_)
+                    ? est_heap_.front().first
+                    : std::numeric_limits<float>::infinity();
+                if (crc_stopper_.ShouldStop(
+                        static_cast<uint32_t>(i + 1), est_kth)) {
+                    ctx.stats().early_stopped = true;
+                    ctx.stats().clusters_skipped =
+                        static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                    ctx.stats().crc_clusters_probed =
+                        static_cast<uint32_t>(i + 1);
+                    break;
+                }
+            } else if (ctx.collector().Full() &&
+                       ctx.collector().TopDistance() < index_.conann().d_k()) {
+                ctx.stats().early_stopped = true;
+                ctx.stats().clusters_skipped =
+                    static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                break;
+            }
+        }
+    }
+
+    if (isolated_submission_mode_) {
+        if (data_reader_.prepped() > 0) {
+            record_submit(data_reader_);
+        }
+    } else if (cluster_reader_.prepped() > 0) {
+        record_submit(cluster_reader_);
+    }
 }
 
 uint32_t OverlapScheduler::AllocatePendingSlot(PendingIO io, uint8_t* buffer,
@@ -380,18 +492,12 @@ void OverlapScheduler::DispatchCompletion(
             break;
         }
         case PendingIO::Type::VEC_ONLY: {
-            auto t_rerank_start = std::chrono::steady_clock::now();
             reranker.ConsumeVec(buf, io.addr);
-            ctx.stats().rerank_cpu_ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - t_rerank_start).count();
             CleanupPendingSlot(*slot);
             break;
         }
         case PendingIO::Type::VEC_ALL: {
-            auto t_rerank_start = std::chrono::steady_clock::now();
             reranker.ConsumeAll(buf, io.addr);
-            ctx.stats().rerank_cpu_ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - t_rerank_start).count();
             CleanupPendingSlot(*slot);
             break;
         }
@@ -412,17 +518,31 @@ void OverlapScheduler::DispatchCompletion(
 class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
  public:
     AsyncIOSink(OverlapScheduler& sched, SearchContext& ctx, int dat_fd)
-        : sched_(sched), ctx_(ctx), dat_fd_(dat_fd) {}
+        : sched_(sched), ctx_(ctx), dat_fd_(dat_fd),
+          skip_dedup_(sched.config_.use_resident_clusters &&
+                      sched.config_.clu_read_mode == CluReadMode::FullPreload &&
+                      sched.index_.assignment_mode() == index::AssignmentMode::Single) {}
 
-    void OnCandidate(uint32_t /*vec_idx*/,
-                     AddressEntry addr,
-                     float est_dist,
-                     index::CandidateClass cls) override {
-        auto [_, inserted] = sched_.submitted_candidate_offsets_.insert(addr.offset);
-        if (!inserted) {
-            ctx_.stats().duplicate_candidates++;
-            ctx_.stats().deduplicated_candidates++;
-            return;
+    void OnCandidates(const index::CandidateBatch& batch) override {
+        for (uint32_t i = 0; i < batch.count; ++i) {
+            SubmitOne(batch.decoded_addr[i], batch.est_dist[i], batch.cls[i]);
+        }
+    }
+
+    void SubmitOne(AddressEntry addr,
+                   float est_dist,
+                   index::CandidateClass cls) {
+        auto submit_start = std::chrono::steady_clock::now();
+        double candidate_prep_ms = 0.0;
+        if (!skip_dedup_) {
+            auto [_, inserted] = sched_.submitted_candidate_offsets_.insert(addr.offset);
+            if (!inserted) {
+                ctx_.stats().duplicate_candidates++;
+                ctx_.stats().deduplicated_candidates++;
+                dedup_and_slot_ms_ += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - submit_start).count();
+                return;
+            }
         }
         ctx_.stats().unique_fetch_candidates++;
 
@@ -441,52 +561,23 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
         PendingIO pio;
         pio.addr = addr;
 
-        if (cls == index::CandidateClass::SafeIn) {
-            if (addr.size <= sched_.config_.safein_all_threshold) {
-                uint8_t* buf = sched_.buffer_pool_.Acquire(addr.size);
-                pio.type = PendingIO::Type::VEC_ALL;
-                pio.read_offset = addr.offset;
-                pio.read_length = addr.size;
-                uint32_t slot_id = sched_.AllocatePendingSlot(
-                    pio, buf, PendingBufferCleanup::Pool);
-                auto tp0 = std::chrono::steady_clock::now();
-                CheckPrepRead(sched_.data_reader_.PrepReadTagged(
-                                  dat_fd_, buf, addr.size, addr.offset, slot_id),
-                              "SafeIn VEC_ALL");
-                prep_read_ms_ += std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - tp0).count();
-            } else {
-                uint8_t* buf = nullptr;
-                uint16_t fixed_idx = 0;
-                bool use_fixed_buffer =
-                    sched_.TryAcquireFixedVecBuffer(&buf, &fixed_idx);
-                if (!use_fixed_buffer) {
-                    buf = sched_.buffer_pool_.Acquire(sched_.vec_bytes_);
-                }
-                pio.type = PendingIO::Type::VEC_ONLY;
-                pio.read_offset = addr.offset;
-                pio.read_length = sched_.vec_bytes_;
-                uint32_t slot_id = sched_.AllocatePendingSlot(
-                    pio, buf,
-                    use_fixed_buffer ? PendingBufferCleanup::FixedVec
-                                     : PendingBufferCleanup::Pool,
-                    fixed_idx);
-                auto tp0 = std::chrono::steady_clock::now();
-                if (use_fixed_buffer && sched_.fixed_buffer_reader_ != nullptr) {
-                    CheckPrepRead(sched_.fixed_buffer_reader_->PrepReadRegisteredBufferTagged(
-                                      dat_fd_, buf, fixed_idx,
-                                      sched_.vec_bytes_, addr.offset, slot_id),
-                                  "SafeIn VEC_ONLY fixed");
-                } else {
-                    CheckPrepRead(sched_.data_reader_.PrepReadTagged(
-                                      dat_fd_, buf, sched_.vec_bytes_,
-                                      addr.offset, slot_id),
-                                  "SafeIn VEC_ONLY");
-                }
-                prep_read_ms_ += std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - tp0).count();
-            }
-        } else {  // Uncertain
+        if (cls == index::CandidateClass::SafeIn &&
+            addr.size <= sched_.config_.safein_all_threshold) {
+            uint8_t* buf = sched_.buffer_pool_.Acquire(addr.size);
+            pio.type = PendingIO::Type::VEC_ALL;
+            pio.read_offset = addr.offset;
+            pio.read_length = addr.size;
+            uint32_t slot_id = sched_.AllocatePendingSlot(
+                pio, buf, PendingBufferCleanup::Pool);
+            auto tp0 = std::chrono::steady_clock::now();
+            CheckPrepRead(sched_.data_reader_.PrepReadTagged(
+                              dat_fd_, buf, addr.size, addr.offset, slot_id),
+                          "SafeIn VEC_ALL");
+            prep_read_ms_ += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tp0).count();
+            candidate_prep_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tp0).count();
+        } else {
             uint8_t* buf = nullptr;
             uint16_t fixed_idx = 0;
             bool use_fixed_buffer =
@@ -507,29 +598,59 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
                 CheckPrepRead(sched_.fixed_buffer_reader_->PrepReadRegisteredBufferTagged(
                                   dat_fd_, buf, fixed_idx,
                                   sched_.vec_bytes_, addr.offset, slot_id),
-                              "Uncertain VEC_ONLY fixed");
+                              cls == index::CandidateClass::SafeIn
+                                  ? "SafeIn VEC_ONLY fixed"
+                                  : "Uncertain VEC_ONLY fixed");
             } else {
                 CheckPrepRead(sched_.data_reader_.PrepReadTagged(
                                   dat_fd_, buf, sched_.vec_bytes_,
                                   addr.offset, slot_id),
-                              "Uncertain VEC_ONLY");
+                              cls == index::CandidateClass::SafeIn
+                                  ? "SafeIn VEC_ONLY"
+                                  : "Uncertain VEC_ONLY");
             }
             prep_read_ms_ += std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - tp0).count();
+            candidate_prep_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - tp0).count();
         }
+        dedup_and_slot_ms_ += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - submit_start).count() - candidate_prep_ms;
     }
 
     double prep_read_ms_ = 0;  // accumulated PrepRead() time, read by ProbeCluster()
+    double dedup_and_slot_ms_ = 0;
+    double submit_cpu_ms() const { return dedup_and_slot_ms_ + prep_read_ms_; }
 
  private:
     OverlapScheduler& sched_;
     SearchContext& ctx_;
     int dat_fd_;
+    bool skip_dedup_ = false;
 };
 
 // ============================================================================
 // ProbeCluster — Phase 3: thin wrapper around ClusterProber + AsyncIOSink
 // ============================================================================
+
+OverlapScheduler::PreparedClusterQueryView
+OverlapScheduler::PrepareClusterQueryView(const SearchContext& ctx,
+                                          uint32_t cluster_id) {
+    PreparedClusterQueryView view;
+    auto* pq = &query_wrapper_.prepared;
+    if (index_.used_hadamard()) {
+        estimator_.PrepareQueryRotatedInto(
+            query_wrapper_.rotated_q.data(),
+            index_.rotated_centroid(cluster_id),
+            pq);
+    } else {
+        estimator_.PrepareQueryInto(
+            ctx.query_vec(), index_.centroid(cluster_id), index_.rotation(), pq);
+    }
+    view.prepared = pq;
+    view.margin_factor = 2.0f * pq->norm_qc * index_.conann().epsilon();
+    return view;
+}
 
 void OverlapScheduler::ProbeCluster(
     const ParsedCluster& pc, uint32_t cluster_id,
@@ -538,17 +659,12 @@ void OverlapScheduler::ProbeCluster(
     int dat_fd = index_.segment().data_reader().fd();
     ctx.stats().total_probed += pc.num_records;
 
-    // Phase 1.3: fast path avoids per-cluster FWHT using precomputed rotated_q_
+    // Phase 1.3: fast path avoids per-cluster FWHT using precomputed rotated query
     // and precomputed rotated_centroid (P^T × c_k). Falls back to full rotation otherwise.
-    if (index_.used_hadamard()) {
-        estimator_.PrepareQueryRotatedInto(
-            rotated_q_.data(), index_.rotated_centroid(cluster_id), &pq_);
-    } else {
-        estimator_.PrepareQueryInto(
-            ctx.query_vec(), index_.centroid(cluster_id), index_.rotation(), &pq_);
-    }
-
-    float margin_factor = 2.0f * pq_.norm_qc * index_.conann().epsilon();
+    auto prepare_start = std::chrono::steady_clock::now();
+    PreparedClusterQueryView prepared = PrepareClusterQueryView(ctx, cluster_id);
+    ctx.stats().probe_prepare_ms += std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - prepare_start).count();
 
     // dynamic_d_k: infinity when est_heap not yet full (avoids false SafeOut
     // on early clusters before a reliable k-th estimate is available).
@@ -558,8 +674,28 @@ void OverlapScheduler::ProbeCluster(
 
     AsyncIOSink sink(*this, ctx, dat_fd);
     index::ProbeStats local_stats;
-    prober_.Probe(pc, pq_, margin_factor, dynamic_d_k, sink, local_stats);
+    auto classify_start = std::chrono::steady_clock::now();
+    prober_.Probe(pc, *prepared.prepared, prepared.margin_factor, dynamic_d_k,
+                  config_.enable_fine_grained_timing, sink, local_stats);
+    double classify_wall_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - classify_start).count();
     ctx.stats().uring_prep_ms += sink.prep_read_ms_;
+    if (config_.enable_fine_grained_timing) {
+        ctx.stats().probe_stage1_ms += local_stats.stage1_ms;
+        ctx.stats().probe_stage1_estimate_ms += local_stats.stage1_estimate_ms;
+        ctx.stats().probe_stage1_mask_ms += local_stats.stage1_mask_ms;
+        ctx.stats().probe_stage1_iterate_ms += local_stats.stage1_iterate_ms;
+        ctx.stats().probe_stage1_classify_only_ms += local_stats.stage1_classify_ms;
+        ctx.stats().probe_stage2_ms += local_stats.stage2_ms;
+    } else {
+        ctx.stats().probe_stage1_ms += classify_wall_ms;
+    }
+    ctx.stats().probe_submit_ms += sink.submit_cpu_ms();
+    ctx.stats().probe_classify_ms =
+        ctx.stats().probe_stage1_ms + ctx.stats().probe_stage2_ms;
+    ctx.stats().probe_time_ms = ctx.stats().probe_prepare_ms +
+        ctx.stats().probe_stage1_ms + ctx.stats().probe_stage2_ms +
+        ctx.stats().probe_submit_ms;
 
     // Aggregate classification statistics into SearchContext.
     // total_safe_in  = S1 SafeIn (I/O submitted)
@@ -677,8 +813,7 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
         {
             auto tp0 = std::chrono::steady_clock::now();
             ProbeCluster(*cluster_to_probe, cid, ctx, reranker);
-            ctx.stats().probe_time_ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - tp0).count();
+            (void)tp0;
         }
 
         if (config_.clu_read_mode != CluReadMode::FullPreload) {

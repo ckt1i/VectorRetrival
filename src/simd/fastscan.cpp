@@ -142,6 +142,16 @@ float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
     }
 #endif
 
+    return QuantizeQuery14BitWithMax(query, vmax, quant_out, dim);
+}
+
+float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
+                                float vmax,
+                                int16_t* VDB_RESTRICT quant_out,
+                                Dim dim) {
+    constexpr int BQ = 14;
+    constexpr float max_val = static_cast<float>((1 << (BQ - 1)) - 1);  // 8191
+
     if (vmax < 1e-10f) {
         std::memset(quant_out, 0, static_cast<size_t>(dim) * sizeof(int16_t));
         return 1.0f;

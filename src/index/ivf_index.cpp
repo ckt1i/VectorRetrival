@@ -1,12 +1,15 @@
 #include "vdb/index/ivf_index.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <fstream>
 #include <numeric>
 #include <string_view>
 
+#include "vdb/common/aligned_alloc.h"
+#include "vdb/simd/coarse_ip_score.h"
 #include "vdb/simd/distance_l2.h"
 
 #ifdef VDB_USE_MKL
@@ -65,6 +68,76 @@ void NormalizeVector(const float* src, float* dst, Dim dim) {
     for (Dim i = 0; i < dim; ++i) {
         dst[i] = src[i] / norm;
     }
+}
+
+#if defined(VDB_USE_AVX512)
+constexpr uint32_t kCoarseCentroidBlock = 8;
+constexpr uint32_t kCoarseVecWidth = 16;
+#elif defined(VDB_USE_AVX2)
+constexpr uint32_t kCoarseCentroidBlock = 4;
+constexpr uint32_t kCoarseVecWidth = 8;
+#else
+constexpr uint32_t kCoarseCentroidBlock = 1;
+constexpr uint32_t kCoarseVecWidth = 1;
+#endif
+
+void BuildCoarsePackedLayout(const std::vector<float>& src,
+                             uint32_t nlist,
+                             Dim dim,
+                             IvfIndex::CoarsePackedLayout* layout) {
+    if (layout == nullptr) return;
+    layout->centroid_block = kCoarseCentroidBlock;
+    layout->vec_width = kCoarseVecWidth;
+    layout->num_centroid_blocks = (nlist + kCoarseCentroidBlock - 1) / kCoarseCentroidBlock;
+    layout->num_dim_blocks =
+        (static_cast<uint32_t>(dim) + kCoarseVecWidth - 1) / kCoarseVecWidth;
+    layout->packed_dim = static_cast<size_t>(layout->num_dim_blocks) * kCoarseVecWidth;
+
+    const size_t total_floats = static_cast<size_t>(layout->num_centroid_blocks) *
+                                layout->num_dim_blocks *
+                                kCoarseCentroidBlock * kCoarseVecWidth;
+    layout->data.assign(total_floats, 0.0f);
+
+    for (uint32_t cb = 0; cb < layout->num_centroid_blocks; ++cb) {
+        for (uint32_t db = 0; db < layout->num_dim_blocks; ++db) {
+            const uint32_t dim_base = db * kCoarseVecWidth;
+            if (dim_base >= static_cast<uint32_t>(dim)) {
+                continue;
+            }
+            const uint32_t copy_count = std::min<uint32_t>(
+                kCoarseVecWidth, static_cast<uint32_t>(dim) - dim_base);
+            for (uint32_t lane = 0; lane < kCoarseCentroidBlock; ++lane) {
+                const uint32_t centroid_idx = cb * kCoarseCentroidBlock + lane;
+                if (centroid_idx >= nlist) {
+                    continue;
+                }
+                const size_t packed_base =
+                    ((static_cast<size_t>(cb) * layout->num_dim_blocks + db) *
+                         kCoarseCentroidBlock +
+                     lane) *
+                    kCoarseVecWidth;
+                const float* centroid_ptr =
+                    src.data() + static_cast<size_t>(centroid_idx) * dim;
+                std::memcpy(layout->data.data() + packed_base,
+                            centroid_ptr + dim_base,
+                            static_cast<size_t>(copy_count) * sizeof(float));
+            }
+        }
+    }
+}
+
+void ComputeCoarseIPScoresDispatch(const float* query,
+                                   const IvfIndex::CoarsePackedLayout& layout,
+                                   uint32_t nlist,
+                                   float* scores) {
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+    simd::ComputeCoarseIPScoresPacked(
+        query, layout.data.data(), nlist, scores, layout.num_dim_blocks);
+#else
+    simd::ComputeCoarseIPScoresPackedScalar(
+        query, layout.data.data(), nlist, layout.centroid_block,
+        layout.num_dim_blocks, layout.vec_width, scores);
+#endif
 }
 
 }  // namespace
@@ -188,6 +261,11 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
                 dim_);
         }
     }
+    BuildCoarsePackedLayout(centroids_, nlist_, dim_, &packed_centroids_);
+    if (!normalized_centroids_.empty()) {
+        BuildCoarsePackedLayout(
+            normalized_centroids_, nlist_, dim_, &packed_normalized_centroids_);
+    }
 
     // --- 4. Load rotation.bin ---
     const std::string rotation_path = dir + "/rotation.bin";
@@ -279,72 +357,86 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
 
 std::vector<ClusterID> IvfIndex::FindNearestClusters(
     const float* query, uint32_t nprobe) const {
-
     if (nprobe == 0 || cluster_ids_.empty()) {
         return {};
     }
 
     const uint32_t actual_nprobe = std::min(nprobe, nlist_);
+    if (!coarse_scratch_) {
+        coarse_scratch_ = std::make_unique<CoarseScratch>();
+    }
+    CoarseScratch& scratch = *coarse_scratch_;
+    scratch.scores.resize(nlist_);
+    scratch.order.resize(nlist_);
+    for (uint32_t i = 0; i < nlist_; ++i) {
+        scratch.order[i] = i;
+    }
 
     // Compute scores/distances to all centroids
-    std::vector<std::pair<float, uint32_t>> dists(nlist_);
+    auto coarse_score_start = std::chrono::steady_clock::now();
     if (effective_metric_ == "ip") {
-        std::vector<float> normalized_query(dim_);
-        const float* query_ip = query;
+        const CoarsePackedLayout* packed_layout = &packed_centroids_;
+        const size_t packed_dim = packed_layout->packed_dim;
+        scratch.query_buffer.assign(packed_dim, 0.0f);
+        const float* query_ip = scratch.query_buffer.data();
         if (requested_metric_ == "cosine") {
-            NormalizeVector(query, normalized_query.data(), dim_);
-            query_ip = normalized_query.data();
-        }
-        for (uint32_t i = 0; i < nlist_; ++i) {
-            const float* centroid_ptr = centroid(i);
-            if (!normalized_centroids_.empty()) {
-                centroid_ptr = normalized_centroids_.data() +
-                    static_cast<size_t>(i) * dim_;
+            NormalizeVector(query, scratch.query_buffer.data(), dim_);
+            if (!packed_normalized_centroids_.empty()) {
+                packed_layout = &packed_normalized_centroids_;
             }
-            float score = 0.0f;
-            for (Dim j = 0; j < dim_; ++j) {
-                score += query_ip[j] * centroid_ptr[j];
-            }
-            dists[i] = {-score, i};
+        } else {
+            std::memcpy(scratch.query_buffer.data(), query,
+                        static_cast<size_t>(dim_) * sizeof(float));
         }
+        ComputeCoarseIPScoresDispatch(
+            query_ip, *packed_layout, nlist_, scratch.scores.data());
     } else {
 #ifdef VDB_USE_MKL
-        std::vector<float> qc(nlist_);
+        scratch.query_buffer.resize(nlist_);
         cblas_sgemv(CblasRowMajor, CblasNoTrans,
                     nlist_, dim_,
                     1.0f, centroids_.data(), dim_,
                     query, 1,
-                    0.0f, qc.data(), 1);
+                    0.0f, scratch.query_buffer.data(), 1);
 
         const float q_norm = cblas_sdot(dim_, query, 1, query, 1);
 
         for (uint32_t i = 0; i < nlist_; ++i) {
-            dists[i] = {q_norm + centroid_norms_[i] - 2.0f * qc[i], i};
+            scratch.scores[i] =
+                q_norm + centroid_norms_[i] - 2.0f * scratch.query_buffer[i];
         }
 #else
         for (uint32_t i = 0; i < nlist_; ++i) {
-            float d = simd::L2Sqr(query, centroid(i), dim_);
-            dists[i] = {d, i};
+            scratch.scores[i] = simd::L2Sqr(query, centroid(i), dim_);
         }
 #endif
     }
+    last_coarse_score_ms_ = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - coarse_score_start).count();
 
     // Partial sort to find the nprobe nearest
-    std::nth_element(dists.begin(), dists.begin() + actual_nprobe, dists.end(),
-                     [](const auto& a, const auto& b) {
-                         return a.first < b.first;
-                     });
+    auto coarse_topn_start = std::chrono::steady_clock::now();
+    auto score_less = [&](uint32_t lhs, uint32_t rhs) {
+        return scratch.scores[lhs] < scratch.scores[rhs];
+    };
+    if (actual_nprobe < nlist_) {
+        std::nth_element(scratch.order.begin(),
+                         scratch.order.begin() + actual_nprobe,
+                         scratch.order.end(),
+                         score_less);
+    }
 
     // Sort the top nprobe by distance for deterministic ordering
-    std::sort(dists.begin(), dists.begin() + actual_nprobe,
-              [](const auto& a, const auto& b) {
-                  return a.first < b.first;
-              });
+    std::sort(scratch.order.begin(),
+              scratch.order.begin() + actual_nprobe,
+              score_less);
+    last_coarse_topn_ms_ = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - coarse_topn_start).count();
 
     // Map centroid indices to cluster IDs
     std::vector<ClusterID> result(actual_nprobe);
     for (uint32_t i = 0; i < actual_nprobe; ++i) {
-        result[i] = cluster_ids_[dists[i].second];
+        result[i] = cluster_ids_[scratch.order[i]];
     }
 
     return result;

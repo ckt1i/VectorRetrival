@@ -1,5 +1,8 @@
 #include "vdb/simd/prepare_query.h"
 
+#include <algorithm>
+#include <cmath>
+
 #if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
 #include <immintrin.h>
 #endif
@@ -23,6 +26,30 @@ VDB_FORCE_INLINE float ReduceAdd256(__m256 v) {
     lo = _mm_hadd_ps(lo, lo);
     lo = _mm_hadd_ps(lo, lo);
     return _mm_cvtss_f32(lo);
+}
+#endif
+
+#if defined(VDB_USE_AVX512)
+VDB_FORCE_INLINE float ReduceMax512(__m512 v) {
+    alignas(64) float lanes[16];
+    _mm512_store_ps(lanes, v);
+    float vmax = lanes[0];
+    for (int i = 1; i < 16; ++i) {
+        vmax = std::max(vmax, lanes[i]);
+    }
+    return vmax;
+}
+#endif
+
+#if defined(VDB_USE_AVX2)
+VDB_FORCE_INLINE float ReduceMax256(__m256 v) {
+    alignas(32) float lanes[8];
+    _mm256_store_ps(lanes, v);
+    float vmax = lanes[0];
+    for (int i = 1; i < 8; ++i) {
+        vmax = std::max(vmax, lanes[i]);
+    }
+    return vmax;
 }
 #endif
 
@@ -99,10 +126,22 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
                            uint64_t* sign_code_words,
                            uint32_t num_words,
                            uint32_t dim) {
+    return SimdNormalizeSignSumMaxAbs(
+        vec, inv_norm, sign_code_words, num_words, dim).sum;
+}
+
+NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
+    float* VDB_RESTRICT vec,
+    float inv_norm,
+    uint64_t* sign_code_words,
+    uint32_t num_words,
+    uint32_t dim) {
 #if defined(VDB_USE_AVX512)
     __m512 vscale = _mm512_set1_ps(inv_norm);
     __m512 vzero = _mm512_setzero_ps();
     __m512 vsum = _mm512_setzero_ps();
+    const __m512 sign_mask = _mm512_set1_ps(-0.0f);
+    __m512 vmax = _mm512_setzero_ps();
     uint32_t i = 0;
 
     for (; i + 16 <= dim; i += 16) {
@@ -110,6 +149,8 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
         v = _mm512_mul_ps(v, vscale);
         _mm512_storeu_ps(vec + i, v);
         vsum = _mm512_add_ps(vsum, v);
+        __m512 abs_v = _mm512_andnot_ps(sign_mask, v);
+        vmax = _mm512_max_ps(vmax, abs_v);
 
         const __mmask16 mask = _mm512_cmp_ps_mask(v, vzero, _CMP_GE_OQ);
         const uint32_t word_idx = i / 64;
@@ -122,10 +163,13 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
     }
 
     float result = ReduceAdd512(vsum);
+    float max_abs = ReduceMax512(vmax);
 #elif defined(VDB_USE_AVX2)
     const __m256 vscale = _mm256_set1_ps(inv_norm);
     const __m256 vzero = _mm256_setzero_ps();
     __m256 vsum = _mm256_setzero_ps();
+    const __m256 sign_mask = _mm256_set1_ps(-0.0f);
+    __m256 vmax = _mm256_setzero_ps();
     uint32_t i = 0;
 
     for (; i + 8 <= dim; i += 8) {
@@ -133,6 +177,8 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
         v = _mm256_mul_ps(v, vscale);
         _mm256_storeu_ps(vec + i, v);
         vsum = _mm256_add_ps(vsum, v);
+        __m256 abs_v = _mm256_andnot_ps(sign_mask, v);
+        vmax = _mm256_max_ps(vmax, abs_v);
 
         const __m256 ge = _mm256_cmp_ps(v, vzero, _CMP_GE_OQ);
         const uint64_t mask = static_cast<uint64_t>(_mm256_movemask_ps(ge));
@@ -145,14 +191,17 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
     }
 
     float result = ReduceAdd256(vsum);
+    float max_abs = ReduceMax256(vmax);
 #else
     uint32_t i = 0;
     float result = 0.0f;
+    float max_abs = 0.0f;
 #endif
 
     for (; i < dim; ++i) {
         vec[i] *= inv_norm;
         result += vec[i];
+        max_abs = std::max(max_abs, std::abs(vec[i]));
         if (vec[i] >= 0.0f) {
             const uint32_t word_idx = i / 64;
             const uint32_t bit_idx = i % 64;
@@ -160,7 +209,10 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
         }
     }
 
-    return result;
+    NormalizeSignSumResult out;
+    out.sum = result;
+    out.max_abs = max_abs;
+    return out;
 }
 
 }  // namespace simd

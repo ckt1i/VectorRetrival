@@ -1,9 +1,11 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "vdb/common/aligned_alloc.h"
 #include "vdb/common/macros.h"
 #include "vdb/common/status.h"
 #include "vdb/common/types.h"
@@ -37,6 +39,17 @@ namespace index {
 ///
 class IvfIndex {
  public:
+    struct CoarsePackedLayout {
+        CacheAlignedVector<float> data;
+        uint32_t centroid_block = 0;
+        uint32_t vec_width = 0;
+        uint32_t num_centroid_blocks = 0;
+        uint32_t num_dim_blocks = 0;
+        size_t packed_dim = 0;
+
+        bool empty() const { return data.empty(); }
+    };
+
     IvfIndex();
     ~IvfIndex();
 
@@ -62,6 +75,8 @@ class IvfIndex {
     ///                ordered by distance (nearest first)
     std::vector<ClusterID> FindNearestClusters(const float* query,
                                                 uint32_t nprobe) const;
+    double last_coarse_score_ms() const { return last_coarse_score_ms_; }
+    double last_coarse_topn_ms() const { return last_coarse_topn_ms_; }
 
     /// Get the ConANN classifier.
     const ConANN& conann() const { return conann_; }
@@ -135,6 +150,17 @@ class IvfIndex {
     std::string requested_metric_ = "l2";
     std::string effective_metric_ = "l2";
     std::vector<float> normalized_centroids_;
+    CoarsePackedLayout packed_centroids_;
+    CoarsePackedLayout packed_normalized_centroids_;
+
+    struct CoarseScratch {
+        std::vector<float> scores;
+        std::vector<uint32_t> order;
+        std::vector<float> query_buffer;
+    };
+    mutable std::unique_ptr<CoarseScratch> coarse_scratch_;
+    mutable double last_coarse_score_ms_ = 0;
+    mutable double last_coarse_topn_ms_ = 0;
 
 #ifdef VDB_USE_MKL
     // Precomputed ||c||² for each centroid (MKL-accelerated distance)

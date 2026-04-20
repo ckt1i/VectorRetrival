@@ -62,6 +62,60 @@ class IvfIndexTest : public ::testing::Test {
     std::vector<float> vectors_;
 };
 
+class IvfIndexCosineTailTest : public ::testing::Test {
+ protected:
+    static constexpr uint32_t kN = 97;
+    static constexpr Dim kDim = 64;
+    static constexpr uint32_t kNlist = 5;
+    static constexpr uint64_t kSeed = 7;
+
+    void SetUp() override {
+        test_dir_ = (fs::temp_directory_path() / "vdb_ivf_index_cosine_tail_test").string();
+        fs::create_directories(test_dir_);
+
+        std::mt19937 rng(kSeed);
+        std::normal_distribution<float> dist(0.0f, 1.0f);
+        vectors_.resize(static_cast<size_t>(kN) * kDim);
+        for (auto& v : vectors_) v = dist(rng);
+
+        IvfBuilderConfig cfg;
+        cfg.nlist = kNlist;
+        cfg.max_iterations = 10;
+        cfg.tolerance = 1e-4f;
+        cfg.seed = kSeed;
+        cfg.metric = "cosine";
+        cfg.rabitq = {1, 64, 5.75f};
+        cfg.calibration_samples = 10;
+        cfg.calibration_topk = 5;
+        cfg.calibration_percentile = 0.95f;
+        cfg.page_size = 1;
+
+        IvfBuilder builder(cfg);
+        auto s = builder.Build(vectors_.data(), kN, kDim, test_dir_);
+        ASSERT_TRUE(s.ok()) << s.message();
+    }
+
+    void TearDown() override {
+        fs::remove_all(test_dir_);
+    }
+
+    static float CosineScore(const float* a, const float* b, Dim dim) {
+        float dot = 0.0f;
+        float na = 0.0f;
+        float nb = 0.0f;
+        for (Dim i = 0; i < dim; ++i) {
+            dot += a[i] * b[i];
+            na += a[i] * a[i];
+            nb += b[i] * b[i];
+        }
+        if (na <= 0.0f || nb <= 0.0f) return 0.0f;
+        return dot / std::sqrt(na * nb);
+    }
+
+    std::string test_dir_;
+    std::vector<float> vectors_;
+};
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -171,4 +225,28 @@ TEST_F(IvfIndexTest, OpenInvalidDir_Fails) {
     IvfIndex idx;
     auto s = idx.Open("/tmp/nonexistent_ivf_dir_12345");
     EXPECT_FALSE(s.ok());
+}
+
+TEST_F(IvfIndexCosineTailTest, FindNearestClusters_CosineSortedWithTailCentroids) {
+    IvfIndex idx;
+    ASSERT_TRUE(idx.Open(test_dir_).ok());
+    EXPECT_EQ(idx.requested_metric(), "cosine");
+    EXPECT_EQ(idx.effective_metric(), "ip");
+
+    const float* query = vectors_.data() + static_cast<size_t>(3) * kDim;
+    auto result = idx.FindNearestClusters(query, kNlist);
+    ASSERT_EQ(result.size(), kNlist);
+
+    for (uint32_t i = 1; i < kNlist; ++i) {
+        uint32_t prev_idx = 0;
+        uint32_t curr_idx = 0;
+        for (uint32_t c = 0; c < kNlist; ++c) {
+            if (idx.cluster_ids()[c] == result[i - 1]) prev_idx = c;
+            if (idx.cluster_ids()[c] == result[i]) curr_idx = c;
+        }
+        const float prev_score = CosineScore(query, idx.centroid(prev_idx), kDim);
+        const float curr_score = CosineScore(query, idx.centroid(curr_idx), kDim);
+        EXPECT_GE(prev_score + 1e-5f, curr_score)
+            << "Clusters not sorted by cosine score at position " << i;
+    }
 }

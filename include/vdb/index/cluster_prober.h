@@ -23,25 +23,27 @@ namespace index {
 /// candidates are forwarded to the sink.
 enum class CandidateClass { SafeIn, Uncertain };
 
+struct CandidateBatch {
+    static constexpr uint32_t kMaxCandidates = 32;
+
+    uint32_t count = 0;
+    uint32_t global_idx[kMaxCandidates] = {};
+    float est_dist[kMaxCandidates] = {};
+    CandidateClass cls[kMaxCandidates] = {};
+    AddressEntry decoded_addr[kMaxCandidates] = {};
+};
+
 /// Sink for non-SafeOut candidates produced by ClusterProber::Probe.
 ///
 /// Implementors handle I/O submission (e.g. AsyncIOSink in OverlapScheduler).
-/// Called once per non-SafeOut candidate in probe order.
+/// Called once per compacted block-local batch in probe order.
 class ProbeResultSink {
  public:
     virtual ~ProbeResultSink() = default;
 
-    /// Called for each candidate that passed Stage 1 (and optionally Stage 2)
-    /// classification without being SafeOut.
-    ///
-    /// @param vec_idx  Global index within the cluster (0..num_records-1)
-    /// @param addr     On-disk address entry for this vector
-    /// @param est_dist FastScan estimated squared L2 distance (Stage 1)
-    /// @param cls      SafeIn or Uncertain
-    virtual void OnCandidate(uint32_t vec_idx,
-                              AddressEntry addr,
-                              float est_dist,
-                              CandidateClass cls) = 0;
+    /// Called for a compacted batch of candidates that survived Stage 1 (and
+    /// optionally Stage 2) classification.
+    virtual void OnCandidates(const CandidateBatch& batch) = 0;
 };
 
 /// Per-cluster probe statistics.
@@ -52,6 +54,12 @@ struct ProbeStats {
     uint32_t s2_safein = 0;
     uint32_t s2_safeout = 0;
     uint32_t s2_uncertain = 0;
+    double stage1_ms = 0;
+    double stage1_estimate_ms = 0;
+    double stage1_mask_ms = 0;
+    double stage1_iterate_ms = 0;
+    double stage1_classify_ms = 0;
+    double stage2_ms = 0;
 };
 
 /// Cluster candidate classifier implementing the two-stage RaBitQ pipeline.
@@ -91,6 +99,7 @@ class ClusterProber {
                const rabitq::PreparedQuery& pq,
                float margin_factor,
                float dynamic_d_k,
+               bool enable_fine_grained_timing,
                ProbeResultSink& sink,
                ProbeStats& stats) const;
 

@@ -20,6 +20,11 @@ float SimdSubtractAndNormSq(const float* VDB_RESTRICT a,
                             float* VDB_RESTRICT out,
                             uint32_t dim);
 
+struct NormalizeSignSumResult {
+    float sum = 0.0f;
+    float max_abs = 0.0f;
+};
+
 // ============================================================================
 // SimdNormalizeSignSum
 //   In a single pass over vec[0..dim):
@@ -35,6 +40,13 @@ float SimdNormalizeSignSum(float* VDB_RESTRICT vec,
                            uint64_t* sign_code_words,
                            uint32_t num_words,
                            uint32_t dim);
+
+NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
+    float* VDB_RESTRICT vec,
+    float inv_norm,
+    uint64_t* sign_code_words,
+    uint32_t num_words,
+    uint32_t dim);
 
 }  // namespace simd
 }  // namespace vdb
