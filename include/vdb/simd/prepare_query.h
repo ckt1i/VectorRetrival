@@ -8,6 +8,11 @@
 namespace vdb {
 namespace simd {
 
+// prepare_query.cpp owns the query-global arithmetic up to normalized rotated
+// query / sign packing / max-abs extraction. FastScan-specific quantize+LUT
+// generation is intentionally kept in fastscan.cpp so reference and fused
+// paths can share one contract and one equivalence boundary.
+
 // ============================================================================
 // SimdSubtractAndNormSq
 //   Computes out[i] = a[i] - b[i] for all i, and returns Σ out[i]².

@@ -339,6 +339,10 @@ struct QueryResult {
     double coarse_topn_ms = 0;
     double probe_time_ms;
     double probe_prepare_ms = 0;
+    double probe_prepare_subtract_ms = 0;
+    double probe_prepare_normalize_ms = 0;
+    double probe_prepare_quantize_ms = 0;
+    double probe_prepare_lut_build_ms = 0;
     double probe_stage1_ms = 0;
     double probe_stage1_estimate_ms = 0;
     double probe_stage1_mask_ms = 0;
@@ -360,6 +364,9 @@ struct QueryResult {
     double parse_cluster_ms = 0;
     double fetch_missing_ms = 0;
     uint32_t submit_calls = 0;
+    double candidate_batches_per_cluster = 0;
+    double crc_estimates_buffered_per_cluster = 0;
+    double crc_estimates_merged_per_cluster = 0;
     bool early_stopped;
     uint32_t clusters_skipped;
     uint32_t total_probed;
@@ -396,6 +403,10 @@ struct RoundMetrics {
     double avg_coarse_topn = 0;
     double avg_probe = 0;
     double avg_probe_prepare = 0;
+    double avg_probe_prepare_subtract = 0;
+    double avg_probe_prepare_normalize = 0;
+    double avg_probe_prepare_quantize = 0;
+    double avg_probe_prepare_lut_build = 0;
     double avg_probe_stage1 = 0;
     double avg_probe_stage1_estimate = 0;
     double avg_probe_stage1_mask = 0;
@@ -427,6 +438,9 @@ struct RoundMetrics {
     double avg_duplicate_candidates = 0;
     double avg_deduplicated_candidates = 0;
     double avg_unique_fetch_candidates = 0;
+    double avg_candidate_batches_per_cluster = 0;
+    double avg_crc_estimates_buffered_per_cluster = 0;
+    double avg_crc_estimates_merged_per_cluster = 0;
     double avg_candidates_buffered = 0;
     double avg_candidates_reranked = 0;
     double avg_safein_payload_prefetched = 0;
@@ -495,6 +509,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.coarse_topn_ms = results.stats().coarse_topn_ms;
         qr.probe_time_ms = results.stats().probe_time_ms;
         qr.probe_prepare_ms = results.stats().probe_prepare_ms;
+        qr.probe_prepare_subtract_ms = results.stats().probe_prepare_subtract_ms;
+        qr.probe_prepare_normalize_ms = results.stats().probe_prepare_normalize_ms;
+        qr.probe_prepare_quantize_ms = results.stats().probe_prepare_quantize_ms;
+        qr.probe_prepare_lut_build_ms = results.stats().probe_prepare_lut_build_ms;
         qr.probe_stage1_ms = results.stats().probe_stage1_ms;
         qr.probe_stage1_estimate_ms = results.stats().probe_stage1_estimate_ms;
         qr.probe_stage1_mask_ms = results.stats().probe_stage1_mask_ms;
@@ -516,6 +534,22 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.parse_cluster_ms = results.stats().parse_cluster_ms;
         qr.fetch_missing_ms = results.stats().fetch_missing_ms;
         qr.submit_calls = results.stats().total_submit_calls;
+        const uint32_t probed_clusters_u32 =
+            (results.stats().crc_clusters_probed > 0)
+                ? results.stats().crc_clusters_probed
+                : search_cfg.nprobe;
+        const double probed_clusters = static_cast<double>(probed_clusters_u32);
+        if (probed_clusters > 0.0) {
+            qr.candidate_batches_per_cluster =
+                static_cast<double>(results.stats().total_candidate_batches) /
+                probed_clusters;
+            qr.crc_estimates_buffered_per_cluster =
+                static_cast<double>(results.stats().total_crc_estimates_buffered) /
+                probed_clusters;
+            qr.crc_estimates_merged_per_cluster =
+                static_cast<double>(results.stats().total_crc_estimates_merged) /
+                probed_clusters;
+        }
         qr.early_stopped = results.stats().early_stopped;
         qr.clusters_skipped = results.stats().clusters_skipped;
         qr.total_probed = results.stats().total_probed;
@@ -594,6 +628,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_io_wait = 0, sum_total = 0;
     double sum_coarse_select = 0, sum_coarse_score = 0, sum_coarse_topn = 0;
     double sum_probe = 0, sum_probe_prepare = 0;
+    double sum_probe_prepare_subtract = 0;
+    double sum_probe_prepare_normalize = 0;
+    double sum_probe_prepare_quantize = 0;
+    double sum_probe_prepare_lut_build = 0;
     double sum_probe_stage1 = 0, sum_probe_stage1_estimate = 0;
     double sum_probe_stage1_mask = 0, sum_probe_stage1_iterate = 0;
     double sum_probe_stage1_classify_only = 0, sum_probe_stage2 = 0;
@@ -606,6 +644,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_uring_prep = 0, sum_uring_submit = 0;
     double sum_parse_cluster = 0, sum_fetch_missing = 0;
     double sum_submit_calls = 0;
+    double sum_candidate_batches_per_cluster = 0;
+    double sum_crc_estimates_buffered_per_cluster = 0;
+    double sum_crc_estimates_merged_per_cluster = 0;
     double sum_candidates_buffered = 0, sum_candidates_reranked = 0;
     double sum_safein_payload_prefetched = 0, sum_remaining_payload_fetches = 0;
     uint32_t early_count = 0;
@@ -629,6 +670,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_coarse_topn += qresults[qi].coarse_topn_ms;
         sum_probe += qresults[qi].probe_time_ms;
         sum_probe_prepare += qresults[qi].probe_prepare_ms;
+        sum_probe_prepare_subtract += qresults[qi].probe_prepare_subtract_ms;
+        sum_probe_prepare_normalize += qresults[qi].probe_prepare_normalize_ms;
+        sum_probe_prepare_quantize += qresults[qi].probe_prepare_quantize_ms;
+        sum_probe_prepare_lut_build += qresults[qi].probe_prepare_lut_build_ms;
         sum_probe_stage1 += qresults[qi].probe_stage1_ms;
         sum_probe_stage1_estimate += qresults[qi].probe_stage1_estimate_ms;
         sum_probe_stage1_mask += qresults[qi].probe_stage1_mask_ms;
@@ -650,6 +695,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_parse_cluster += qresults[qi].parse_cluster_ms;
         sum_fetch_missing += qresults[qi].fetch_missing_ms;
         sum_submit_calls += qresults[qi].submit_calls;
+        sum_candidate_batches_per_cluster += qresults[qi].candidate_batches_per_cluster;
+        sum_crc_estimates_buffered_per_cluster +=
+            qresults[qi].crc_estimates_buffered_per_cluster;
+        sum_crc_estimates_merged_per_cluster +=
+            qresults[qi].crc_estimates_merged_per_cluster;
         sum_candidates_buffered += qresults[qi].num_candidates_buffered;
         sum_candidates_reranked += qresults[qi].num_candidates_reranked;
         sum_safein_payload_prefetched += qresults[qi].num_safein_payload_prefetched;
@@ -668,6 +718,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_coarse_topn = sum_coarse_topn / Q;
     m.avg_probe = sum_probe / Q;
     m.avg_probe_prepare = sum_probe_prepare / Q;
+    m.avg_probe_prepare_subtract = sum_probe_prepare_subtract / Q;
+    m.avg_probe_prepare_normalize = sum_probe_prepare_normalize / Q;
+    m.avg_probe_prepare_quantize = sum_probe_prepare_quantize / Q;
+    m.avg_probe_prepare_lut_build = sum_probe_prepare_lut_build / Q;
     m.avg_probe_stage1 = sum_probe_stage1 / Q;
     m.avg_probe_stage1_estimate = sum_probe_stage1_estimate / Q;
     m.avg_probe_stage1_mask = sum_probe_stage1_mask / Q;
@@ -689,6 +743,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_parse_cluster = sum_parse_cluster / Q;
     m.avg_fetch_missing = sum_fetch_missing / Q;
     m.avg_submit_calls = sum_submit_calls / Q;
+    m.avg_candidate_batches_per_cluster = sum_candidate_batches_per_cluster / Q;
+    m.avg_crc_estimates_buffered_per_cluster =
+        sum_crc_estimates_buffered_per_cluster / Q;
+    m.avg_crc_estimates_merged_per_cluster =
+        sum_crc_estimates_merged_per_cluster / Q;
     m.avg_probed = sum_probed / Q;
     m.avg_safe_in = sum_si / Q;
     m.avg_safe_out = sum_so / Q;
@@ -742,6 +801,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     Log("  %s: uring_prep=%.3f ms  uring_submit=%.3f ms  parse_cluster=%.3f ms  fetch_missing=%.3f ms\n",
         label, m.avg_uring_prep, m.avg_uring_submit, m.avg_parse_cluster, m.avg_fetch_missing);
     Log("  %s: submit_calls=%.1f\n", label, m.avg_submit_calls);
+    Log("  %s: candidate_batches_per_cluster=%.2f  crc_buffered_per_cluster=%.2f  crc_merged_per_cluster=%.2f\n",
+        label, m.avg_candidate_batches_per_cluster,
+        m.avg_crc_estimates_buffered_per_cluster,
+        m.avg_crc_estimates_merged_per_cluster);
     Log("  %s: safe_in=%.1f  safe_out=%.1f  uncertain=%.1f\n", label,
         m.avg_safe_in, m.avg_safe_out, m.avg_uncertain);
     Log("  %s: s2_safe_in=%.1f  s2_safe_out=%.1f  s2_uncertain=%.1f\n", label,
@@ -1546,6 +1609,9 @@ int main(int argc, char* argv[]) {
     Log("  probe_prepare=%.3f ms  probe_stage1=%.3f ms  probe_stage2=%.3f ms  probe_classify=%.3f ms  probe_submit=%.3f ms\n",
         metrics.avg_probe_prepare, metrics.avg_probe_stage1, metrics.avg_probe_stage2,
         metrics.avg_probe_classify, metrics.avg_probe_submit);
+    Log("  prepare_subtract=%.3f ms  prepare_normalize=%.3f ms  prepare_quantize=%.3f ms  prepare_lut_build=%.3f ms\n",
+        metrics.avg_probe_prepare_subtract, metrics.avg_probe_prepare_normalize,
+        metrics.avg_probe_prepare_quantize, metrics.avg_probe_prepare_lut_build);
     Log("  stage1_estimate=%.3f ms  stage1_mask=%.3f ms  stage1_iterate=%.3f ms  stage1_classify=%.3f ms\n",
         metrics.avg_probe_stage1_estimate, metrics.avg_probe_stage1_mask,
         metrics.avg_probe_stage1_iterate, metrics.avg_probe_stage1_classify_only);
@@ -1700,6 +1766,10 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_coarse_topn_ms", metrics.avg_coarse_topn) << ",\n";
         f << "    " << JNum("avg_probe_time_ms", metrics.avg_probe) << ",\n";
         f << "    " << JNum("avg_probe_prepare_ms", metrics.avg_probe_prepare) << ",\n";
+        f << "    " << JNum("avg_probe_prepare_subtract_ms", metrics.avg_probe_prepare_subtract) << ",\n";
+        f << "    " << JNum("avg_probe_prepare_normalize_ms", metrics.avg_probe_prepare_normalize) << ",\n";
+        f << "    " << JNum("avg_probe_prepare_quantize_ms", metrics.avg_probe_prepare_quantize) << ",\n";
+        f << "    " << JNum("avg_probe_prepare_lut_build_ms", metrics.avg_probe_prepare_lut_build) << ",\n";
         f << "    " << JNum("avg_probe_stage1_ms", metrics.avg_probe_stage1) << ",\n";
         f << "    " << JNum("avg_probe_stage1_estimate_ms", metrics.avg_probe_stage1_estimate) << ",\n";
         f << "    " << JNum("avg_probe_stage1_mask_ms", metrics.avg_probe_stage1_mask) << ",\n";
@@ -1721,6 +1791,9 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_parse_cluster_ms", metrics.avg_parse_cluster) << ",\n";
         f << "    " << JNum("avg_fetch_missing_ms", metrics.avg_fetch_missing) << ",\n";
         f << "    " << JNum("avg_submit_calls", metrics.avg_submit_calls) << ",\n";
+        f << "    " << JNum("avg_candidate_batches_per_cluster", metrics.avg_candidate_batches_per_cluster) << ",\n";
+        f << "    " << JNum("avg_crc_estimates_buffered_per_cluster", metrics.avg_crc_estimates_buffered_per_cluster) << ",\n";
+        f << "    " << JNum("avg_crc_estimates_merged_per_cluster", metrics.avg_crc_estimates_merged_per_cluster) << ",\n";
         f << "    " << JNum("avg_candidates_buffered", metrics.avg_candidates_buffered) << ",\n";
         f << "    " << JNum("avg_candidates_reranked", metrics.avg_candidates_reranked) << ",\n";
         f << "    " << JNum("avg_safein_payload_prefetched", metrics.avg_safein_payload_prefetched) << ",\n";
@@ -1762,6 +1835,10 @@ int main(int argc, char* argv[]) {
             f << "      " << JNum("coarse_topn_ms", qr.coarse_topn_ms) << ",\n";
             f << "      " << JNum("probe_ms", qr.probe_time_ms) << ",\n";
             f << "      " << JNum("probe_prepare_ms", qr.probe_prepare_ms) << ",\n";
+            f << "      " << JNum("probe_prepare_subtract_ms", qr.probe_prepare_subtract_ms) << ",\n";
+            f << "      " << JNum("probe_prepare_normalize_ms", qr.probe_prepare_normalize_ms) << ",\n";
+            f << "      " << JNum("probe_prepare_quantize_ms", qr.probe_prepare_quantize_ms) << ",\n";
+            f << "      " << JNum("probe_prepare_lut_build_ms", qr.probe_prepare_lut_build_ms) << ",\n";
             f << "      " << JNum("probe_stage1_ms", qr.probe_stage1_ms) << ",\n";
             f << "      " << JNum("probe_stage1_estimate_ms", qr.probe_stage1_estimate_ms) << ",\n";
             f << "      " << JNum("probe_stage1_mask_ms", qr.probe_stage1_mask_ms) << ",\n";

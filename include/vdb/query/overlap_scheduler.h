@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstdint>
-#include <unordered_set>
+#include <limits>
 #include <unordered_map>
 #include <vector>
 
@@ -121,20 +121,48 @@ class OverlapScheduler {
 
     struct QueryWrapper {
         rabitq::PreparedQuery prepared;
+        rabitq::ClusterPreparedScratch scratch;
         std::vector<float> rotated_q;
     };
 
-    struct PreparedClusterQueryView {
-        rabitq::PreparedQuery* prepared = nullptr;
-        float margin_factor = 0.0f;
+    struct QueryDedupSet {
+        static constexpr uint64_t kEmpty = std::numeric_limits<uint64_t>::max();
+
+        void Reserve(size_t expected);
+        void Clear();
+        bool Insert(uint64_t key);
+
+        std::vector<uint64_t> slots;
+        size_t mask = 0;
+        size_t size = 0;
     };
+
+    struct SubmitScratch {
+        static constexpr uint32_t kMax = index::CandidateBatch::kMaxCandidates;
+
+        uint32_t unique_count = 0;
+        uint32_t safein_all_count = 0;
+        uint32_t vec_only_count = 0;
+
+        uint32_t unique_indices[kMax] = {};
+        uint32_t safein_all_indices[kMax] = {};
+        uint32_t vec_only_indices[kMax] = {};
+        uint32_t slot_ids[kMax] = {};
+        uint16_t fixed_buffer_indices[kMax] = {};
+        uint8_t* buffers[kMax] = {};
+        bool uses_fixed_buffer[kMax] = {};
+    };
+
+    using PreparedClusterQueryView = rabitq::PreparedClusterQueryView;
     PreparedClusterQueryView PrepareClusterQueryView(const SearchContext& ctx,
-                                                     uint32_t cluster_id);
+                                                     uint32_t cluster_id,
+                                                     rabitq::PrepareTimingBreakdown* timing = nullptr);
     QueryWrapper query_wrapper_;
 
     // Sliding window state (reset per Search() call)
     std::unordered_map<uint32_t, ParsedCluster> ready_clusters_;
-    std::unordered_set<uint64_t> submitted_candidate_offsets_;
+    QueryDedupSet submitted_candidate_offsets_;
+    SubmitScratch submit_scratch_;
     uint32_t next_to_submit_ = 0;
     uint32_t inflight_clusters_ = 0;
 

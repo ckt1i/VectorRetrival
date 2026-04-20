@@ -8,8 +8,83 @@
 #include "vdb/simd/ip_exrabitq.h"
 #include "vdb/storage/pack_codes.h"
 
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+#include <immintrin.h>
+#endif
+
 namespace vdb {
 namespace index {
+
+namespace {
+
+VDB_FORCE_INLINE uint32_t LaneMaskForCount(uint32_t count) {
+    return (count >= 32u) ? 0xFFFFFFFFu : ((1u << count) - 1u);
+}
+
+VDB_FORCE_INLINE uint32_t Stage1SafeInMask(const float* dists,
+                                           const float* block_norms,
+                                           uint32_t count,
+                                           float safein_threshold_base,
+                                           float margin_factor) {
+    const float threshold_mul = 2.0f * margin_factor;
+#if defined(VDB_USE_AVX512)
+    __m512 vbase = _mm512_set1_ps(safein_threshold_base);
+    __m512 vmul = _mm512_set1_ps(threshold_mul);
+    __m512 vd = _mm512_loadu_ps(dists);
+    __m512 vn = _mm512_loadu_ps(block_norms);
+    __m512 vth = _mm512_sub_ps(vbase, _mm512_mul_ps(vmul, vn));
+    uint32_t mask = static_cast<uint32_t>(_mm512_cmp_ps_mask(vd, vth, _CMP_LT_OQ));
+    return mask & LaneMaskForCount(count);
+#elif defined(VDB_USE_AVX2)
+    __m256 vbase = _mm256_set1_ps(safein_threshold_base);
+    __m256 vmul = _mm256_set1_ps(threshold_mul);
+    __m256 vd0 = _mm256_loadu_ps(dists);
+    __m256 vn0 = _mm256_loadu_ps(block_norms);
+    __m256 vt0 = _mm256_sub_ps(vbase, _mm256_mul_ps(vmul, vn0));
+    uint32_t mask = static_cast<uint32_t>(_mm256_movemask_ps(_mm256_cmp_ps(vd0, vt0, _CMP_LT_OQ)));
+    if (count > 8) {
+        __m256 vd1 = _mm256_loadu_ps(dists + 8);
+        __m256 vn1 = _mm256_loadu_ps(block_norms + 8);
+        __m256 vt1 = _mm256_sub_ps(vbase, _mm256_mul_ps(vmul, vn1));
+        mask |= static_cast<uint32_t>(_mm256_movemask_ps(_mm256_cmp_ps(vd1, vt1, _CMP_LT_OQ))) << 8;
+    }
+    if (count > 16) {
+        __m256 vd2 = _mm256_loadu_ps(dists + 16);
+        __m256 vn2 = _mm256_loadu_ps(block_norms + 16);
+        __m256 vt2 = _mm256_sub_ps(vbase, _mm256_mul_ps(vmul, vn2));
+        mask |= static_cast<uint32_t>(_mm256_movemask_ps(_mm256_cmp_ps(vd2, vt2, _CMP_LT_OQ))) << 16;
+    }
+    if (count > 24) {
+        __m256 vd3 = _mm256_loadu_ps(dists + 24);
+        __m256 vn3 = _mm256_loadu_ps(block_norms + 24);
+        __m256 vt3 = _mm256_sub_ps(vbase, _mm256_mul_ps(vmul, vn3));
+        mask |= static_cast<uint32_t>(_mm256_movemask_ps(_mm256_cmp_ps(vd3, vt3, _CMP_LT_OQ))) << 24;
+    }
+    return mask & LaneMaskForCount(count);
+#else
+    uint32_t mask = 0;
+    for (uint32_t i = 0; i < count; ++i) {
+        const float threshold = safein_threshold_base - threshold_mul * block_norms[i];
+        if (dists[i] < threshold) {
+            mask |= (1u << i);
+        }
+    }
+    return mask;
+#endif
+}
+
+VDB_FORCE_INLINE uint32_t CompactMaskToIndices(uint32_t mask,
+                                               uint32_t* VDB_RESTRICT out_idx) {
+    uint32_t n = 0;
+    while (mask) {
+        const uint32_t lane = static_cast<uint32_t>(__builtin_ctz(mask));
+        out_idx[n++] = lane;
+        mask &= (mask - 1u);
+    }
+    return n;
+}
+
+}  // namespace
 
 ClusterProber::ClusterProber(const ConANN& conann, Dim dim, uint8_t bits)
     : conann_(conann),
@@ -22,12 +97,13 @@ ClusterProber::ClusterProber(const ConANN& conann, Dim dim, uint8_t bits)
 ClusterProber::~ClusterProber() = default;
 
 void ClusterProber::Probe(const query::ParsedCluster& pc,
-                           const rabitq::PreparedQuery& pq,
+                           const rabitq::PreparedClusterQueryView& view,
                            float margin_factor,
                            float dynamic_d_k,
                            bool enable_fine_grained_timing,
                            ProbeResultSink& sink,
                            ProbeStats& stats) const {
+    const rabitq::PreparedQuery& pq = *view.prepared;
     const uint32_t packed_sz = storage::FastScanPackedSize(dim_);
     const float safein_threshold_base = conann_.d_k();
 
@@ -46,11 +122,11 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
         if (enable_fine_grained_timing) {
             auto estimate_start = std::chrono::steady_clock::now();
             estimator_.EstimateDistanceFastScan(
-                pq, block_ptr, block_norms, count, dists);
+                view, block_ptr, block_norms, count, dists);
             stats.stage1_estimate_ms += std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - estimate_start).count();
         } else {
-            estimator_.EstimateDistanceFastScan(pq, block_ptr, block_norms, count, dists);
+            estimator_.EstimateDistanceFastScan(view, block_ptr, block_norms, count, dists);
         }
 
         // Stage 1b: batch SafeOut classification via SIMD bitmask.
@@ -68,56 +144,52 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
         }
         stats.s1_safeout += static_cast<uint32_t>(__builtin_popcount(so_mask));
 
-        // Stage 1c: iterate non-SafeOut lanes via ctz
-        uint32_t lane_valid = (count >= 32u) ? 0xFFFFFFFFu : ((1u << count) - 1u);
-        uint32_t maybe_in   = (~so_mask) & lane_valid;
+        // Stage 1c/1d: compact survivors and classify them in mask batches.
+        const uint32_t lane_valid = LaneMaskForCount(count);
+        const uint32_t maybe_in = (~so_mask) & lane_valid;
+        const uint32_t safein_mask = Stage1SafeInMask(
+            dists, block_norms, count, safein_threshold_base, margin_factor) & maybe_in;
+        const uint32_t uncertain_mask = maybe_in & ~safein_mask;
 
-        while (maybe_in) {
-            uint32_t j = 0;
-            if (enable_fine_grained_timing) {
-                auto iterate_start = std::chrono::steady_clock::now();
-                const uint32_t current_mask = maybe_in;
-                j = static_cast<uint32_t>(__builtin_ctz(current_mask));
-                maybe_in = current_mask & (current_mask - 1u);
-                stats.stage1_iterate_ms += std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - iterate_start).count();
-            } else {
-                const uint32_t current_mask = maybe_in;
-                j = static_cast<uint32_t>(__builtin_ctz(current_mask));
-                maybe_in = current_mask & (current_mask - 1u);
-            }
+        uint32_t survivor_lanes[32];
+        uint32_t survivor_count = 0;
+        uint32_t safein_count = 0;
+        uint32_t uncertain_count = 0;
+        if (enable_fine_grained_timing) {
+            auto iterate_start = std::chrono::steady_clock::now();
+            survivor_count = CompactMaskToIndices(maybe_in, survivor_lanes);
+            safein_count = static_cast<uint32_t>(__builtin_popcount(safein_mask));
+            uncertain_count = static_cast<uint32_t>(__builtin_popcount(uncertain_mask));
+            stats.stage1_iterate_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - iterate_start).count();
+        } else {
+            survivor_count = CompactMaskToIndices(maybe_in, survivor_lanes);
+            safein_count = static_cast<uint32_t>(__builtin_popcount(safein_mask));
+            uncertain_count = static_cast<uint32_t>(__builtin_popcount(uncertain_mask));
+        }
 
-            const uint32_t global_idx  = base_idx + j;
-            const float    est_dist_s1 = dists[j];
-            const float    margin_s1   = margin_factor * block_norms[j];
+        if (enable_fine_grained_timing) {
+            auto classify_start = std::chrono::steady_clock::now();
+            stats.s1_safein += safein_count;
+            stats.s1_uncertain += uncertain_count;
+            stats.stage1_classify_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - classify_start).count();
+        } else {
+            stats.s1_safein += safein_count;
+            stats.s1_uncertain += uncertain_count;
+        }
 
-            // Stage 1d: SafeIn vs Uncertain (SafeOut already removed)
-            ResultClass rc_s1;
-            if (enable_fine_grained_timing) {
-                auto classify_start = std::chrono::steady_clock::now();
-                if (est_dist_s1 < safein_threshold_base - 2.0f * margin_s1) {
-                    rc_s1 = ResultClass::SafeIn;
-                    ++stats.s1_safein;
-                } else {
-                    rc_s1 = ResultClass::Uncertain;
-                    ++stats.s1_uncertain;
-                }
-                stats.stage1_classify_ms += std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - classify_start).count();
-            } else {
-                if (est_dist_s1 < safein_threshold_base - 2.0f * margin_s1) {
-                    rc_s1 = ResultClass::SafeIn;
-                    ++stats.s1_safein;
-                } else {
-                    rc_s1 = ResultClass::Uncertain;
-                    ++stats.s1_uncertain;
-                }
-            }
-
-            ResultClass rc_final = rc_s1;
+        for (uint32_t s = 0; s < survivor_count; ++s) {
+            const uint32_t j = survivor_lanes[s];
+            const uint32_t global_idx = base_idx + j;
+            const float est_dist_s1 = dists[j];
+            const float margin_s1 = margin_factor * block_norms[j];
+            ResultClass rc_final = ((safein_mask >> j) & 1u) != 0
+                ? ResultClass::SafeIn
+                : ResultClass::Uncertain;
 
             // Stage 2: ExRaBitQ re-classification for S1-Uncertain (bits > 1)
-            if (rc_s1 == ResultClass::Uncertain && has_s2_ &&
+            if (rc_final == ResultClass::Uncertain && has_s2_ &&
                 pc.exrabitq_entries != nullptr) {
                 auto stage2_start = std::chrono::steady_clock::now();
                 const query::ParsedCluster::ExRaBitQView ex_view =

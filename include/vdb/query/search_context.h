@@ -5,6 +5,7 @@
 #include "vdb/common/types.h"
 #include "vdb/index/crc_stopper.h"
 #include "vdb/query/result_collector.h"
+#include "vdb/rabitq/rabitq_estimator.h"
 
 namespace vdb {
 namespace query {
@@ -64,6 +65,9 @@ struct SearchStats {
     uint32_t total_payload_fetched = 0;
     uint32_t total_safein_payload_prefetched = 0;
     uint32_t total_submit_calls = 0;
+    uint32_t total_candidate_batches = 0;
+    uint32_t total_crc_estimates_buffered = 0;
+    uint32_t total_crc_estimates_merged = 0;
     uint32_t duplicate_candidates = 0;
     uint32_t deduplicated_candidates = 0;
     uint32_t unique_fetch_candidates = 0;
@@ -77,6 +81,10 @@ struct SearchStats {
     double coarse_topn_ms = 0;
     double probe_time_ms = 0;
     double probe_prepare_ms = 0;
+    double probe_prepare_subtract_ms = 0;
+    double probe_prepare_normalize_ms = 0;
+    double probe_prepare_quantize_ms = 0;
+    double probe_prepare_lut_build_ms = 0;
     double probe_stage1_ms = 0;
     double probe_stage1_estimate_ms = 0;
     double probe_stage1_mask_ms = 0;

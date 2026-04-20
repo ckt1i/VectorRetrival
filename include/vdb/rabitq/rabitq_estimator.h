@@ -37,13 +37,31 @@ struct PreparedQuery {
 
     // Multi-bit fields
     uint8_t               bits = 1;    // M: quantization bits
-
-    // FastScan fields (populated alongside sign_code in PrepareQuery)
-    std::vector<int16_t>  quant_query;   // 14-bit quantized q' (length = dim)
-    std::vector<uint8_t>  fastscan_lut;  // Packed VPSHUFB LUT (dim*4 bytes + alignment pad)
-    uint8_t*              lut_aligned = nullptr;  // 64-byte aligned pointer into fastscan_lut
     float                 fs_width = 0.0f;  // Quantization step width
     int32_t               fs_shift = 0;     // Accumulated v_min shift from BuildFastScanLUT
+    uint8_t*              lut_aligned = nullptr;  // compatibility alias into scratch
+};
+
+/// Reusable scratch owned by the query wrapper, but not part of the logical
+/// prepared-view contract.
+struct ClusterPreparedScratch {
+    std::vector<int16_t> quant_query;   // 14-bit quantized q' (length = dim)
+    std::vector<uint8_t> fastscan_lut;  // Packed VPSHUFB LUT storage
+    uint8_t*             lut_aligned = nullptr;
+};
+
+/// Lightweight per-cluster view used by probe / FastScan consumers.
+struct PreparedClusterQueryView {
+    const PreparedQuery*          prepared = nullptr;
+    const ClusterPreparedScratch*  scratch = nullptr;
+    float                          margin_factor = 0.0f;
+};
+
+struct PrepareTimingBreakdown {
+    double subtract_norm_ms = 0;
+    double normalize_sign_sum_maxabs_ms = 0;
+    double quantize_ms = 0;
+    double lut_build_ms = 0;
 };
 
 // ============================================================================
@@ -91,7 +109,9 @@ class RaBitQEstimator {
     void PrepareQueryInto(const float* query,
                           const float* centroid,
                           const RotationMatrix& rotation,
-                          PreparedQuery* pq) const;
+                          PreparedQuery* pq,
+                          ClusterPreparedScratch* scratch,
+                          PrepareTimingBreakdown* timing = nullptr) const;
 
     /// Pre-rotated variant: skips per-cluster FWHT.
     ///
@@ -106,7 +126,9 @@ class RaBitQEstimator {
     /// Produces identical sign_code, sum_q, and LUT to PrepareQueryInto.
     void PrepareQueryRotatedInto(const float* rotated_q,
                                  const float* rotated_centroid,
-                                 PreparedQuery* pq) const;
+                                 PreparedQuery* pq,
+                                 ClusterPreparedScratch* scratch,
+                                 PrepareTimingBreakdown* timing = nullptr) const;
 
     /// Stage 1: Estimate distance using fast XOR+popcount on MSB plane.
     ///
@@ -156,6 +178,13 @@ class RaBitQEstimator {
     /// @param count         Actual vectors in this block (1..32)
     /// @param out_dist      Output: estimated distances (at least 32 floats)
     void EstimateDistanceFastScan(const PreparedQuery& pq,
+                                   const uint8_t* packed_codes,
+                                   const float* block_norms,
+                                   uint32_t count,
+                                   float* out_dist) const;
+
+    /// FastScan Stage 1 using a lightweight prepared view.
+    void EstimateDistanceFastScan(const PreparedClusterQueryView& view,
                                    const uint8_t* packed_codes,
                                    const float* block_norms,
                                    uint32_t count,

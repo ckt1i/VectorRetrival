@@ -5,9 +5,11 @@
 #include "vdb/simd/prepare_query.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <stdexcept>
 
 #if defined(VDB_USE_AVX512)
 #include <immintrin.h>
@@ -15,6 +17,94 @@
 
 namespace vdb {
 namespace rabitq {
+
+namespace {
+
+constexpr bool kUseFusedFastScanPrepare = true;
+
+void PrepareFastScanReference(const float* rotated,
+                              float max_abs,
+                              Dim dim,
+                              PreparedQuery* pq,
+                              ClusterPreparedScratch* scratch,
+                              PrepareTimingBreakdown* timing) {
+    if (scratch->quant_query.size() < dim) {
+        scratch->quant_query.resize(dim);
+    }
+    auto t0 = std::chrono::steady_clock::now();
+    pq->fs_width = simd::QuantizeQuery14BitWithMax(
+        rotated, max_abs, scratch->quant_query.data(), dim);
+    if (timing != nullptr) {
+        timing->quantize_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+    }
+
+    auto t1 = std::chrono::steady_clock::now();
+    pq->fs_shift = simd::BuildFastScanLUTReference(
+        scratch->quant_query.data(), scratch->lut_aligned, dim);
+    if (timing != nullptr) {
+        timing->lut_build_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t1).count();
+    }
+}
+
+void PrepareFastScanFused(const float* rotated,
+                          float max_abs,
+                          Dim dim,
+                          PreparedQuery* pq,
+                          ClusterPreparedScratch* scratch,
+                          PrepareTimingBreakdown* timing) {
+    simd::FastScanPrepareTimingBreakdown fastscan_timing;
+    simd::FastScanPrepareTimingBreakdown* timing_ptr =
+        (timing != nullptr) ? &fastscan_timing : nullptr;
+#ifndef NDEBUG
+    if (scratch->quant_query.size() < dim) {
+        scratch->quant_query.resize(dim);
+    }
+#endif
+    pq->fs_width = simd::QuantizeQuery14BitWithMaxToFastScanLUT(
+        rotated, max_abs, scratch->lut_aligned, dim, &pq->fs_shift, timing_ptr,
+#ifndef NDEBUG
+        scratch->quant_query.data()
+#else
+        nullptr
+#endif
+    );
+    if (timing != nullptr) {
+        timing->quantize_ms += fastscan_timing.quantize_ms;
+        timing->lut_build_ms += fastscan_timing.lut_build_ms;
+    }
+#ifndef NDEBUG
+    std::vector<uint8_t> ref_lut_storage(static_cast<size_t>(dim) * 8 + 63);
+    uintptr_t ref_raw = reinterpret_cast<uintptr_t>(ref_lut_storage.data());
+    uintptr_t ref_aligned = (ref_raw + 63) & ~uintptr_t(63);
+    uint8_t* ref_lut = reinterpret_cast<uint8_t*>(ref_aligned);
+    const int32_t ref_shift = simd::BuildFastScanLUTReference(
+        scratch->quant_query.data(), ref_lut, dim);
+    const float ref_width = simd::QuantizeQuery14BitWithMax(
+        rotated, max_abs, scratch->quant_query.data(), dim);
+    if (std::abs(ref_width - pq->fs_width) > 1e-12f ||
+        ref_shift != pq->fs_shift ||
+        std::memcmp(ref_lut, scratch->lut_aligned, static_cast<size_t>(dim) * 8) != 0) {
+        throw std::runtime_error("Fused FastScan prepare path diverged from reference output");
+    }
+#endif
+}
+
+void PrepareFastScanQuery(const float* rotated,
+                          float max_abs,
+                          Dim dim,
+                          PreparedQuery* pq,
+                          ClusterPreparedScratch* scratch,
+                          PrepareTimingBreakdown* timing) {
+    if constexpr (kUseFusedFastScanPrepare) {
+        PrepareFastScanFused(rotated, max_abs, dim, pq, scratch, timing);
+    } else {
+        PrepareFastScanReference(rotated, max_abs, dim, pq, scratch, timing);
+    }
+}
+
+}  // namespace
 
 // ============================================================================
 // Construction
@@ -36,77 +126,9 @@ PreparedQuery RaBitQEstimator::PrepareQuery(
     const float* query,
     const float* centroid,
     const RotationMatrix& rotation) const {
-    const size_t L = dim_;
-
     PreparedQuery pq;
-    pq.dim       = dim_;
-    pq.num_words = words_per_plane_;
-    pq.bits      = bits_;
-
-    // Step 1: Center — r = q - c
-    std::vector<float> residual(L);
-    if (centroid != nullptr) {
-        for (size_t i = 0; i < L; ++i) {
-            residual[i] = query[i] - centroid[i];
-        }
-    } else {
-        std::memcpy(residual.data(), query, L * sizeof(float));
-    }
-
-    // Step 2: Compute ‖q - c‖₂
-    float norm_sq = 0.0f;
-    for (size_t i = 0; i < L; ++i) {
-        norm_sq += residual[i] * residual[i];
-    }
-    pq.norm_qc_sq = norm_sq;
-    pq.norm_qc    = std::sqrt(norm_sq);
-
-    // Step 3: Normalize — q̄ = r / ‖r‖
-    if (pq.norm_qc > 1e-30f) {
-        float inv_norm = 1.0f / pq.norm_qc;
-        for (size_t i = 0; i < L; ++i) {
-            residual[i] *= inv_norm;
-        }
-    }
-
-    // Step 4: Rotate — q' = P^T × q̄
-    pq.rotated.resize(L);
-    rotation.Apply(residual.data(), pq.rotated.data());
-
-    // Step 5: Sign-quantize q' → packed sign code
-    pq.sign_code.resize(words_per_plane_, 0ULL);
-    for (size_t i = 0; i < L; ++i) {
-        if (pq.rotated[i] >= 0.0f) {
-            size_t word_idx = i / 64;
-            size_t bit_idx  = i % 64;
-            pq.sign_code[word_idx] |= (1ULL << bit_idx);
-        }
-    }
-
-    // Step 6: Precompute sum_q = Σ q'[i]
-    pq.sum_q = 0.0f;
-    for (size_t i = 0; i < L; ++i) {
-        pq.sum_q += pq.rotated[i];
-    }
-
-    // Step 7: FastScan query quantization + LUT construction
-    pq.quant_query.resize(L);
-    pq.fs_width = simd::QuantizeQuery14Bit(
-        pq.rotated.data(), pq.quant_query.data(), dim_);
-
-    // Allocate 64-byte aligned LUT buffer.
-    // Two-plane LUT: lo + hi byte planes, ceil(M/4)*128 bytes = dim*8 bytes.
-    const size_t lut_size = static_cast<size_t>(dim_) * 8;
-    pq.fastscan_lut.resize(lut_size + 63);
-    // Compute 64-byte aligned pointer
-    uintptr_t raw = reinterpret_cast<uintptr_t>(pq.fastscan_lut.data());
-    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
-    pq.lut_aligned = reinterpret_cast<uint8_t*>(aligned);
-    std::memset(pq.lut_aligned, 0, lut_size);
-
-    pq.fs_shift = simd::BuildFastScanLUT(
-        pq.quant_query.data(), pq.lut_aligned, dim_);
-
+    thread_local ClusterPreparedScratch scratch;
+    PrepareQueryInto(query, centroid, rotation, &pq, &scratch);
     return pq;
 }
 
@@ -118,7 +140,9 @@ void RaBitQEstimator::PrepareQueryInto(
     const float* query,
     const float* centroid,
     const RotationMatrix& rotation,
-    PreparedQuery* pq) const {
+    PreparedQuery* pq,
+    ClusterPreparedScratch* scratch,
+    PrepareTimingBreakdown* timing) const {
     const size_t L = dim_;
 
     pq->dim       = dim_;
@@ -129,16 +153,26 @@ void RaBitQEstimator::PrepareQueryInto(
     alignas(64) float residual[1024];
 
     // Fused subtract + norm_sq in one memory pass
+    auto t0 = std::chrono::steady_clock::now();
     pq->norm_qc_sq = simd::SimdSubtractAndNormSq(
         query, centroid, residual, static_cast<uint32_t>(L));
     pq->norm_qc = std::sqrt(pq->norm_qc_sq);
+    if (timing != nullptr) {
+        timing->subtract_norm_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+    }
 
     // Normalize residual
+    auto t1 = std::chrono::steady_clock::now();
     if (pq->norm_qc > 1e-30f) {
         float inv_norm = 1.0f / pq->norm_qc;
         for (size_t i = 0; i < L; ++i) {
             residual[i] *= inv_norm;
         }
+    }
+    if (timing != nullptr) {
+        timing->normalize_sign_sum_maxabs_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t1).count();
     }
 
     // Rotate — Apply reads from residual, writes to rotated
@@ -158,31 +192,26 @@ void RaBitQEstimator::PrepareQueryInto(
             static_cast<uint32_t>(L));
     pq->sum_q = norm_result.sum;
 
-    // FastScan query quantization + LUT. Reuse estimator scratch so the
-    // resident query path does not retain a long-lived quant buffer in pq.
-    if (quant_scratch_.size() < L) {
-        quant_scratch_.resize(L);
-    }
-    pq->fs_width = simd::QuantizeQuery14BitWithMax(
-        pq->rotated.data(), norm_result.max_abs, quant_scratch_.data(), dim_);
-    pq->quant_query.clear();
-
+    // FastScan prepare boundary:
+    //   prepare_query.cpp owns subtract / normalize / sign / max_abs
+    //   fastscan.cpp owns reference and fused quantize+LUT generation
     const size_t lut_size = static_cast<size_t>(dim_) * 8;
-    if (pq->fastscan_lut.capacity() < lut_size + 63) {
-        pq->fastscan_lut.reserve(lut_size + 63);
+    if (scratch->fastscan_lut.capacity() < lut_size + 63) {
+        scratch->fastscan_lut.reserve(lut_size + 63);
     }
-    pq->fastscan_lut.resize(lut_size + 63);
-    uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
+    scratch->fastscan_lut.resize(lut_size + 63);
+    uintptr_t raw = reinterpret_cast<uintptr_t>(scratch->fastscan_lut.data());
     uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
-    pq->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+    scratch->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
     // Note: BuildFastScanLUT writes every byte (M = dim/4 groups × 16 entries
     // × 2 bytes lo/hi = lut_size bytes), so the prior zero-init is dead work.
 #ifndef NDEBUG
-    std::memset(pq->lut_aligned, 0xCD, lut_size);  // sentinel to catch bugs
+    std::memset(scratch->lut_aligned, 0xCD, lut_size);  // sentinel to catch bugs
 #endif
 
-    pq->fs_shift = simd::BuildFastScanLUT(
-        quant_scratch_.data(), pq->lut_aligned, dim_);
+    PrepareFastScanQuery(
+        pq->rotated.data(), norm_result.max_abs, dim_, pq, scratch, timing);
+    pq->lut_aligned = scratch->lut_aligned;
 }
 
 // ============================================================================
@@ -201,7 +230,9 @@ void RaBitQEstimator::PrepareQueryInto(
 void RaBitQEstimator::PrepareQueryRotatedInto(
     const float* rotated_q,
     const float* rotated_centroid,
-    PreparedQuery* pq) const {
+    PreparedQuery* pq,
+    ClusterPreparedScratch* scratch,
+    PrepareTimingBreakdown* timing) const {
     const size_t L = dim_;
 
     pq->dim       = dim_;
@@ -211,9 +242,14 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
     // Step 1: diff = rotated_q - rotated_centroid; norm_sq = ‖diff‖²
     // Reuse pq->rotated as the diff buffer (same length L).
     pq->rotated.resize(L);
+    auto t0 = std::chrono::steady_clock::now();
     pq->norm_qc_sq = simd::SimdSubtractAndNormSq(
         rotated_q, rotated_centroid, pq->rotated.data(), static_cast<uint32_t>(L));
     pq->norm_qc = std::sqrt(pq->norm_qc_sq);
+    if (timing != nullptr) {
+        timing->subtract_norm_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t0).count();
+    }
 
     // Step 2: Fused normalize + sign-quantize + sum_q.
     // diff → normalized diff = diff / ‖diff‖, extracting sign bits and sum.
@@ -222,6 +258,7 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
         pq->sign_code[w] = 0;
     }
     float inv_norm = (pq->norm_qc > 1e-30f) ? (1.0f / pq->norm_qc) : 1.0f;
+    auto t1 = std::chrono::steady_clock::now();
     simd::NormalizeSignSumResult norm_result =
         simd::SimdNormalizeSignSumMaxAbs(
             pq->rotated.data(), inv_norm,
@@ -229,29 +266,27 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
             static_cast<uint32_t>(L));
     pq->sum_q = norm_result.sum;
     // pq->rotated now holds the normalized diff = P^T × (q̄)
-
-    // Step 3: FastScan quantization + LUT (identical to PrepareQueryInto)
-    if (quant_scratch_.size() < L) {
-        quant_scratch_.resize(L);
+    if (timing != nullptr) {
+        timing->normalize_sign_sum_maxabs_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t1).count();
     }
-    pq->fs_width = simd::QuantizeQuery14BitWithMax(
-        pq->rotated.data(), norm_result.max_abs, quant_scratch_.data(), dim_);
-    pq->quant_query.clear();
 
+    // Step 3: FastScan quantization + LUT (reference and fused paths live in fastscan.cpp)
     const size_t lut_size = static_cast<size_t>(dim_) * 8;
-    if (pq->fastscan_lut.capacity() < lut_size + 63) {
-        pq->fastscan_lut.reserve(lut_size + 63);
+    if (scratch->fastscan_lut.capacity() < lut_size + 63) {
+        scratch->fastscan_lut.reserve(lut_size + 63);
     }
-    pq->fastscan_lut.resize(lut_size + 63);
-    uintptr_t raw = reinterpret_cast<uintptr_t>(pq->fastscan_lut.data());
+    scratch->fastscan_lut.resize(lut_size + 63);
+    uintptr_t raw = reinterpret_cast<uintptr_t>(scratch->fastscan_lut.data());
     uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
-    pq->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+    scratch->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
 #ifndef NDEBUG
-    std::memset(pq->lut_aligned, 0xCD, lut_size);
+    std::memset(scratch->lut_aligned, 0xCD, lut_size);
 #endif
 
-    pq->fs_shift = simd::BuildFastScanLUT(
-        quant_scratch_.data(), pq->lut_aligned, dim_);
+    PrepareFastScanQuery(
+        pq->rotated.data(), norm_result.max_abs, dim_, pq, scratch, timing);
+    pq->lut_aligned = scratch->lut_aligned;
 }
 
 // ============================================================================
@@ -322,6 +357,15 @@ void RaBitQEstimator::EstimateDistanceFastScan(
                               pq.fs_shift, pq.fs_width, pq.sum_q,
                               inv_sqrt_dim_, pq.norm_qc, pq.norm_qc_sq,
                               out_dist);
+}
+
+void RaBitQEstimator::EstimateDistanceFastScan(
+    const PreparedClusterQueryView& view,
+    const uint8_t* packed_codes,
+    const float* block_norms,
+    uint32_t count,
+    float* out_dist) const {
+    EstimateDistanceFastScan(*view.prepared, packed_codes, block_norms, count, out_dist);
 }
 
 // ============================================================================

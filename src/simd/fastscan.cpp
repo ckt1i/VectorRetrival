@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -13,6 +14,23 @@ namespace vdb {
 namespace simd {
 
 namespace {
+
+#if defined(VDB_USE_AVX512)
+constexpr size_t kFastScanLutPerIter = 4;
+constexpr size_t kFastScanCodePerIter = 128;
+constexpr size_t kFastScanCodePerLane = 16;
+constexpr size_t kFastScanHiOffset = 64;
+#elif defined(VDB_USE_AVX2)
+constexpr size_t kFastScanLutPerIter = 2;
+constexpr size_t kFastScanCodePerIter = 64;
+constexpr size_t kFastScanCodePerLane = 16;
+constexpr size_t kFastScanHiOffset = 32;
+#else
+constexpr size_t kFastScanLutPerIter = 1;
+constexpr size_t kFastScanCodePerIter = 32;
+constexpr size_t kFastScanCodePerLane = 16;
+constexpr size_t kFastScanHiOffset = 16;
+#endif
 
 #if defined(VDB_USE_AVX512)
 VDB_FORCE_INLINE float ReduceMax512(__m512 v) {
@@ -35,6 +53,71 @@ VDB_FORCE_INLINE float ReduceMax256(__m256 v) {
         vmax = std::max(vmax, lanes[i]);
     }
     return vmax;
+}
+#endif
+
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+VDB_FORCE_INLINE __m128i BoolMask8x16(bool b0, bool b1, bool b2, bool b3,
+                                      bool b4, bool b5, bool b6, bool b7) {
+    return _mm_setr_epi16(
+        b0 ? -1 : 0, b1 ? -1 : 0, b2 ? -1 : 0, b3 ? -1 : 0,
+        b4 ? -1 : 0, b5 ? -1 : 0, b6 ? -1 : 0, b7 ? -1 : 0);
+}
+
+VDB_FORCE_INLINE void BuildLut16Simd(int q0, int q1, int q2, int q3,
+                                     __m128i* VDB_RESTRICT lut_lo,
+                                     __m128i* VDB_RESTRICT lut_hi,
+                                     int32_t* VDB_RESTRICT v_min_out) {
+    const int32_t v_min =
+        std::min(q0, 0) + std::min(q1, 0) +
+        std::min(q2, 0) + std::min(q3, 0);
+    const int16_t bias = static_cast<int16_t>(-v_min);
+    *v_min_out = v_min;
+
+    const __m128i vbias = _mm_set1_epi16(bias);
+    const __m128i vq0 = _mm_set1_epi16(static_cast<int16_t>(q0));
+    const __m128i vq1 = _mm_set1_epi16(static_cast<int16_t>(q1));
+    const __m128i vq2 = _mm_set1_epi16(static_cast<int16_t>(q2));
+    const __m128i vq3 = _mm_set1_epi16(static_cast<int16_t>(q3));
+
+    const __m128i q1_mask_lo = BoolMask8x16(false, false, false, false, true, true, true, true);
+    const __m128i q2_mask_lo = BoolMask8x16(false, false, true, true, false, false, true, true);
+    const __m128i q3_mask_lo = BoolMask8x16(false, true, false, true, false, true, false, true);
+
+    const __m128i q0_mask_hi = _mm_set1_epi16(static_cast<short>(-1));
+    const __m128i q1_mask_hi = BoolMask8x16(false, false, false, false, true, true, true, true);
+    const __m128i q2_mask_hi = BoolMask8x16(false, false, true, true, false, false, true, true);
+    const __m128i q3_mask_hi = BoolMask8x16(false, true, false, true, false, true, false, true);
+
+    __m128i lo = vbias;
+    lo = _mm_add_epi16(lo, _mm_and_si128(vq1, q1_mask_lo));
+    lo = _mm_add_epi16(lo, _mm_and_si128(vq2, q2_mask_lo));
+    lo = _mm_add_epi16(lo, _mm_and_si128(vq3, q3_mask_lo));
+
+    __m128i hi = _mm_add_epi16(vbias, _mm_and_si128(vq0, q0_mask_hi));
+    hi = _mm_add_epi16(hi, _mm_and_si128(vq1, q1_mask_hi));
+    hi = _mm_add_epi16(hi, _mm_and_si128(vq2, q2_mask_hi));
+    hi = _mm_add_epi16(hi, _mm_and_si128(vq3, q3_mask_hi));
+
+    *lut_lo = lo;
+    *lut_hi = hi;
+}
+
+VDB_FORCE_INLINE __m128i PackLowBytes16(__m128i lut_lo, __m128i lut_hi) {
+    const __m128i mask = _mm_set1_epi16(0x00FF);
+    return _mm_packus_epi16(_mm_and_si128(lut_lo, mask), _mm_and_si128(lut_hi, mask));
+}
+
+VDB_FORCE_INLINE __m128i PackHighBytes16(__m128i lut_lo, __m128i lut_hi) {
+    return _mm_packus_epi16(_mm_srli_epi16(lut_lo, 8), _mm_srli_epi16(lut_hi, 8));
+}
+
+VDB_FORCE_INLINE void StoreLutBytePlanesSimd(uint8_t* VDB_RESTRICT fill_lo,
+                                             __m128i lut_lo,
+                                             __m128i lut_hi) {
+    uint8_t* fill_hi = fill_lo + kFastScanHiOffset;
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_lo), PackLowBytes16(lut_lo, lut_hi));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_hi), PackHighBytes16(lut_lo, lut_hi));
 }
 #endif
 
@@ -66,6 +149,12 @@ VDB_FORCE_INLINE void BuildLut16(int q0, int q1, int q2, int q3,
     *v_min_out = v_min;
 }
 
+VDB_FORCE_INLINE uint8_t* LutGroupWriteBase(uint8_t* VDB_RESTRICT lut_out,
+                                            uint32_t group_idx) {
+    return lut_out + (group_idx / kFastScanLutPerIter) * kFastScanCodePerIter +
+           (group_idx % kFastScanLutPerIter) * kFastScanCodePerLane;
+}
+
 #if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
 VDB_FORCE_INLINE __m128i LutLowBytes128(const uint16_t* VDB_RESTRICT lut) {
     return _mm_setr_epi8(
@@ -90,7 +179,48 @@ VDB_FORCE_INLINE __m128i LutHighBytes128(const uint16_t* VDB_RESTRICT lut) {
         static_cast<char>(lut[12] >> 8), static_cast<char>(lut[13] >> 8),
         static_cast<char>(lut[14] >> 8), static_cast<char>(lut[15] >> 8));
 }
+
+VDB_FORCE_INLINE void StoreLutBytePlanes(uint8_t* VDB_RESTRICT fill_lo,
+                                         const uint16_t* VDB_RESTRICT lut) {
+    uint8_t* fill_hi = fill_lo + kFastScanHiOffset;
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_lo), LutLowBytes128(lut));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_hi), LutHighBytes128(lut));
+}
 #endif
+
+VDB_FORCE_INLINE void StoreLutBytePlanesScalar(uint8_t* VDB_RESTRICT fill_lo,
+                                               const uint16_t* VDB_RESTRICT lut) {
+    uint8_t* fill_hi = fill_lo + kFastScanHiOffset;
+    for (int j = 0; j < 16; ++j) {
+        fill_lo[j] = static_cast<uint8_t>(lut[j] & 0xFF);
+        fill_hi[j] = static_cast<uint8_t>(lut[j] >> 8);
+    }
+}
+
+VDB_FORCE_INLINE void BuildLutAndStoreGroup(uint8_t* VDB_RESTRICT lut_out,
+                                            uint32_t group_idx,
+                                            int q0,
+                                            int q1,
+                                            int q2,
+                                            int q3,
+                                            int32_t* VDB_RESTRICT total_shift) {
+#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
+    __m128i lut_lo;
+    __m128i lut_hi;
+    int32_t v_min = 0;
+    BuildLut16Simd(q0, q1, q2, q3, &lut_lo, &lut_hi, &v_min);
+    *total_shift += v_min;
+    uint8_t* fill_lo = LutGroupWriteBase(lut_out, group_idx);
+    StoreLutBytePlanesSimd(fill_lo, lut_lo, lut_hi);
+#else
+    int32_t v_min = 0;
+    uint16_t lut[16];
+    BuildLut16(q0, q1, q2, q3, lut, &v_min);
+    *total_shift += v_min;
+    uint8_t* fill_lo = LutGroupWriteBase(lut_out, group_idx);
+    StoreLutBytePlanesScalar(fill_lo, lut);
+#endif
+}
 
 }  // namespace
 
@@ -101,9 +231,6 @@ VDB_FORCE_INLINE __m128i LutHighBytes128(const uint16_t* VDB_RESTRICT lut) {
 float QuantizeQuery14Bit(const float* VDB_RESTRICT query,
                           int16_t* VDB_RESTRICT quant_out,
                           Dim dim) {
-    constexpr int BQ = 14;
-    constexpr float max_val = static_cast<float>((1 << (BQ - 1)) - 1);  // 8191
-
     // Find max absolute value
     float vmax = 0.0f;
 #if defined(VDB_USE_AVX512)
@@ -166,7 +293,6 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
         const __m512 v_pos_bias = _mm512_set1_ps(0.5f);
         const __m512 v_neg_bias = _mm512_set1_ps(-0.5f);
         const __m512 v_zero = _mm512_setzero_ps();
-        alignas(64) int32_t tmp32[16];
         uint32_t i = 0;
         for (; i + 16 <= dim; i += 16) {
             __m512 v = _mm512_loadu_ps(query + i);
@@ -175,10 +301,16 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
             __m512 bias = _mm512_mask_blend_ps(neg_mask, v_pos_bias, v_neg_bias);
             __m512 adjusted = _mm512_add_ps(v, bias);
             __m512i q32 = _mm512_cvttps_epi32(adjusted);
-            _mm512_store_si512(tmp32, q32);
-            for (uint32_t j = 0; j < 16; ++j) {
-                quant_out[i + j] = static_cast<int16_t>(tmp32[j]);
-            }
+            __m256i q32_lo = _mm512_castsi512_si256(q32);
+            __m256i q32_hi = _mm512_extracti64x4_epi64(q32, 1);
+            __m128i q0 = _mm256_castsi256_si128(q32_lo);
+            __m128i q1 = _mm256_extracti128_si256(q32_lo, 1);
+            __m128i q2 = _mm256_castsi256_si128(q32_hi);
+            __m128i q3 = _mm256_extracti128_si256(q32_hi, 1);
+            __m128i q16_lo = _mm_packs_epi32(q0, q1);
+            __m128i q16_hi = _mm_packs_epi32(q2, q3);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out + i), q16_lo);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out + i + 8), q16_hi);
         }
         for (; i < dim; ++i) {
             float tmp = query[i] * inv_width;
@@ -191,7 +323,6 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
         const __m256 v_pos_bias = _mm256_set1_ps(0.5f);
         const __m256 v_neg_bias = _mm256_set1_ps(-0.5f);
         const __m256 v_zero = _mm256_setzero_ps();
-        alignas(32) int32_t tmp32[8];
         uint32_t i = 0;
         for (; i + 8 <= dim; i += 8) {
             __m256 v = _mm256_loadu_ps(query + i);
@@ -200,10 +331,10 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
             __m256 bias = _mm256_blendv_ps(v_pos_bias, v_neg_bias, neg_mask);
             __m256 adjusted = _mm256_add_ps(v, bias);
             __m256i q32 = _mm256_cvttps_epi32(adjusted);
-            _mm256_store_si256(reinterpret_cast<__m256i*>(tmp32), q32);
-            for (uint32_t j = 0; j < 8; ++j) {
-                quant_out[i + j] = static_cast<int16_t>(tmp32[j]);
-            }
+            __m128i q32_lo = _mm256_castsi256_si128(q32);
+            __m128i q32_hi = _mm256_extracti128_si256(q32, 1);
+            __m128i q16 = _mm_packs_epi32(q32_lo, q32_hi);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out + i), q16);
         }
         for (; i < dim; ++i) {
             float tmp = query[i] * inv_width;
@@ -225,77 +356,177 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
 // BuildFastScanLUT — build VPSHUFB LUT from quantized query
 // ============================================================================
 
-int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
-                          uint8_t* VDB_RESTRICT lut_out,
-                          Dim dim) {
+int32_t BuildFastScanLUTReference(const int16_t* VDB_RESTRICT quant_query,
+                                  uint8_t* VDB_RESTRICT lut_out,
+                                  Dim dim) {
     const uint32_t M = dim >> 2;  // number of 4-dim groups
     int32_t total_shift = 0;
 
-    // Layout depends on SIMD register width:
-    //   AVX-512: 4 sub-quantizers per 128-byte block (64 lo + 64 hi)
-    //   AVX2:    2 sub-quantizers per 64-byte block  (32 lo + 32 hi)
-#if defined(VDB_USE_AVX512)
-    constexpr size_t n_lut_per_iter = 4;      // 512/128
-    constexpr size_t n_code_per_iter = 128;    // 2 * 512/8
-    constexpr size_t n_code_per_lane = 16;     // 128/8
-    constexpr size_t hi_offset = 64;           // 512/8
-#else
-    constexpr size_t n_lut_per_iter = 2;      // 256/128
-    constexpr size_t n_code_per_iter = 64;    // 2 * 256/8
-    constexpr size_t n_code_per_lane = 16;    // 128/8
-    constexpr size_t hi_offset = 32;          // 256/8
-#endif
-
     const int16_t* qq = quant_query;
-    uint32_t i = 0;
-
-#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
-    for (; i + n_lut_per_iter <= M; i += n_lut_per_iter) {
-        std::array<std::array<uint16_t, 16>, n_lut_per_iter> lut_groups{};
-        for (size_t g = 0; g < n_lut_per_iter; ++g) {
-            int32_t v_min = 0;
-            BuildLut16(qq[0], qq[1], qq[2], qq[3], lut_groups[g].data(), &v_min);
-            total_shift += v_min;
-            qq += 4;
-        }
-
-        uint8_t* fill_lo =
-            lut_out + (i / n_lut_per_iter) * n_code_per_iter;
-        uint8_t* fill_hi = fill_lo + hi_offset;
-
-        for (size_t g = 0; g < n_lut_per_iter; ++g) {
-            _mm_storeu_si128(
-                reinterpret_cast<__m128i*>(fill_lo + g * n_code_per_lane),
-                LutLowBytes128(lut_groups[g].data()));
-            _mm_storeu_si128(
-                reinterpret_cast<__m128i*>(fill_hi + g * n_code_per_lane),
-                LutHighBytes128(lut_groups[g].data()));
-        }
-    }
-#endif
-
-    for (; i < M; ++i) {
-        int32_t v_min = 0;
-        uint16_t lut[16];
-        BuildLut16(qq[0], qq[1], qq[2], qq[3], lut, &v_min);
-        total_shift += v_min;
-
-        uint8_t* fill_lo = lut_out + (i / n_lut_per_iter) * n_code_per_iter +
-                           (i % n_lut_per_iter) * n_code_per_lane;
-        uint8_t* fill_hi = fill_lo + hi_offset;
-#if defined(VDB_USE_AVX512) || defined(VDB_USE_AVX2)
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_lo), LutLowBytes128(lut));
-        _mm_storeu_si128(reinterpret_cast<__m128i*>(fill_hi), LutHighBytes128(lut));
-#else
-        for (int j = 0; j < 16; ++j) {
-            fill_lo[j] = static_cast<uint8_t>(lut[j] & 0xFF);
-            fill_hi[j] = static_cast<uint8_t>(lut[j] >> 8);
-        }
-#endif
+    for (uint32_t i = 0; i < M; ++i) {
+        BuildLutAndStoreGroup(
+            lut_out, i, qq[0], qq[1], qq[2], qq[3], &total_shift);
         qq += 4;
     }
 
     return total_shift;
+}
+
+int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
+                         uint8_t* VDB_RESTRICT lut_out,
+                         Dim dim) {
+    return BuildFastScanLUTReference(quant_query, lut_out, dim);
+}
+
+float QuantizeQuery14BitWithMaxToFastScanLUT(
+    const float* VDB_RESTRICT query,
+    float vmax,
+    uint8_t* VDB_RESTRICT lut_out,
+    Dim dim,
+    int32_t* VDB_RESTRICT fs_shift_out,
+    FastScanPrepareTimingBreakdown* timing,
+    int16_t* VDB_RESTRICT quant_out_opt) {
+    constexpr int BQ = 14;
+    constexpr float max_val = static_cast<float>((1 << (BQ - 1)) - 1);  // 8191
+
+    if (vmax < 1e-10f) {
+        const size_t lut_size = static_cast<size_t>(dim) * 8;
+        std::memset(lut_out, 0, lut_size);
+        if (quant_out_opt != nullptr) {
+            std::memset(quant_out_opt, 0, static_cast<size_t>(dim) * sizeof(int16_t));
+        }
+        *fs_shift_out = 0;
+        if (timing != nullptr) {
+            timing->quantize_ms = 0.0;
+            timing->lut_build_ms = 0.0;
+        }
+        return 1.0f;
+    }
+
+    const float width = vmax / max_val;
+    const float inv_width = 1.0f / width;
+    int32_t total_shift = 0;
+    double quantize_ms = 0.0;
+    double lut_build_ms = 0.0;
+    const bool measure = (timing != nullptr);
+
+    const uint32_t M = dim >> 2;
+    constexpr uint32_t kGroupsPerChunk = 4;
+    alignas(32) int16_t q_chunk[kGroupsPerChunk * 4];
+
+    for (uint32_t group = 0; group < M; group += kGroupsPerChunk) {
+        const uint32_t groups_this_round = std::min<uint32_t>(kGroupsPerChunk, M - group);
+        auto q0 = measure ? std::chrono::steady_clock::now()
+                          : std::chrono::steady_clock::time_point{};
+#if defined(VDB_USE_AVX512)
+        uint32_t g = 0;
+        if (groups_this_round == 4) {
+            __m512 v = _mm512_loadu_ps(query + group * 4);
+            const __m512 v_inv_width = _mm512_set1_ps(inv_width);
+            const __m512 v_pos_bias = _mm512_set1_ps(0.5f);
+            const __m512 v_neg_bias = _mm512_set1_ps(-0.5f);
+            const __m512 v_zero = _mm512_setzero_ps();
+            v = _mm512_mul_ps(v, v_inv_width);
+            __mmask16 neg_mask = _mm512_cmp_ps_mask(v, v_zero, _CMP_LT_OQ);
+            __m512 bias = _mm512_mask_blend_ps(neg_mask, v_pos_bias, v_neg_bias);
+            __m512 adjusted = _mm512_add_ps(v, bias);
+            __m512i q32 = _mm512_cvttps_epi32(adjusted);
+            __m256i q32_lo = _mm512_castsi512_si256(q32);
+            __m256i q32_hi = _mm512_extracti64x4_epi64(q32, 1);
+            __m128i qv0 = _mm256_castsi256_si128(q32_lo);
+            __m128i qv1 = _mm256_extracti128_si256(q32_lo, 1);
+            __m128i qv2 = _mm256_castsi256_si128(q32_hi);
+            __m128i qv3 = _mm256_extracti128_si256(q32_hi, 1);
+            __m128i q16_lo = _mm_packs_epi32(qv0, qv1);
+            __m128i q16_hi = _mm_packs_epi32(qv2, qv3);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk), q16_lo);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk + 8), q16_hi);
+            if (quant_out_opt != nullptr) {
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + group * 4), q16_lo);
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + group * 4 + 8), q16_hi);
+            }
+            g = 4;
+        }
+        for (; g < groups_this_round; ++g) {
+            for (int lane = 0; lane < 4; ++lane) {
+                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
+                float tmp = query[idx] * inv_width;
+                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
+                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                if (quant_out_opt != nullptr) {
+                    quant_out_opt[idx] = q;
+                }
+            }
+        }
+#elif defined(VDB_USE_AVX2)
+        uint32_t g = 0;
+        for (; g + 2 <= groups_this_round; g += 2) {
+            __m256 v = _mm256_loadu_ps(query + (group + g) * 4);
+            const __m256 v_inv_width = _mm256_set1_ps(inv_width);
+            const __m256 v_pos_bias = _mm256_set1_ps(0.5f);
+            const __m256 v_neg_bias = _mm256_set1_ps(-0.5f);
+            const __m256 v_zero = _mm256_setzero_ps();
+            v = _mm256_mul_ps(v, v_inv_width);
+            __m256 neg_mask = _mm256_cmp_ps(v, v_zero, _CMP_LT_OQ);
+            __m256 bias = _mm256_blendv_ps(v_pos_bias, v_neg_bias, neg_mask);
+            __m256 adjusted = _mm256_add_ps(v, bias);
+            __m256i q32 = _mm256_cvttps_epi32(adjusted);
+            __m128i q32_lo = _mm256_castsi256_si128(q32);
+            __m128i q32_hi = _mm256_extracti128_si256(q32, 1);
+            __m128i q16 = _mm_packs_epi32(q32_lo, q32_hi);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk + g * 4), q16);
+            if (quant_out_opt != nullptr) {
+                _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + (group + g) * 4), q16);
+            }
+        }
+        for (; g < groups_this_round; ++g) {
+            for (int lane = 0; lane < 4; ++lane) {
+                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
+                float tmp = query[idx] * inv_width;
+                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
+                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                if (quant_out_opt != nullptr) {
+                    quant_out_opt[idx] = q;
+                }
+            }
+        }
+#else
+        for (uint32_t g = 0; g < groups_this_round; ++g) {
+            for (int lane = 0; lane < 4; ++lane) {
+                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
+                float tmp = query[idx] * inv_width;
+                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
+                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                if (quant_out_opt != nullptr) {
+                    quant_out_opt[idx] = q;
+                }
+            }
+        }
+#endif
+        if (measure) {
+            quantize_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - q0).count();
+        }
+
+        auto t0 = measure ? std::chrono::steady_clock::now()
+                          : std::chrono::steady_clock::time_point{};
+        for (uint32_t g = 0; g < groups_this_round; ++g) {
+            const int16_t* q = q_chunk + g * 4;
+            BuildLutAndStoreGroup(
+                lut_out, group + g, q[0], q[1], q[2], q[3], &total_shift);
+        }
+        if (measure) {
+            lut_build_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t0).count();
+        }
+    }
+
+    *fs_shift_out = total_shift;
+    if (timing != nullptr) {
+        timing->quantize_ms = quantize_ms;
+        timing->lut_build_ms = lut_build_ms;
+    }
+    return width;
 }
 
 // ============================================================================

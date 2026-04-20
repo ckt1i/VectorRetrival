@@ -8,6 +8,11 @@
 namespace vdb {
 namespace simd {
 
+struct FastScanPrepareTimingBreakdown {
+    double quantize_ms = 0.0;
+    double lut_build_ms = 0.0;
+};
+
 /// VPSHUFB batch-32 accumulation of packed 4-bit LUT lookups.
 ///
 /// Processes 32 vectors simultaneously using VPSHUFB. The packed_codes must
@@ -41,6 +46,16 @@ int32_t BuildFastScanLUT(const int16_t* VDB_RESTRICT quant_query,
                           uint8_t* VDB_RESTRICT lut_out,
                           Dim dim);
 
+/// Reference path used for equivalence checks and debug fallback.
+///
+/// This preserves the original two-stage flow:
+///   QuantizeQuery14BitWithMax -> BuildFastScanLUTReference
+///
+/// The layout contract matches BuildFastScanLUT.
+int32_t BuildFastScanLUTReference(const int16_t* VDB_RESTRICT quant_query,
+                                  uint8_t* VDB_RESTRICT lut_out,
+                                  Dim dim);
+
 /// Quantize a unit query vector to 14-bit signed integers.
 ///
 /// Symmetric quantization: width = max(|q|) / 8191.
@@ -59,6 +74,33 @@ float QuantizeQuery14BitWithMax(const float* VDB_RESTRICT query,
                                 float vmax,
                                 int16_t* VDB_RESTRICT quant_out,
                                 Dim dim);
+
+/// Fused prepare path: quantize a normalized query and write the final
+/// FastScan LUT layout directly, without requiring a fully materialized
+/// quantized-query buffer on the main path.
+///
+/// The generated width, shift and packed LUT bytes are required to be
+/// bit-equivalent to:
+///   QuantizeQuery14BitWithMax(query, vmax, quant_out, dim)
+///   BuildFastScanLUTReference(quant_out, lut_out, dim)
+///
+/// @param query         Normalized / rotated query vector
+/// @param vmax          Max absolute value used by 14-bit quantization
+/// @param lut_out       Output LUT buffer in final FastScan layout
+/// @param dim           Vector dimensionality (must be multiple of 4)
+/// @param fs_shift_out  Output accumulated v_min shift
+/// @param timing        Optional split timing for quantize and LUT write phases
+/// @param quant_out_opt Optional debug / regression buffer; when non-null the
+///                      fused path also writes the per-dimension quant values
+/// @return              Quantization step width
+float QuantizeQuery14BitWithMaxToFastScanLUT(
+    const float* VDB_RESTRICT query,
+    float vmax,
+    uint8_t* VDB_RESTRICT lut_out,
+    Dim dim,
+    int32_t* VDB_RESTRICT fs_shift_out,
+    FastScanPrepareTimingBreakdown* timing = nullptr,
+    int16_t* VDB_RESTRICT quant_out_opt = nullptr);
 
 /// Compute a 16-bit (or 32-bit) SafeOut bitmask for a batch of FastScan dists.
 ///

@@ -88,7 +88,7 @@ class ClusterProber {
     /// Stage 2: ExRaBitQ re-classification for S1-Uncertain (when bits > 1).
     ///
     /// @param pc             Parsed cluster (Region 1 + Region 2)
-    /// @param pq             Prepared query for this cluster
+    /// @param view           Lightweight prepared query view for this cluster
     /// @param margin_factor  2 * pq.norm_qc * conann.epsilon()
     /// @param dynamic_d_k    Current k-th estimate distance:
     ///                         (est_heap.size() >= top_k) ? est_heap.front()
@@ -96,7 +96,7 @@ class ClusterProber {
     /// @param sink           Receives non-SafeOut candidates
     /// @param stats          Accumulated classification statistics
     void Probe(const query::ParsedCluster& pc,
-               const rabitq::PreparedQuery& pq,
+               const rabitq::PreparedClusterQueryView& view,
                float margin_factor,
                float dynamic_d_k,
                bool enable_fine_grained_timing,
