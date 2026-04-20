@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.24)
 project(vectordb VERSION 0.1.0 LANGUAGES CXX)
 
 # =============================================================================
@@ -236,6 +236,38 @@ target_include_directories(vdb_storage PUBLIC
 target_link_libraries(vdb_storage PUBLIC vdb_columns vdb_codec vdb_rabitq)
 
 # =============================================================================
+# Vendored Faiss (CPU-only coarse-builder dependency for vdb_index only)
+# Keep the root project on C++17 and isolate Faiss's C++20 requirement to the
+# subproject + the local adapter that links it.
+# Dependency boundary:
+# - OpenMP is resolved inside Faiss and used privately by vdb_index.
+# - BLAS/LAPACK are consumed through the Faiss target only.
+# - MKL/GPU/Python/extras/C API/testing stay disabled in this integration.
+# =============================================================================
+set(FAISS_ENABLE_GPU OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_PYTHON OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_C_API OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_EXTRAS OFF CACHE BOOL "" FORCE)
+set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
+set(FAISS_ENABLE_MKL OFF CACHE BOOL "" FORCE)
+add_subdirectory(thrid-party/faiss EXCLUDE_FROM_ALL)
+
+# Restore the parent standard after entering Faiss's C++20 subproject so later
+# VDB targets continue to build with the repository default.
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+add_library(vdb_faiss_adapter STATIC
+    src/index/faiss_coarse_builder.cpp
+)
+target_include_directories(vdb_faiss_adapter PUBLIC
+    $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
+)
+set_target_properties(vdb_faiss_adapter PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
+target_link_libraries(vdb_faiss_adapter PRIVATE faiss)
+
+# =============================================================================
 # VDB Index Library (Phase 6)
 # IVF index: ConANN 3-class classifier, IvfIndex, IvfBuilder.
 # =============================================================================
@@ -250,7 +282,9 @@ target_include_directories(vdb_index PUBLIC
     $<BUILD_INTERFACE:${FLATBUFFERS_GENERATED_DIR}>
     $<INSTALL_INTERFACE:include>
 )
+set_target_properties(vdb_index PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(vdb_index PUBLIC vdb_storage vdb_rabitq vdb_simd vdb_schema vdb_io superkmeans)
+target_link_libraries(vdb_index PRIVATE vdb_faiss_adapter)
 # IvfBuilder uses CrcCalibrator for offline CRC score precomputation.
 # GSL dependency stays PRIVATE within vdb_crc, not exposed to vdb_index consumers.
 target_link_libraries(vdb_index PRIVATE vdb_crc)

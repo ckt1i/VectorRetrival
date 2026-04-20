@@ -1,23 +1,23 @@
-## 1. Recall-Aware 信号准备
+## 1. 先决条件复核
 
-- [ ] 1.1 定义 recall-aware secondary assignment 所需的 build-time signal，并明确最小可行输入来源（local neighbors、calibration queries 或其近似）
-- [ ] 1.2 在 `IvfBuilder` 配置与元数据中加入 recall-aware policy identity 与必要参数字段
-- [ ] 1.3 为 recall-aware policy 建立与现有 `single`、`redundant_top2_naive`、`redundant_top2_rair` 并行可比较的配置路径
+- [x] 1.1 用 single-builder parity 对照确认当前 high-recall gap 是否首先来自 coarse builder，而不是 overlap policy 本身
+- [x] 1.2 记录结论：`superkmeans` 虽优于 `hierarchical_superkmeans`，但仍未达到 baseline operating point；`faiss_kmeans` 已把 `recall@10=0.99` 的最小 `nprobe` 压到 baseline 量级
+- [x] 1.3 记录附加结论：`exact-top10-match-rate` 在 `faiss_ivfrq` 与 `ivf_rabitq_rerank` 上都接近全量 probe，不能作为解释 recall probe gap 的主指标
 
-## 2. Secondary Assignment 实现
+## 2. 暂停 Recall-Aware Overlap 主线
 
-- [ ] 2.1 实现 recall-aware 的 complementary second-cluster 选择逻辑，而不是仅依赖 second-nearest 或 residual-aware 评分
-- [ ] 2.2 保留现有 secondary assignment 路径，作为稳定回退基线
-- [ ] 2.3 输出 assignment policy 元数据，确保后续 coarse-cover 结果能区分不同 overlap 策略
+- [x] 2.1 将 recall-aware secondary assignment、top-2 overlap、RAIR 和 overlap-aware centroid refinement 从当前主执行路径中降级为后置候选，而不是当前优先实现项
+- [x] 2.2 保留现有 `single`、`redundant_top2_naive`、`redundant_top2_rair` 路径作为历史对照基线，但不再把它们视为缩小 single-mode probe gap 的主攻方向
+- [x] 2.3 明确 gate：只有当 stronger single coarse builder 仍无法达到 `IVF+RQ` / `IVF+RaBitQ` baseline 的 probe 水平时，才重新启用 recall-aware overlap 任务
 
-## 3. Overlap-Aware Centroid Refinement
+## 3. 后续工作迁移
 
-- [ ] 3.1 设计并实现 overlap membership 下的 centroid refinement stage
-- [ ] 3.2 支持显式开关与 refinement 轮次配置，允许对照“有 refinement / 无 refinement”
-- [ ] 3.3 记录 refinement stage 元数据与必要 cluster statistics，便于对照 refined 与 non-refined 分区
+- [ ] 3.1 将 single-builder parity 的结论迁移为新的主 change 输入，优先推进 single coarse builder 默认化或 builder-family 替换
+- [ ] 3.2 若仍保留本 change，则将其范围改写为“仅在 stronger single builder 已稳定后，再评估 overlap 是否带来额外边际收益”
+- [ ] 3.3 为未来可能重启的 overlap 路线保留最小实验契约：必须在 `faiss_kmeans` 或同等级 primary builder 之上验证边际收益，而不是再与弱 primary builder 绑定
 
-## 4. 验证与评估
+## 4. 文档与决策回填
 
-- [ ] 4.1 使用 coarse-cover diagnostics 对比 residual-aware 与 recall-aware secondary assignment 的 probe budget 改善
-- [ ] 4.2 验证 overlap-aware centroid refinement 是否进一步降低达到 `0.99` coarse cover 所需的 `nprobe`
-- [ ] 4.3 将实验结论回填到实验计划与分析文档，明确该方法是否进入下一轮 serving 对比
+- [ ] 4.1 将本 change 的 proposal / design 更新为“deferred change”口径，明确其不再是当前实现主线
+- [ ] 4.2 在实验计划与分析文档中回填当前决策：single-builder parity 已经比 overlap-aware 路线更直接地解释并缩小 recall probe gap
+- [ ] 4.3 明确 archive / rename / supersede 方案，避免后续继续按旧任务列表推进不再成立的 overlap 实现

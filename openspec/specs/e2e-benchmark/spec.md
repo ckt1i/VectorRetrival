@@ -69,3 +69,84 @@ warm-serving benchmark 的输出必须包含足够的元数据，用来区分构
 - **并且** 输出中必须包含 Stage 2 `SafeOut`
 - **并且** 输出中必须包含 Stage 2 `Uncertain`
 - **并且** 输出中必须包含 `avg_probe_time_ms`
+
+## Additional Requirements (from warm-serving-experiment-plan)
+
+### Requirement: E2E benchmark output SHALL support warm Pareto analysis
+The E2E benchmark workflow SHALL support warm steady-state reporting as the primary analysis mode and SHALL produce output that is sufficient for recall-latency Pareto comparison and mechanism attribution.
+
+#### Scenario: Warm operating-point sweep is reported
+- **WHEN** the benchmark is run for the main post-baseline experiment phase
+- **THEN** it SHALL report multiple BoundFetch operating points under the same warm protocol
+- **AND** each point SHALL include `recall@10` and `e2e_ms`
+
+#### Scenario: BoundFetch aggregate output captures multi-parameter sweep identity
+- **WHEN** a BoundFetch operating point is added to the aggregate output
+- **THEN** its parameter field SHALL be rich enough to distinguish `nprobe`, `crc-alpha`, `epsilon-percentile`, and `nlist`
+- **AND** the encoding SHALL be stable enough to reconstruct the Pareto source of each point
+
+#### Scenario: Baseline aggregate output captures baseline sweep identity
+- **WHEN** a baseline operating point is added to the aggregate output
+- **THEN** its parameter field SHALL preserve the baseline-side control parameter used for the sweep
+- **AND** that field SHALL be sufficient to reconstruct one Pareto curve per baseline family
+
+#### Scenario: Mechanism fields are preserved for attribution
+- **WHEN** a BoundFetch warm result is exported
+- **THEN** the benchmark output SHALL preserve mechanism-level fields needed for attribution
+- **AND** those fields SHALL include the effective submission and probe breakdown needed to explain the result
+
+#### Scenario: Output location is stable for plan execution
+- **WHEN** the main warm benchmark workflow is run
+- **THEN** its aggregate result SHALL be recorded in `baselines/results/e2e_comparison_warm.csv`
+- **AND** the corresponding narrative interpretation SHALL be updated in `baselines/results/analysis.md`
+
+#### Scenario: Appendix validation is separated from the main result
+- **WHEN** queue-depth, submission mode, or SQPOLL checks are run
+- **THEN** they SHALL be treated as supporting validation rather than the main benchmark objective
+- **AND** the main result SHALL remain the warm recall-latency Pareto comparison
+
+#### Scenario: Reporting fields are complete enough for decision gates
+- **WHEN** a warm operating point is added to the aggregate output
+- **THEN** it SHALL include the fields required to judge recall-latency tradeoff and mechanism cost
+- **AND** those fields SHALL be sufficient to decide whether to continue or stop further optimization
+
+## Additional Requirements (from rair-secondary-assignment-optimization)
+
+### Requirement: E2E benchmark SHALL compare single, naive top-2, and RAIR top-2 under one protocol
+The end-to-end benchmark workflow SHALL support direct comparison among `single`, `redundant_top2_naive`, and `redundant_top2_rair` under the same dataset, query count, `nlist`, `nprobe`, `epsilon`, and warm-serving mode.
+
+#### Scenario: Three assignment modes are exported under the same protocol
+- **WHEN** the benchmark evaluates the RAIR change
+- **THEN** it SHALL be able to run and export results for `single`, `redundant_top2_naive`, and `redundant_top2_rair`
+- **AND** the exported results SHALL make the assignment mode explicit
+
+#### Scenario: RAIR parameters are exported with benchmark results
+- **WHEN** a `redundant_top2_rair` operating point is exported
+- **THEN** the exported record SHALL include the RAIR configuration needed to reproduce the run
+- **AND** that configuration SHALL include at least `lambda`
+
+### Requirement: Benchmark evaluation SHALL answer whether RAIR reduces high-recall probing demand
+The benchmark plan SHALL not rely only on a fixed-`nprobe` latency comparison. It SHALL include a comparison that can determine whether RAIR reduces the probing demand required to reach the target high-recall region.
+
+#### Scenario: High-recall comparison reports whether target recall is reached at lower probing demand
+- **WHEN** `redundant_top2_rair` is compared against `redundant_top2_naive`
+- **THEN** the benchmark results SHALL make it possible to determine whether the target recall region is reached with fewer probed clusters or a lower equivalent probing workload
+- **AND** the conclusion SHALL be based on measured outputs rather than offline reasoning alone
+
+#### Scenario: Fixed-nprobe comparison remains available
+- **WHEN** the benchmark evaluates RAIR at a fixed `nprobe`
+- **THEN** it SHALL still export recall, average latency, and tail latency for fair end-to-end comparison
+- **AND** those results SHALL be attributable to the assignment mode used to build the index
+
+### Requirement: Benchmark output SHALL expose the cost of RAIR-based redundant serving
+The benchmark output SHALL include the fields needed to judge the trade-off of RAIR beyond recall alone, including probe expansion, duplicate-candidate behavior, preload cost, and build cost.
+
+#### Scenario: Duplicate and deduplicated candidate cost is reported
+- **WHEN** a redundant-assignment operating point is exported
+- **THEN** the result SHALL include a measure before duplicate collapse and a measure after duplicate collapse
+- **AND** those fields SHALL remain comparable between naive top-2 and RAIR top-2
+
+#### Scenario: Build and preload overhead is reported
+- **WHEN** a RAIR-built index is benchmarked
+- **THEN** the exported result SHALL include build-time and preload-cost fields
+- **AND** those fields SHALL be directly comparable with `single` and `redundant_top2_naive`

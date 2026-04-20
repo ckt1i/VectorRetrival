@@ -107,6 +107,9 @@ class IvfIndex {
     float rair_lambda() const { return rair_lambda_; }
     bool rair_strict_second_choice() const { return rair_strict_second_choice_; }
     ClusteringSource clustering_source() const { return clustering_source_; }
+    CoarseBuilder coarse_builder() const { return coarse_builder_; }
+    const std::string& requested_metric() const { return requested_metric_; }
+    const std::string& effective_metric() const { return effective_metric_; }
 
  private:
     std::string dir_;
@@ -128,6 +131,10 @@ class IvfIndex {
     float rair_lambda_ = 0.75f;
     bool rair_strict_second_choice_ = false;
     ClusteringSource clustering_source_ = ClusteringSource::Auto;
+    CoarseBuilder coarse_builder_ = CoarseBuilder::Auto;
+    std::string requested_metric_ = "l2";
+    std::string effective_metric_ = "l2";
+    std::vector<float> normalized_centroids_;
 
 #ifdef VDB_USE_MKL
     // Precomputed ||c||² for each centroid (MKL-accelerated distance)

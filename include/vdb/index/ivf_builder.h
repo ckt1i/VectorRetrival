@@ -20,6 +20,10 @@ namespace index {
 /// Configuration for IvfBuilder.  All parameters for IVF clustering,
 /// RaBitQ encoding, ConANN calibration, and on-disk layout.
 struct IvfBuilderConfig {
+    /// Coarse builder selection. Auto keeps the current repository behavior:
+    /// HierarchicalSuperKMeans for K >= 128 and SuperKMeans otherwise.
+    CoarseBuilder coarse_builder = CoarseBuilder::Auto;
+
     /// Explicit assignment mode. Legacy behavior is preserved when this is
     /// left as Single and assignment_factor is set to 2.
     AssignmentMode assignment_mode = AssignmentMode::Single;
@@ -94,6 +98,7 @@ struct IvfBuilderConfig {
     /// for reuse in future builds. Ignored when loading precomputed files.
     std::string save_centroids_path;
     std::string save_assignments_path;
+    std::string save_secondary_assignments_path;
 
     /// Assignment factor for IVF membership. `1` keeps the current
     /// single-assignment behavior; `2` enables top-2 redundant assignment.
@@ -105,6 +110,22 @@ struct IvfBuilderConfig {
     /// When true, force a distinct secondary cluster even if the primary
     /// cluster minimizes the AIR loss.
     bool rair_strict_second_choice = false;
+
+    /// Metric label for build metadata sidecar. The current segment metadata
+    /// remains L2-oriented; this string is written to build_metadata.json for
+    /// offline diagnostics and experiment bookkeeping.
+    std::string metric = "l2";
+
+    /// Faiss training rows used by coarse_builder=faiss_kmeans.
+    /// Matches the existing Python exporter default semantics.
+    uint32_t faiss_train_size = 100000;
+
+    /// Optional Faiss-specific iteration count. Zero falls back to
+    /// max_iterations so the existing build knob remains the primary control.
+    uint32_t faiss_niter = 0;
+
+    /// Number of Faiss k-means restarts.
+    uint32_t faiss_nredo = 1;
 };
 
 // ============================================================================
@@ -180,6 +201,7 @@ class IvfBuilder {
     float rair_lambda() const { return rair_lambda_; }
     bool rair_strict_second_choice() const { return rair_strict_second_choice_; }
     ClusteringSource clustering_source() const { return clustering_source_; }
+    CoarseBuilder coarse_builder() const { return coarse_builder_used_; }
 
     /// Get the centroids from the last Build() call (nlist × dim row-major).
     const std::vector<float>& centroids() const { return centroids_; }
@@ -215,6 +237,8 @@ class IvfBuilder {
     float rair_lambda_ = 0.75f;
     bool rair_strict_second_choice_ = false;
     ClusteringSource clustering_source_ = ClusteringSource::Auto;
+    CoarseBuilder coarse_builder_used_ = CoarseBuilder::Auto;
+    std::string effective_metric_ = "l2";
     ProgressCallback progress_cb_;
 };
 

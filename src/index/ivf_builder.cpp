@@ -8,6 +8,7 @@
 #include <limits>
 #include <numeric>
 #include <random>
+#include <sstream>
 
 #ifdef _OPENMP
 #include <omp.h>
@@ -18,6 +19,7 @@
 
 #include "vdb/index/conann.h"
 #include "vdb/index/crc_calibrator.h"
+#include "vdb/index/faiss_coarse_builder.h"
 #include "vdb/io/vecs_reader.h"
 #include "vdb/rabitq/rabitq_encoder.h"
 #include "vdb/rabitq/rabitq_estimator.h"
@@ -35,6 +37,65 @@
 
 namespace vdb {
 namespace index {
+
+namespace {
+
+constexpr uint32_t kDefaultFaissNiter = 10;
+
+void NormalizeRows(std::vector<float>* matrix, uint32_t rows, uint32_t dim) {
+    for (uint32_t i = 0; i < rows; ++i) {
+        float* row = matrix->data() + static_cast<size_t>(i) * dim;
+        float norm_sq = 0.0f;
+        for (uint32_t j = 0; j < dim; ++j) {
+            norm_sq += row[j] * row[j];
+        }
+        const float norm = std::sqrt(norm_sq);
+        if (norm <= 0.0f) {
+            continue;
+        }
+        for (uint32_t j = 0; j < dim; ++j) {
+            row[j] /= norm;
+        }
+    }
+}
+
+const char* CoarseBuilderName(CoarseBuilder builder) {
+    switch (builder) {
+        case CoarseBuilder::SuperKMeans:
+            return "superkmeans";
+        case CoarseBuilder::HierarchicalSuperKMeans:
+            return "hierarchical_superkmeans";
+        case CoarseBuilder::FaissKMeans:
+            return "faiss_kmeans";
+        case CoarseBuilder::Auto:
+        default:
+            return "auto";
+    }
+}
+
+const char* AssignmentModeName(AssignmentMode mode) {
+    switch (mode) {
+        case AssignmentMode::RedundantTop2Naive:
+            return "redundant_top2_naive";
+        case AssignmentMode::RedundantTop2Rair:
+            return "redundant_top2_rair";
+        case AssignmentMode::Single:
+        default:
+            return "single";
+    }
+}
+
+const char* ClusteringSourceName(ClusteringSource source) {
+    switch (source) {
+        case ClusteringSource::Precomputed:
+            return "precomputed";
+        case ClusteringSource::Auto:
+        default:
+            return "auto";
+    }
+}
+
+}  // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -99,6 +160,9 @@ Status IvfBuilder::Build(const float* vectors, uint32_t N, Dim dim,
 Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
     const uint32_t K = config_.nlist;
     clustering_source_ = ClusteringSource::Auto;
+    coarse_builder_used_ = config_.coarse_builder;
+    effective_metric_ = config_.metric;
+    const bool normalize_for_cosine = (config_.metric == "cosine");
 
     // Path 1: Load precomputed centroids and assignments
     if (!config_.centroids_path.empty() && !config_.assignments_path.empty()) {
@@ -127,13 +191,91 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
             assignments_[i] = static_cast<uint32_t>(a.data[i]);
         }
         clustering_source_ = ClusteringSource::Precomputed;
+        if (config_.metric == "cosine") {
+            effective_metric_ = "ip";
+        } else if (config_.metric == "ip") {
+            effective_metric_ = "ip";
+        } else {
+            effective_metric_ = "l2";
+        }
+        if (coarse_builder_used_ == CoarseBuilder::Auto) {
+            coarse_builder_used_ = CoarseBuilder::HierarchicalSuperKMeans;
+        }
         return Status::OK();
     }
 
-    // Path 2: Automatic clustering
-    // Use HierarchicalSuperKMeans for K >= 128 (better balance + recall),
-    // fallback to flat SuperKMeans for small K where hierarchy is unnecessary.
-    if (K >= 128) {
+    // Path 2: Automatic clustering.
+    // Auto preserves the current repository behavior.
+    if (config_.coarse_builder == CoarseBuilder::FaissKMeans) {
+        FaissCoarseBuildConfig faiss_cfg;
+        faiss_cfg.nlist = K;
+        faiss_cfg.dim = dim;
+        faiss_cfg.train_size = config_.faiss_train_size;
+        faiss_cfg.niter = (config_.faiss_niter == 0)
+            ? kDefaultFaissNiter
+            : config_.faiss_niter;
+        faiss_cfg.nredo = config_.faiss_nredo;
+        faiss_cfg.seed = config_.seed;
+        faiss_cfg.metric = config_.metric;
+
+        FaissCoarseBuildResult faiss_result;
+        VDB_RETURN_IF_ERROR(
+            RunFaissCoarseBuilder(vectors, N, faiss_cfg, &faiss_result));
+        centroids_ = std::move(faiss_result.centroids);
+        assignments_ = std::move(faiss_result.assignments);
+        effective_metric_ = std::move(faiss_result.effective_metric);
+        coarse_builder_used_ = CoarseBuilder::FaissKMeans;
+        clustering_source_ = ClusteringSource::Auto;
+
+        if (!config_.save_centroids_path.empty()) {
+            std::ofstream f(config_.save_centroids_path, std::ios::binary);
+            if (!f.is_open()) {
+                return Status::IOError("Failed to create " + config_.save_centroids_path);
+            }
+            const uint32_t d32 = dim;
+            for (uint32_t i = 0; i < K; ++i) {
+                f.write(reinterpret_cast<const char*>(&d32), 4);
+                f.write(reinterpret_cast<const char*>(
+                    centroids_.data() + static_cast<size_t>(i) * dim),
+                    dim * sizeof(float));
+            }
+        }
+        if (!config_.save_assignments_path.empty()) {
+            std::ofstream f(config_.save_assignments_path, std::ios::binary);
+            if (!f.is_open()) {
+                return Status::IOError("Failed to create " + config_.save_assignments_path);
+            }
+            const uint32_t one = 1;
+            for (uint32_t i = 0; i < N; ++i) {
+                f.write(reinterpret_cast<const char*>(&one), 4);
+                f.write(reinterpret_cast<const char*>(&assignments_[i]), 4);
+            }
+        }
+        return Status::OK();
+    }
+
+    bool use_hierarchical = false;
+    if (config_.coarse_builder == CoarseBuilder::Auto) {
+        use_hierarchical = (K >= 128);
+        coarse_builder_used_ = use_hierarchical
+            ? CoarseBuilder::HierarchicalSuperKMeans
+            : CoarseBuilder::SuperKMeans;
+    } else {
+        use_hierarchical =
+            (config_.coarse_builder == CoarseBuilder::HierarchicalSuperKMeans);
+        coarse_builder_used_ = config_.coarse_builder;
+    }
+
+    std::vector<float> normalized_vectors;
+    const float* clustering_vectors = vectors;
+    if (normalize_for_cosine) {
+        normalized_vectors.assign(
+            vectors, vectors + static_cast<size_t>(N) * dim);
+        NormalizeRows(&normalized_vectors, N, dim);
+        clustering_vectors = normalized_vectors.data();
+    }
+
+    if (use_hierarchical) {
         skmeans::HierarchicalSuperKMeansConfig hskm_cfg;
         hskm_cfg.iters_mesoclustering = 5;
         hskm_cfg.iters_fineclustering = config_.max_iterations;
@@ -143,11 +285,12 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
         hskm_cfg.tol = config_.tolerance;
 
         auto hskm = skmeans::HierarchicalSuperKMeans(K, dim, hskm_cfg);
-        auto c = hskm.Train(vectors, N);
-        auto a = hskm.Assign(vectors, c.data(), N, K);
+        auto c = hskm.Train(clustering_vectors, N);
+        auto a = hskm.Assign(clustering_vectors, c.data(), N, K);
 
         centroids_.assign(c.begin(), c.end());
         assignments_.assign(a.begin(), a.end());
+        effective_metric_ = normalize_for_cosine ? "ip" : "l2";
     } else {
         skmeans::SuperKMeansConfig skm_cfg;
         skm_cfg.iters = config_.max_iterations;
@@ -157,11 +300,12 @@ Status IvfBuilder::RunKMeans(const float* vectors, uint32_t N, Dim dim) {
         skm_cfg.tol = config_.tolerance;
 
         auto skm = skmeans::SuperKMeans(K, dim, skm_cfg);
-        auto c = skm.Train(vectors, N);
-        auto a = skm.Assign(vectors, c.data(), N, K);
+        auto c = skm.Train(clustering_vectors, N);
+        auto a = skm.Assign(clustering_vectors, c.data(), N, K);
 
         centroids_.assign(c.begin(), c.end());
         assignments_.assign(a.begin(), a.end());
+        effective_metric_ = normalize_for_cosine ? "ip" : "l2";
     }
 
     // Save clustering results if output paths are configured
@@ -197,82 +341,105 @@ Status IvfBuilder::DeriveSecondaryAssignments(const float* vectors,
                                               uint32_t N,
                                               Dim dim) {
     secondary_assignments_.assign(N, std::numeric_limits<uint32_t>::max());
-    if (assignment_mode_ == AssignmentMode::Single ||
-        config_.assignment_factor == 1) {
-        return Status::OK();
-    }
-
-    const uint32_t K = config_.nlist;
+    if (!(assignment_mode_ == AssignmentMode::Single ||
+          config_.assignment_factor == 1)) {
+        std::vector<float> normalized_vectors;
+        const float* assignment_vectors = vectors;
+        if (config_.metric == "cosine") {
+            normalized_vectors.assign(
+                vectors, vectors + static_cast<size_t>(N) * dim);
+            NormalizeRows(&normalized_vectors, N, dim);
+            assignment_vectors = normalized_vectors.data();
+        }
+        const uint32_t K = config_.nlist;
 #pragma omp parallel for schedule(static)
-    for (int64_t i = 0; i < static_cast<int64_t>(N); ++i) {
-        const float* vec = vectors + static_cast<size_t>(i) * dim;
-        float best_dist = std::numeric_limits<float>::max();
-        float second_dist = std::numeric_limits<float>::max();
-        uint32_t best_cluster = std::numeric_limits<uint32_t>::max();
-        uint32_t second_cluster = std::numeric_limits<uint32_t>::max();
+        for (int64_t i = 0; i < static_cast<int64_t>(N); ++i) {
+            const float* vec = assignment_vectors + static_cast<size_t>(i) * dim;
+            float best_dist = std::numeric_limits<float>::max();
+            float second_dist = std::numeric_limits<float>::max();
+            uint32_t best_cluster = std::numeric_limits<uint32_t>::max();
+            uint32_t second_cluster = std::numeric_limits<uint32_t>::max();
 
-        for (uint32_t k = 0; k < K; ++k) {
-            float d = simd::L2Sqr(vec,
-                                  centroids_.data() + static_cast<size_t>(k) * dim,
-                                  dim);
-            if (d < best_dist) {
-                second_dist = best_dist;
-                second_cluster = best_cluster;
-                best_dist = d;
-                best_cluster = k;
-            } else if (d < second_dist) {
-                second_dist = d;
-                second_cluster = k;
+            for (uint32_t k = 0; k < K; ++k) {
+                float d = simd::L2Sqr(vec,
+                                      centroids_.data() + static_cast<size_t>(k) * dim,
+                                      dim);
+                if (d < best_dist) {
+                    second_dist = best_dist;
+                    second_cluster = best_cluster;
+                    best_dist = d;
+                    best_cluster = k;
+                } else if (d < second_dist) {
+                    second_dist = d;
+                    second_cluster = k;
+                }
             }
-        }
 
-        if (best_cluster == std::numeric_limits<uint32_t>::max()) {
-            continue;
-        }
-
-        const uint32_t primary = assignments_[static_cast<size_t>(i)];
-        if (assignment_mode_ == AssignmentMode::RedundantTop2Naive) {
-            if (primary == best_cluster) {
-                secondary_assignments_[static_cast<size_t>(i)] = second_cluster;
-            } else if (primary == second_cluster) {
-                secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
-            } else {
-                secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
-            }
-            continue;
-        }
-
-        const float* primary_centroid =
-            centroids_.data() + static_cast<size_t>(primary) * dim;
-        float best_air_loss = std::numeric_limits<float>::max();
-        uint32_t best_air_cluster = std::numeric_limits<uint32_t>::max();
-
-        for (uint32_t k = 0; k < K; ++k) {
-            if (k == primary && rair_strict_second_choice_) {
+            if (best_cluster == std::numeric_limits<uint32_t>::max()) {
                 continue;
             }
 
-            const float* cand_centroid =
-                centroids_.data() + static_cast<size_t>(k) * dim;
-            float residual_ip = 0.0f;
-            float cand_dist = 0.0f;
-            for (Dim j = 0; j < dim; ++j) {
-                const float r = primary_centroid[j] - vec[j];
-                const float rp = cand_centroid[j] - vec[j];
-                residual_ip += r * rp;
-                cand_dist += rp * rp;
+            const uint32_t primary = assignments_[static_cast<size_t>(i)];
+            if (assignment_mode_ == AssignmentMode::RedundantTop2Naive) {
+                if (primary == best_cluster) {
+                    secondary_assignments_[static_cast<size_t>(i)] = second_cluster;
+                } else if (primary == second_cluster) {
+                    secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
+                } else {
+                    secondary_assignments_[static_cast<size_t>(i)] = best_cluster;
+                }
+                continue;
             }
-            const float loss = cand_dist + rair_lambda_ * residual_ip;
-            if (loss < best_air_loss) {
-                best_air_loss = loss;
-                best_air_cluster = k;
-            }
-        }
 
-        if (!rair_strict_second_choice_ && best_air_cluster == primary) {
-            continue;
+            const float* primary_centroid =
+                centroids_.data() + static_cast<size_t>(primary) * dim;
+            float best_air_loss = std::numeric_limits<float>::max();
+            uint32_t best_air_cluster = std::numeric_limits<uint32_t>::max();
+
+            for (uint32_t k = 0; k < K; ++k) {
+                if (k == primary && rair_strict_second_choice_) {
+                    continue;
+                }
+
+                const float* cand_centroid =
+                    centroids_.data() + static_cast<size_t>(k) * dim;
+                float residual_ip = 0.0f;
+                float cand_dist = 0.0f;
+                for (Dim j = 0; j < dim; ++j) {
+                    const float r = primary_centroid[j] - vec[j];
+                    const float rp = cand_centroid[j] - vec[j];
+                    residual_ip += r * rp;
+                    cand_dist += rp * rp;
+                }
+                const float loss = cand_dist + rair_lambda_ * residual_ip;
+                if (loss < best_air_loss) {
+                    best_air_loss = loss;
+                    best_air_cluster = k;
+                }
+            }
+
+            if (!rair_strict_second_choice_ && best_air_cluster == primary) {
+                continue;
+            }
+            secondary_assignments_[static_cast<size_t>(i)] = best_air_cluster;
         }
-        secondary_assignments_[static_cast<size_t>(i)] = best_air_cluster;
+    }
+
+    if (!config_.save_secondary_assignments_path.empty()) {
+        std::ofstream f(config_.save_secondary_assignments_path, std::ios::binary);
+        if (!f.is_open()) {
+            return Status::IOError(
+                "Failed to create " + config_.save_secondary_assignments_path);
+        }
+        const uint32_t one = 1;
+        for (uint32_t i = 0; i < N; ++i) {
+            int32_t value = static_cast<int32_t>(
+                secondary_assignments_[i] == std::numeric_limits<uint32_t>::max()
+                    ? -1
+                    : static_cast<int32_t>(secondary_assignments_[i]));
+            f.write(reinterpret_cast<const char*>(&one), 4);
+            f.write(reinterpret_cast<const char*>(&value), 4);
+        }
     }
 
     return Status::OK();
@@ -803,6 +970,35 @@ Status IvfBuilder::WriteIndex(const float* vectors, uint32_t N, Dim dim,
                 fbb.GetSize());
         if (!f.good()) {
             return Status::IOError("Failed to write segment.meta");
+        }
+    }
+
+    {
+        const std::string sidecar_path = output_dir + "/build_metadata.json";
+        std::ofstream f(sidecar_path, std::ios::binary);
+        if (!f.is_open()) {
+            return Status::IOError(
+                "Failed to create build_metadata.json: " + sidecar_path);
+        }
+
+        std::ostringstream oss;
+        oss << "{\n"
+            << "  \"coarse_builder\": \"" << CoarseBuilderName(coarse_builder_used_) << "\",\n"
+            << "  \"requested_metric\": \"" << config_.metric << "\",\n"
+            << "  \"effective_metric\": \"" << effective_metric_ << "\",\n"
+            << "  \"nlist\": " << K << ",\n"
+            << "  \"assignment_mode\": \"" << AssignmentModeName(assignment_mode_) << "\",\n"
+            << "  \"assignment_factor\": " << config_.assignment_factor << ",\n"
+            << "  \"clustering_source\": \"" << ClusteringSourceName(clustering_source_) << "\",\n"
+            << "  \"faiss_train_size\": " << std::min(config_.faiss_train_size, N) << ",\n"
+            << "  \"faiss_niter\": " << ((config_.faiss_niter == 0) ? kDefaultFaissNiter : config_.faiss_niter) << ",\n"
+            << "  \"faiss_nredo\": " << config_.faiss_nredo << ",\n"
+            << "  \"faiss_backend\": \"cpu\"\n"
+            << "}\n";
+        const std::string payload = oss.str();
+        f.write(payload.data(), static_cast<std::streamsize>(payload.size()));
+        if (!f.good()) {
+            return Status::IOError("Failed to write build_metadata.json");
         }
     }
 

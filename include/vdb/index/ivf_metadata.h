@@ -16,5 +16,12 @@ enum class ClusteringSource : uint8_t {
     Precomputed = 1,
 };
 
+enum class CoarseBuilder : uint8_t {
+    Auto = 0,
+    SuperKMeans = 1,
+    HierarchicalSuperKMeans = 2,
+    FaissKMeans = 3,
+};
+
 }  // namespace index
 }  // namespace vdb

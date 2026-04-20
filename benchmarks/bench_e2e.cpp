@@ -560,11 +560,25 @@ static const char* AssignmentModeName(index::AssignmentMode mode) {
 static const char* ClusteringSourceName(index::ClusteringSource source) {
     switch (source) {
         case index::ClusteringSource::Auto:
-            return "auto_superkmeans";
+            return "auto";
         case index::ClusteringSource::Precomputed:
             return "precomputed";
     }
     return "unknown";
+}
+
+static const char* CoarseBuilderName(index::CoarseBuilder builder) {
+    switch (builder) {
+        case index::CoarseBuilder::SuperKMeans:
+            return "superkmeans";
+        case index::CoarseBuilder::HierarchicalSuperKMeans:
+            return "hierarchical_superkmeans";
+        case index::CoarseBuilder::FaissKMeans:
+            return "faiss_kmeans";
+        case index::CoarseBuilder::Auto:
+        default:
+            return "auto";
+    }
 }
 
 // ============================================================================
@@ -590,6 +604,9 @@ int main(int argc, char* argv[]) {
     int arg_assignment_factor = GetIntArg(argc, argv, "--assignment-factor", 1);
     std::string arg_assignment_mode =
         GetStringArg(argc, argv, "--assignment-mode", "");
+    std::string arg_coarse_builder =
+        GetStringArg(argc, argv, "--coarse-builder", "auto");
+    bool arg_build_only = HasFlag(argc, argv, "--build-only");
     float arg_rair_lambda = GetFloatArg(argc, argv, "--rair-lambda", 0.75f);
     int arg_rair_strict_second_choice =
         GetIntArg(argc, argv, "--rair-strict-second-choice", 0);
@@ -646,6 +663,15 @@ int main(int argc, char* argv[]) {
                      arg_assignment_mode.c_str());
         return 1;
     }
+    if (arg_coarse_builder != "auto" &&
+        arg_coarse_builder != "superkmeans" &&
+        arg_coarse_builder != "hierarchical_superkmeans" &&
+        arg_coarse_builder != "faiss_kmeans") {
+        std::fprintf(stderr,
+                     "Invalid --coarse-builder: %s (expected auto, superkmeans, hierarchical_superkmeans, or faiss_kmeans)\n",
+                     arg_coarse_builder.c_str());
+        return 1;
+    }
     if (arg_rair_strict_second_choice != 0 &&
         arg_rair_strict_second_choice != 1) {
         std::fprintf(stderr,
@@ -682,14 +708,29 @@ int main(int argc, char* argv[]) {
     // Precomputed clustering (skip KMeans if both provided)
     std::string arg_centroids = GetStringArg(argc, argv, "--centroids", "");
     std::string arg_assignments = GetStringArg(argc, argv, "--assignments", "");
+    std::string arg_save_centroids =
+        GetStringArg(argc, argv, "--save-centroids", "");
+    std::string arg_save_assignments =
+        GetStringArg(argc, argv, "--save-assignments", "");
+    std::string arg_save_secondary_assignments =
+        GetStringArg(argc, argv, "--save-secondary-assignments", "");
 
     // Pre-built index directory (skip Phase C build if specified)
     std::string arg_index_dir = GetStringArg(argc, argv, "--index-dir", "");
 
-    // CRC parameters (CRC always enabled)
+    int arg_crc_enable = GetIntArg(argc, argv, "--crc", 1);
+    if (arg_crc_enable != 0 && arg_crc_enable != 1) {
+        std::fprintf(stderr,
+                     "Invalid --crc: %d (expected 0 or 1)\n",
+                     arg_crc_enable);
+        return 1;
+    }
+
+    // CRC parameters
     float arg_crc_alpha = GetFloatArg(argc, argv, "--crc-alpha", 0.1f);
-    float arg_crc_calib = GetFloatArg(argc, argv, "--crc-calib", 0.5f);
-    float arg_crc_tune  = GetFloatArg(argc, argv, "--crc-tune", 0.1f);
+    float arg_crc_calib = GetFloatArg(argc, argv, "--crc-calib", 0.7f);
+    float arg_crc_tune  = GetFloatArg(argc, argv, "--crc-tune", 0.2f);
+    int arg_crc_samples = GetIntArg(argc, argv, "--crc-samples", 1000);
 
     std::string ds_name = DatasetName(data_dir);
     std::string ts = Timestamp();
@@ -701,8 +742,11 @@ int main(int argc, char* argv[]) {
 
     Log("=== VDB E2E Benchmark ===\n");
     Log("Dataset: %s\n", data_dir.c_str());
-    Log("CRC mode: ON (alpha=%.2f)\n", arg_crc_alpha);
-
+    Log("CRC mode: %s\n", arg_crc_enable ? "ON" : "OFF");
+    if (arg_crc_enable) {
+        Log("CRC alpha: %.2f\n", arg_crc_alpha);
+        Log("CRC samples: %d\n", arg_crc_samples);
+    }
     // ================================================================
     // Phase A: Load Data
     // ================================================================
@@ -826,11 +870,24 @@ int main(int argc, char* argv[]) {
 
         IvfBuilderConfig cfg;
         cfg.nlist = static_cast<uint32_t>(arg_nlist);
+        if (arg_coarse_builder == "superkmeans") {
+            cfg.coarse_builder = index::CoarseBuilder::SuperKMeans;
+        } else if (arg_coarse_builder == "hierarchical_superkmeans") {
+            cfg.coarse_builder = index::CoarseBuilder::HierarchicalSuperKMeans;
+        } else if (arg_coarse_builder == "faiss_kmeans") {
+            cfg.coarse_builder = index::CoarseBuilder::FaissKMeans;
+        } else {
+            cfg.coarse_builder = index::CoarseBuilder::Auto;
+        }
         cfg.max_iterations = static_cast<uint32_t>(arg_max_iter);
         cfg.seed = static_cast<uint64_t>(arg_seed);
+        cfg.metric = "cosine";
+        cfg.faiss_train_size = 100000;
+        cfg.faiss_niter = static_cast<uint32_t>(arg_max_iter == 20 ? 0 : arg_max_iter);
+        cfg.faiss_nredo = 1;
         cfg.rabitq = {static_cast<uint8_t>(arg_bits),
                       static_cast<uint32_t>(arg_block_size), arg_c_factor};
-        cfg.calibration_samples = std::min(100u, N);
+        cfg.calibration_samples = std::min(static_cast<uint32_t>(arg_crc_samples), N);
         cfg.epsilon_samples = static_cast<uint32_t>(arg_epsilon_samples);
         cfg.epsilon_percentile = arg_epsilon_percentile;
         cfg.assignment_factor = static_cast<uint32_t>(arg_assignment_factor);
@@ -852,6 +909,9 @@ int main(int argc, char* argv[]) {
         cfg.num_calibration_queries = Q;
         cfg.centroids_path = arg_centroids;
         cfg.assignments_path = arg_assignments;
+        cfg.save_centroids_path = arg_save_centroids;
+        cfg.save_assignments_path = arg_save_assignments;
+        cfg.save_secondary_assignments_path = arg_save_secondary_assignments;
         cfg.crc_top_k = GT_K;  // always precompute CRC scores at build time
         cfg.payload_schemas = {
             {0, "id",      DType::INT64,  false},
@@ -885,6 +945,13 @@ int main(int argc, char* argv[]) {
         Log("  Build time: %.1f ms\n", training_time_ms);
     } else {
         Log("\n[Phase C] Skipped (using pre-built index: %s)\n", index_dir.c_str());
+    }
+
+    if (arg_build_only) {
+        Log("\n[Phase C.5/D] Skipped (--build-only enabled)\n");
+        Log("  Index source: %s  resolved_index_dir=%s\n",
+            index_source.c_str(), resolved_index_dir.c_str());
+        return 0;
     }
 
     // ================================================================
@@ -1338,6 +1405,13 @@ int main(int argc, char* argv[]) {
         f << "    " << JInt("epsilon_samples", arg_epsilon_samples) << ",\n";
         f << "    " << JNum("epsilon_percentile", arg_epsilon_percentile) << ",\n";
         f << "    " << JStr("assignment_mode", resolved_assignment_mode) << ",\n";
+        f << "    " << JStr("coarse_builder", arg_coarse_builder) << ",\n";
+        f << "    " << JStr("requested_metric", index.requested_metric()) << ",\n";
+        f << "    " << JStr("effective_metric", index.effective_metric()) << ",\n";
+        f << "    " << JInt("faiss_train_size", 100000) << ",\n";
+        f << "    " << JInt("faiss_niter", arg_max_iter == 20 ? 10 : arg_max_iter) << ",\n";
+        f << "    " << JInt("faiss_nredo", 1) << ",\n";
+        f << "    " << JStr("faiss_backend", "cpu") << ",\n";
         f << "    " << JInt("assignment_factor", arg_assignment_factor) << ",\n";
         f << "    " << JNum("rair_lambda", arg_rair_lambda) << ",\n";
         f << "    " << JBool("rair_strict_second_choice", arg_rair_strict_second_choice != 0) << ",\n";
@@ -1367,6 +1441,10 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
         f << "    " << JNum("loaded_d_k", index.conann().d_k()) << ",\n";
         f << "    " << JStr("assignment_mode", AssignmentModeName(index.assignment_mode())) << ",\n";
+        f << "    " << JStr("coarse_builder", CoarseBuilderName(index.coarse_builder())) << ",\n";
+        f << "    " << JStr("requested_metric", index.requested_metric()) << ",\n";
+        f << "    " << JStr("effective_metric", index.effective_metric()) << ",\n";
+        f << "    " << JStr("faiss_backend", "cpu") << ",\n";
         f << "    " << JInt("assignment_factor", index.assignment_factor()) << ",\n";
         f << "    " << JNum("rair_lambda", index.rair_lambda()) << ",\n";
         f << "    " << JBool("rair_strict_second_choice", index.rair_strict_second_choice()) << ",\n";

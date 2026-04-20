@@ -1,9 +1,11 @@
 #include "vdb/index/ivf_index.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <fstream>
 #include <numeric>
+#include <string_view>
 
 #include "vdb/simd/distance_l2.h"
 
@@ -16,6 +18,56 @@
 
 namespace vdb {
 namespace index {
+
+namespace {
+
+CoarseBuilder ParseCoarseBuilder(std::string_view value) {
+    if (value == "superkmeans") {
+        return CoarseBuilder::SuperKMeans;
+    }
+    if (value == "hierarchical_superkmeans") {
+        return CoarseBuilder::HierarchicalSuperKMeans;
+    }
+    if (value == "faiss_kmeans") {
+        return CoarseBuilder::FaissKMeans;
+    }
+    return CoarseBuilder::Auto;
+}
+
+std::string ExtractJsonStringField(const std::string& contents, std::string_view key) {
+    const std::string quoted_key = "\"" + std::string(key) + "\"";
+    const size_t key_pos = contents.find(quoted_key);
+    if (key_pos == std::string::npos) {
+        return {};
+    }
+    const size_t colon = contents.find(':', key_pos + quoted_key.size());
+    const size_t first_quote = contents.find('"', colon + 1);
+    const size_t second_quote = contents.find('"', first_quote + 1);
+    if (colon == std::string::npos ||
+        first_quote == std::string::npos ||
+        second_quote == std::string::npos ||
+        second_quote <= first_quote + 1) {
+        return {};
+    }
+    return contents.substr(first_quote + 1, second_quote - first_quote - 1);
+}
+
+void NormalizeVector(const float* src, float* dst, Dim dim) {
+    float norm_sq = 0.0f;
+    for (Dim i = 0; i < dim; ++i) {
+        norm_sq += src[i] * src[i];
+    }
+    const float norm = std::sqrt(norm_sq);
+    if (norm <= 0.0f) {
+        std::memcpy(dst, src, static_cast<size_t>(dim) * sizeof(float));
+        return;
+    }
+    for (Dim i = 0; i < dim; ++i) {
+        dst[i] = src[i] / norm;
+    }
+}
+
+}  // namespace
 
 // ============================================================================
 // Construction / Destruction
@@ -91,6 +143,28 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
                           vdb::schema::ClusteringSource::PRECOMPUTED)
         ? ClusteringSource::Precomputed
         : ClusteringSource::Auto;
+    coarse_builder_ = CoarseBuilder::Auto;
+    {
+        const std::string sidecar_path = dir + "/build_metadata.json";
+        std::ifstream sidecar(sidecar_path);
+        if (sidecar.is_open()) {
+            std::string contents((std::istreambuf_iterator<char>(sidecar)),
+                                 std::istreambuf_iterator<char>());
+            const std::string coarse_builder =
+                ExtractJsonStringField(contents, "coarse_builder");
+            if (!coarse_builder.empty()) {
+                coarse_builder_ = ParseCoarseBuilder(coarse_builder);
+            }
+            requested_metric_ = ExtractJsonStringField(contents, "requested_metric");
+            effective_metric_ = ExtractJsonStringField(contents, "effective_metric");
+            if (requested_metric_.empty()) {
+                requested_metric_ = "l2";
+            }
+            if (effective_metric_.empty()) {
+                effective_metric_ = "l2";
+            }
+        }
+    }
 
     // --- 3. Load centroids.bin ---
     const std::string centroids_path = dir + "/centroids.bin";
@@ -105,6 +179,15 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
         return Status::IOError("Failed to read centroids.bin");
     }
     cent_file.close();
+    if (effective_metric_ == "ip" && requested_metric_ == "cosine") {
+        normalized_centroids_.resize(centroids_.size());
+        for (uint32_t i = 0; i < nlist_; ++i) {
+            NormalizeVector(
+                centroids_.data() + static_cast<size_t>(i) * dim_,
+                normalized_centroids_.data() + static_cast<size_t>(i) * dim_,
+                dim_);
+        }
+    }
 
     // --- 4. Load rotation.bin ---
     const std::string rotation_path = dir + "/rotation.bin";
@@ -191,7 +274,7 @@ Status IvfIndex::Open(const std::string& dir, bool use_direct_io) {
 }
 
 // ============================================================================
-// FindNearestClusters — brute-force L2 over centroids
+// FindNearestClusters — metric-aware coarse ranking over centroids
 // ============================================================================
 
 std::vector<ClusterID> IvfIndex::FindNearestClusters(
@@ -203,32 +286,48 @@ std::vector<ClusterID> IvfIndex::FindNearestClusters(
 
     const uint32_t actual_nprobe = std::min(nprobe, nlist_);
 
-    // Compute distances to all centroids
+    // Compute scores/distances to all centroids
     std::vector<std::pair<float, uint32_t>> dists(nlist_);
-
+    if (effective_metric_ == "ip") {
+        std::vector<float> normalized_query(dim_);
+        const float* query_ip = query;
+        if (requested_metric_ == "cosine") {
+            NormalizeVector(query, normalized_query.data(), dim_);
+            query_ip = normalized_query.data();
+        }
+        for (uint32_t i = 0; i < nlist_; ++i) {
+            const float* centroid_ptr = centroid(i);
+            if (!normalized_centroids_.empty()) {
+                centroid_ptr = normalized_centroids_.data() +
+                    static_cast<size_t>(i) * dim_;
+            }
+            float score = 0.0f;
+            for (Dim j = 0; j < dim_; ++j) {
+                score += query_ip[j] * centroid_ptr[j];
+            }
+            dists[i] = {-score, i};
+        }
+    } else {
 #ifdef VDB_USE_MKL
-    // MKL path: ||q-c||² = ||q||² + ||c||² - 2·(q·c)
-    // Compute q·c for all centroids in one sgemv call.
-    //   centroids_ is row-major [nlist × dim], so
-    //   dot_products = centroids_ × query  (sgemv: A × x)
-    std::vector<float> qc(nlist_);
-    cblas_sgemv(CblasRowMajor, CblasNoTrans,
-                nlist_, dim_,
-                1.0f, centroids_.data(), dim_,
-                query, 1,
-                0.0f, qc.data(), 1);
+        std::vector<float> qc(nlist_);
+        cblas_sgemv(CblasRowMajor, CblasNoTrans,
+                    nlist_, dim_,
+                    1.0f, centroids_.data(), dim_,
+                    query, 1,
+                    0.0f, qc.data(), 1);
 
-    const float q_norm = cblas_sdot(dim_, query, 1, query, 1);
+        const float q_norm = cblas_sdot(dim_, query, 1, query, 1);
 
-    for (uint32_t i = 0; i < nlist_; ++i) {
-        dists[i] = {q_norm + centroid_norms_[i] - 2.0f * qc[i], i};
-    }
+        for (uint32_t i = 0; i < nlist_; ++i) {
+            dists[i] = {q_norm + centroid_norms_[i] - 2.0f * qc[i], i};
+        }
 #else
-    for (uint32_t i = 0; i < nlist_; ++i) {
-        float d = simd::L2Sqr(query, centroid(i), dim_);
-        dists[i] = {d, i};
-    }
+        for (uint32_t i = 0; i < nlist_; ++i) {
+            float d = simd::L2Sqr(query, centroid(i), dim_);
+            dists[i] = {d, i};
+        }
 #endif
+    }
 
     // Partial sort to find the nprobe nearest
     std::nth_element(dists.begin(), dists.begin() + actual_nprobe, dists.end(),
