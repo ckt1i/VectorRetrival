@@ -8,38 +8,57 @@ endif()
 # ----- IVF Quality Benchmark -----
 add_executable(bench_ivf_quality bench_ivf_quality.cpp)
 target_link_libraries(bench_ivf_quality PRIVATE vdb_index)
+vdb_enable_target_avx512(bench_ivf_quality)
 
 # ----- E2E Benchmark -----
 add_executable(bench_e2e bench_e2e.cpp)
 target_link_libraries(bench_e2e PRIVATE vdb_query vdb_io vdb_crc)
+vdb_enable_target_avx512(bench_e2e)
 
 # ----- IVF Clustering Export Utility -----
 add_executable(export_ivf_clustering export_ivf_clustering.cpp)
 target_link_libraries(export_ivf_clustering PRIVATE vdb_index vdb_io)
+vdb_enable_target_avx512(export_ivf_clustering)
+
+# ----- Cluster .clu Migration Utility (legacy byte-sign -> packed-sign) -----
+add_executable(migrate_cluster_clu_packedsign migrate_cluster_clu_packedsign.cpp)
+target_link_libraries(migrate_cluster_clu_packedsign PRIVATE vdb_storage)
+vdb_enable_target_avx512(migrate_cluster_clu_packedsign)
+
+# ----- Recompute CRC scores for an existing index -----
+add_executable(recompute_crc_scores recompute_crc_scores.cpp)
+target_link_libraries(recompute_crc_scores PRIVATE vdb_index vdb_io vdb_crc)
+vdb_enable_target_avx512(recompute_crc_scores)
 
 # ----- RaBitQ Accuracy Benchmark -----
 add_executable(bench_rabitq_accuracy bench_rabitq_accuracy.cpp)
 target_link_libraries(bench_rabitq_accuracy PRIVATE vdb_index vdb_io)
+vdb_enable_target_avx512(bench_rabitq_accuracy)
 
 # ----- ConANN Recall Benchmark -----
 add_executable(bench_conann_recall bench_conann_recall.cpp)
 target_link_libraries(bench_conann_recall PRIVATE vdb_index vdb_io)
+vdb_enable_target_avx512(bench_conann_recall)
 
 # ----- ConANN CRC Benchmark -----
 add_executable(bench_conann_crc bench_conann_crc.cpp)
 target_link_libraries(bench_conann_crc PRIVATE vdb_crc vdb_index vdb_io)
+vdb_enable_target_avx512(bench_conann_crc)
 
 # ----- CRC Overlap Integration Benchmark -----
 add_executable(bench_crc_overlap bench_crc_overlap.cpp)
 target_link_libraries(bench_crc_overlap PRIVATE vdb_crc vdb_index vdb_io)
+vdb_enable_target_avx512(bench_crc_overlap)
 
 # ----- RaBitQ Diagnostic Benchmark -----
 add_executable(bench_rabitq_diagnostic bench_rabitq_diagnostic.cpp)
 target_link_libraries(bench_rabitq_diagnostic PRIVATE vdb_index vdb_io)
+vdb_enable_target_avx512(bench_rabitq_diagnostic)
 
 # ----- Vector Search Benchmark -----
 add_executable(bench_vector_search bench_vector_search.cpp)
 target_link_libraries(bench_vector_search PRIVATE vdb_query vdb_crc vdb_index vdb_io)
+vdb_enable_target_avx512(bench_vector_search)
 if(VDB_USE_MKL)
     target_link_libraries(bench_vector_search PRIVATE mkl)
 endif()
@@ -56,6 +75,7 @@ endif()
 # the minimal fix required to restore compilation, or mark as deprecated.
 add_executable(bench_vector_search_inline bench_vector_search_inline.cpp)
 target_link_libraries(bench_vector_search_inline PRIVATE vdb_crc vdb_index vdb_io)
+vdb_enable_target_avx512(bench_vector_search_inline)
 if(VDB_USE_MKL)
     target_link_libraries(bench_vector_search_inline PRIVATE mkl)
 endif()

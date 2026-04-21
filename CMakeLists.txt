@@ -23,16 +23,24 @@ set(CMAKE_CXX_FLAGS_DEBUG "-g -O0 -DDEBUG")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3 -DNDEBUG -funroll-loops -fno-math-errno")
 set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 
-if(VDB_USE_AVX512)
-    # Use feature flags instead of an Intel-specific -march target.
-    # This keeps AVX-512 builds valid on non-Intel AVX-512 machines such as
-    # AMD EPYC Genoa while still enabling the hand-written intrinsics in src/simd/.
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd -mavx512vpopcntdq -mavx2 -mfma")
-    add_compile_definitions(VDB_USE_AVX512=1 VDB_USE_AVX2=1)
-elseif(VDB_USE_AVX2)
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -mavx2 -mfma")
-    add_compile_definitions(VDB_USE_AVX2=1)
-endif()
+set(VDB_AVX2_COMPILE_OPTIONS -mavx2 -mfma)
+set(VDB_AVX512_COMPILE_OPTIONS
+    -mavx512f -mavx512dq -mavx512bw -mavx512vl -mavx512cd -mavx512vpopcntdq
+    -mavx2 -mfma)
+
+function(vdb_enable_target_avx2 target_name)
+    target_compile_options(${target_name} PRIVATE ${VDB_AVX2_COMPILE_OPTIONS})
+    target_compile_definitions(${target_name} PRIVATE VDB_USE_AVX2=1)
+endfunction()
+
+function(vdb_enable_target_avx512 target_name)
+    if(VDB_USE_AVX512)
+        target_compile_options(${target_name} PRIVATE ${VDB_AVX512_COMPILE_OPTIONS})
+        target_compile_definitions(${target_name} PRIVATE VDB_USE_AVX512=1 VDB_USE_AVX2=1)
+    elseif(VDB_USE_AVX2)
+        vdb_enable_target_avx2(${target_name})
+    endif()
+endfunction()
 
 # Link-time optimization for cross-TU inlining (L2Sqr, AccumulateBlock, etc.)
 option(VDB_USE_LTO "Enable link-time optimization" ON)
@@ -164,6 +172,7 @@ target_include_directories(vdb_columns PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_columns PUBLIC vdb_common Threads::Threads)
+vdb_enable_target_avx512(vdb_columns)
 
 # =============================================================================
 # VDB SIMD Library (Phase 3)
@@ -187,6 +196,7 @@ target_include_directories(vdb_simd PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_simd PUBLIC vdb_common)
+vdb_enable_target_avx512(vdb_simd)
 
 # =============================================================================
 # VDB Codec Library (Phase 3)
@@ -200,6 +210,7 @@ target_include_directories(vdb_codec PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_codec PUBLIC vdb_simd)
+vdb_enable_target_avx512(vdb_codec)
 
 # =============================================================================
 # VDB RaBitQ Library (Phase 4)
@@ -216,6 +227,7 @@ target_include_directories(vdb_rabitq PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_rabitq PUBLIC vdb_simd)
+vdb_enable_target_avx512(vdb_rabitq)
 
 # =============================================================================
 # VDB Storage Library (Phase 5)
@@ -234,6 +246,7 @@ target_include_directories(vdb_storage PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_storage PUBLIC vdb_columns vdb_codec vdb_rabitq)
+vdb_enable_target_avx512(vdb_storage)
 
 # =============================================================================
 # Vendored Faiss (CPU-only coarse-builder dependency for vdb_index only)
@@ -251,6 +264,7 @@ set(FAISS_ENABLE_EXTRAS OFF CACHE BOOL "" FORCE)
 set(BUILD_TESTING OFF CACHE BOOL "" FORCE)
 set(FAISS_ENABLE_MKL OFF CACHE BOOL "" FORCE)
 add_subdirectory(thrid-party/faiss EXCLUDE_FROM_ALL)
+vdb_enable_target_avx2(faiss)
 
 # Restore the parent standard after entering Faiss's C++20 subproject so later
 # VDB targets continue to build with the repository default.
@@ -266,6 +280,7 @@ target_include_directories(vdb_faiss_adapter PUBLIC
 )
 set_target_properties(vdb_faiss_adapter PROPERTIES CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 target_link_libraries(vdb_faiss_adapter PRIVATE faiss)
+vdb_enable_target_avx2(vdb_faiss_adapter)
 
 # =============================================================================
 # VDB Index Library (Phase 6)
@@ -294,6 +309,7 @@ endif()
 if(VDB_USE_MKL)
     target_link_libraries(vdb_index PRIVATE mkl)
 endif()
+vdb_enable_target_avx512(vdb_index)
 
 # =============================================================================
 # VDB CRC Library (ConANN CRC calibration — offline only, depends on GSL)
@@ -311,6 +327,7 @@ target_link_libraries(vdb_crc PRIVATE GSL::gsl GSL::gslcblas)
 if(OpenMP_CXX_FOUND)
     target_link_libraries(vdb_crc PRIVATE OpenMP::OpenMP_CXX)
 endif()
+vdb_enable_target_avx512(vdb_crc)
 
 # =============================================================================
 # VDB Query Library (Phase 7)
@@ -336,6 +353,7 @@ target_include_directories(vdb_query PUBLIC
 )
 target_link_libraries(vdb_query PUBLIC vdb_index vdb_storage vdb_simd vdb_rabitq)
 target_link_libraries(vdb_query PRIVATE ${URING_LIB})
+vdb_enable_target_avx512(vdb_query)
 
 # =============================================================================
 # VDB IO Library (Phase 8)
@@ -351,6 +369,7 @@ target_include_directories(vdb_io PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(vdb_io PUBLIC vdb_common)
+vdb_enable_target_avx512(vdb_io)
 
 # =============================================================================
 # Tests

@@ -409,7 +409,7 @@ float RaBitQEstimator::EstimateDistanceMultiBit(
     if (!code.ex_code.empty()) {
         float ip_raw = simd::IPExRaBitQ(
             pq.rotated.data(), code.ex_code.data(),
-            code.ex_sign.data(), dim_);
+            code.ex_sign_packed.data(), true, dim_);
         float ip_est = ip_raw * code.xipnorm;
         float dist_sq = code.norm * code.norm + pq.norm_qc_sq
                       - 2.0f * code.norm * pq.norm_qc * ip_est;

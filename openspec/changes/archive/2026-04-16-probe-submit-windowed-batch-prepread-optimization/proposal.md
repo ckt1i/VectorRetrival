@@ -21,4 +21,4 @@
 
 ## Impact
 
-受影响代码主要在 `include/vdb/query/overlap_scheduler.h`、`src/query/overlap_scheduler.cpp`、`include/vdb/query/search_context.h`、`benchmarks/bench_e2e.cpp` 以及相关 OpenSpec 规格文件。CLI 不新增用户参数；submit 阈值先作为实现内固定策略落地，默认候选窗口为 `16` 或 `32` 的固定粒度。
+受影响代码主要在 `include/vdb/query/overlap_scheduler.h`、`src/query/overlap_scheduler.cpp`、`include/vdb/query/search_context.h`、`benchmarks/bench_e2e.cpp` 以及相关 OpenSpec 规格文件。CLI 不新增用户参数；submit 阈值先作为实现内固定策略落地，默认候选窗口为 `8` 或 `16` 的固定粒度。

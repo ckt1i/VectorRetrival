@@ -155,6 +155,17 @@ static float FastQuantizeEx(const float* abs_rot, uint32_t dim, int max_code,
     return (ipnorm > 1e-30) ? static_cast<float>(1.0 / ipnorm) : 1.0f;
 }
 
+static void PackExSignBits(const float* rotated,
+                           uint32_t dim,
+                           std::vector<uint8_t>& out_packed_sign) {
+    out_packed_sign.assign((dim + 7) / 8, 0);
+    for (uint32_t i = 0; i < dim; ++i) {
+        if (rotated[i] >= 0.0f) {
+            out_packed_sign[i / 8] |= static_cast<uint8_t>(1u << (i % 8));
+        }
+    }
+}
+
 }  // namespace
 
 // ============================================================================
@@ -264,13 +275,11 @@ RaBitQCode RaBitQEncoder::Encode(const float* vec,
         }
 
         result.ex_code.resize(L);
-        result.ex_sign.resize(L);
         result.xipnorm = FastQuantizeEx(abs_rot.data(), static_cast<uint32_t>(L),
                                         max_code_, t_const_,
                                         result.ex_code.data());
-        for (size_t i = 0; i < L; ++i) {
-            result.ex_sign[i] = (rotated[i] >= 0.0f);
-        }
+        PackExSignBits(rotated.data(), static_cast<uint32_t>(L),
+                       result.ex_sign_packed);
     }
 
     // Precompute sum_x = popcount(MSB plane only)
@@ -352,15 +361,15 @@ RaBitQCode RaBitQEncoder::EncodeSlow(const float* vec,
                                                static_cast<uint32_t>(M));
 
         result.ex_code.resize(L);
-        result.ex_sign.resize(L);
         double final_numer = 0.0;
         for (size_t i = 0; i < L; ++i) {
             int ca = static_cast<int>(best_t * abs_rot[i] + kEps);
             if (ca > max_code) ca = max_code;
             result.ex_code[i] = static_cast<uint8_t>(ca);
-            result.ex_sign[i] = (rotated[i] >= 0.0f);
             final_numer += (ca + 0.5) * abs_rot[i];
         }
+        PackExSignBits(rotated.data(), static_cast<uint32_t>(L),
+                       result.ex_sign_packed);
         result.xipnorm = (final_numer > 1e-30)
                         ? static_cast<float>(1.0 / final_numer) : 1.0f;
     }

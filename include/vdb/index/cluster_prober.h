@@ -54,6 +54,8 @@ struct ProbeStats {
     uint32_t s2_safein = 0;
     uint32_t s2_safeout = 0;
     uint32_t s2_uncertain = 0;
+    uint32_t num_stage1_blocks = 0;
+    uint32_t num_stage2_candidates = 0;
     double stage1_ms = 0;
     double stage1_estimate_ms = 0;
     double stage1_mask_ms = 0;

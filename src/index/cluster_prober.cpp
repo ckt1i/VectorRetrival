@@ -17,6 +17,9 @@ namespace index {
 
 namespace {
 
+constexpr double kLowOverheadStage2Weight = 1.0;
+constexpr uint32_t kStage2BatchSize = 8;
+
 VDB_FORCE_INLINE uint32_t LaneMaskForCount(uint32_t count) {
     return (count >= 32u) ? 0xFFFFFFFFu : ((1u << count) - 1u);
 }
@@ -108,6 +111,7 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
     const float safein_threshold_base = conann_.d_k();
 
     for (uint32_t b = 0; b < pc.num_fastscan_blocks; ++b) {
+        ++stats.num_stage1_blocks;
         CandidateBatch batch;
         const uint32_t base_idx = b * 32;
         const uint32_t count = std::min(32u, pc.num_records - base_idx);
@@ -179,6 +183,19 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
             stats.s1_uncertain += uncertain_count;
         }
 
+        struct Stage2ScratchEntry {
+            uint32_t global_idx = 0;
+            float est_dist_s1 = 0.0f;
+            float margin_s1 = 0.0f;
+            float norm_oc = 0.0f;
+            const uint8_t* code_abs = nullptr;
+            const uint8_t* sign = nullptr;
+            float xipnorm = 0.0f;
+            bool sign_packed = false;
+        };
+        Stage2ScratchEntry stage2_candidates[32];
+        uint32_t stage2_candidate_count = 0;
+
         for (uint32_t s = 0; s < survivor_count; ++s) {
             const uint32_t j = survivor_lanes[s];
             const uint32_t global_idx = base_idx + j;
@@ -188,40 +205,21 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                 ? ResultClass::SafeIn
                 : ResultClass::Uncertain;
 
-            // Stage 2: ExRaBitQ re-classification for S1-Uncertain (bits > 1)
+            // Stage 2: collect S1-Uncertain candidates and batch packed-sign boosting.
             if (rc_final == ResultClass::Uncertain && has_s2_ &&
                 pc.exrabitq_entries != nullptr) {
-                auto stage2_start = std::chrono::steady_clock::now();
                 const query::ParsedCluster::ExRaBitQView ex_view =
                     pc.exrabitq_view(global_idx, dim_);
-                const float    norm_oc = block_norms[j];
-
-                const float ip_raw = simd::IPExRaBitQ(
-                    pq.rotated.data(), ex_view.code_abs, ex_view.sign, dim_);
-                const float ip_est = ip_raw * ex_view.xipnorm;
-
-                float est_dist_s2 = norm_oc * norm_oc + pq.norm_qc_sq
-                                  - 2.0f * norm_oc * pq.norm_qc * ip_est;
-                est_dist_s2 = std::max(est_dist_s2, 0.0f);
-
-                const float margin_s2 = margin_s1 / margin_s2_divisor_;
-                const ResultClass rc_s2 =
-                    conann_.ClassifyAdaptive(est_dist_s2, margin_s2, dynamic_d_k);
-
-                if (rc_s2 == ResultClass::SafeIn) {
-                    ++stats.s2_safein;
-                } else if (rc_s2 == ResultClass::SafeOut) {
-                    ++stats.s2_safeout;
-                    continue;  // S2 SafeOut: skip candidate
-                } else {
-                    ++stats.s2_uncertain;
-                }
-                rc_final = rc_s2;
-                if (enable_fine_grained_timing) {
-                    double stage2_ms = std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - stage2_start).count();
-                    stats.stage2_ms += stage2_ms;
-                }
+                Stage2ScratchEntry& entry = stage2_candidates[stage2_candidate_count++];
+                entry.global_idx = global_idx;
+                entry.est_dist_s1 = est_dist_s1;
+                entry.margin_s1 = margin_s1;
+                entry.norm_oc = block_norms[j];
+                entry.code_abs = ex_view.code_abs;
+                entry.sign = ex_view.sign;
+                entry.xipnorm = ex_view.xipnorm;
+                entry.sign_packed = ex_view.sign_packed;
+                continue;
             }
 
             batch.global_idx[batch.count] = global_idx;
@@ -230,6 +228,80 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                 ? CandidateClass::SafeIn
                 : CandidateClass::Uncertain;
             batch.count++;
+        }
+
+        if (stage2_candidate_count > 0) {
+            stats.num_stage2_candidates += stage2_candidate_count;
+
+            auto stage2_start = enable_fine_grained_timing
+                ? std::chrono::steady_clock::now()
+                : std::chrono::steady_clock::time_point{};
+            const float* const rotated_query = pq.rotated.data();
+
+            for (uint32_t base = 0; base < stage2_candidate_count; base += kStage2BatchSize) {
+                const uint32_t chunk =
+                    std::min(kStage2BatchSize, stage2_candidate_count - base);
+
+                bool all_packed = true;
+                for (uint32_t i = 0; i < chunk; ++i) {
+                    if (!stage2_candidates[base + i].sign_packed) {
+                        all_packed = false;
+                        break;
+                    }
+                }
+
+                alignas(64) float ip_raw_batch[kStage2BatchSize] = {};
+                if (all_packed) {
+                    const uint8_t* code_abs_ptrs[kStage2BatchSize] = {};
+                    const uint8_t* sign_ptrs[kStage2BatchSize] = {};
+                    for (uint32_t i = 0; i < chunk; ++i) {
+                        code_abs_ptrs[i] = stage2_candidates[base + i].code_abs;
+                        sign_ptrs[i] = stage2_candidates[base + i].sign;
+                    }
+                    simd::IPExRaBitQBatchPackedSign(
+                        rotated_query, code_abs_ptrs, sign_ptrs, chunk, dim_, ip_raw_batch);
+                } else {
+                    for (uint32_t i = 0; i < chunk; ++i) {
+                        const Stage2ScratchEntry& entry = stage2_candidates[base + i];
+                        ip_raw_batch[i] = simd::IPExRaBitQ(
+                            rotated_query, entry.code_abs, entry.sign, entry.sign_packed, dim_);
+                    }
+                }
+
+                for (uint32_t i = 0; i < chunk; ++i) {
+                    const Stage2ScratchEntry& entry = stage2_candidates[base + i];
+                    const float ip_est = ip_raw_batch[i] * entry.xipnorm;
+
+                    float est_dist_s2 = entry.norm_oc * entry.norm_oc + pq.norm_qc_sq
+                                      - 2.0f * entry.norm_oc * pq.norm_qc * ip_est;
+                    est_dist_s2 = std::max(est_dist_s2, 0.0f);
+
+                    const float margin_s2 = entry.margin_s1 / margin_s2_divisor_;
+                    const ResultClass rc_s2 =
+                        conann_.ClassifyAdaptive(est_dist_s2, margin_s2, dynamic_d_k);
+
+                    if (rc_s2 == ResultClass::SafeIn) {
+                        ++stats.s2_safein;
+                    } else if (rc_s2 == ResultClass::SafeOut) {
+                        ++stats.s2_safeout;
+                        continue;
+                    } else {
+                        ++stats.s2_uncertain;
+                    }
+
+                    batch.global_idx[batch.count] = entry.global_idx;
+                    batch.est_dist[batch.count] = entry.est_dist_s1;
+                    batch.cls[batch.count] = (rc_s2 == ResultClass::SafeIn)
+                        ? CandidateClass::SafeIn
+                        : CandidateClass::Uncertain;
+                    batch.count++;
+                }
+            }
+
+            if (enable_fine_grained_timing) {
+                stats.stage2_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - stage2_start).count();
+            }
         }
 
         if (batch.count > 0) {

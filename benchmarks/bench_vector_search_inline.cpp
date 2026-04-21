@@ -778,7 +778,8 @@ int main(int argc, char* argv[]) {
     // cache-line load gets both values needed by Stage 2.
     struct alignas(8) NormPair { float norm; float xipnorm; };
     std::vector<uint8_t>   soa_ex_code(static_cast<size_t>(N) * dim);
-    std::vector<uint8_t>   soa_ex_sign(static_cast<size_t>(N) * dim);
+    const uint32_t ex_sign_bytes = (dim + 7) / 8;
+    std::vector<uint8_t>   soa_ex_sign(static_cast<size_t>(N) * ex_sign_bytes);
     std::vector<NormPair>  soa_norm_pairs(N);
     for (uint32_t i = 0; i < N; ++i) {
         const auto& c = codes[i];
@@ -786,8 +787,8 @@ int main(int argc, char* argv[]) {
         if (!c.ex_code.empty()) {
             std::memcpy(soa_ex_code.data() + static_cast<size_t>(i) * dim,
                         c.ex_code.data(), dim);
-            std::memcpy(soa_ex_sign.data() + static_cast<size_t>(i) * dim,
-                        c.ex_sign.data(), dim);
+            std::memcpy(soa_ex_sign.data() + static_cast<size_t>(i) * ex_sign_bytes,
+                        c.ex_sign_packed.data(), ex_sign_bytes);
         }
     }
     Log("  SOA code layout built (%u vectors, %.1f MB).\n",
@@ -962,9 +963,9 @@ int main(int argc, char* argv[]) {
                         if (rc_s1 == ResultClass::Uncertain && bits > 1) {
                             // SOA path: contiguous memory, no pointer indirection
                             const uint8_t* ec = soa_ex_code.data() + static_cast<size_t>(vid) * dim;
-                            const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * dim;
+                            const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * ex_sign_bytes;
                             _mm_prefetch(reinterpret_cast<const char*>(&soa_norm_pairs[vid]), _MM_HINT_T0);
-                            float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, dim);
+                            float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, true, dim);
                             NormPair np = soa_norm_pairs[vid];  // single 8-byte load
                             float ip_est = ip_raw * np.xipnorm;
                             float norm_oc = np.norm;
@@ -1035,9 +1036,9 @@ int main(int argc, char* argv[]) {
                 // Stage 2: only for S1-Uncertain when bits > 1
                 if (rc_s1 == ResultClass::Uncertain && bits > 1) {
                     const uint8_t* ec = soa_ex_code.data() + static_cast<size_t>(vid) * dim;
-                    const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * dim;
+                    const uint8_t* es = soa_ex_sign.data() + static_cast<size_t>(vid) * ex_sign_bytes;
                     _mm_prefetch(reinterpret_cast<const char*>(&soa_norm_pairs[vid]), _MM_HINT_T0);
-                    float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, dim);
+                    float ip_raw = simd::IPExRaBitQ(pq.rotated.data(), ec, es, true, dim);
                     NormPair np = soa_norm_pairs[vid];  // single 8-byte load
                     float ip_est = ip_raw * np.xipnorm;
                     float norm_oc_s2 = np.norm;

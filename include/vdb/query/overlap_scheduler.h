@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <deque>
 #include <limits>
 #include <unordered_map>
 #include <vector>
@@ -94,6 +95,8 @@ class OverlapScheduler {
     void InitializeDataBufferSlab();
     bool TryAcquireFixedVecBuffer(uint8_t** buffer, uint16_t* buffer_index);
     void ReleaseFixedVecBuffer(uint16_t buffer_index);
+    void EmitPendingDataRequests(SearchContext& ctx, uint32_t max_count);
+    uint32_t PendingDataRequestCount() const;
 
     // AsyncIOSink: ProbeResultSink implementation that submits io_uring reads
     // and maintains est_heap_. Defined in overlap_scheduler.cpp; declared here
@@ -153,6 +156,12 @@ class OverlapScheduler {
         bool uses_fixed_buffer[kMax] = {};
     };
 
+    struct ReadPlanEntry {
+        PendingIO::Type type = PendingIO::Type::VEC_ONLY;
+        AddressEntry addr;
+        uint32_t read_length = 0;
+    };
+
     using PreparedClusterQueryView = rabitq::PreparedClusterQueryView;
     PreparedClusterQueryView PrepareClusterQueryView(const SearchContext& ctx,
                                                      uint32_t cluster_id,
@@ -163,6 +172,8 @@ class OverlapScheduler {
     std::unordered_map<uint32_t, ParsedCluster> ready_clusters_;
     QueryDedupSet submitted_candidate_offsets_;
     SubmitScratch submit_scratch_;
+    std::deque<ReadPlanEntry> pending_all_plans_;
+    std::deque<ReadPlanEntry> pending_vec_only_plans_;
     uint32_t next_to_submit_ = 0;
     uint32_t inflight_clusters_ = 0;
 

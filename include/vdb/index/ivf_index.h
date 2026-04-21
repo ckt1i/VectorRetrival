@@ -80,6 +80,7 @@ class IvfIndex {
 
     /// Get the ConANN classifier.
     const ConANN& conann() const { return conann_; }
+    void OverrideConANN(float epsilon, float d_k) { conann_ = ConANN(epsilon, d_k); }
 
     /// Get the underlying Segment (mutable for lazy-opening readers).
     storage::Segment& segment() { return segment_; }

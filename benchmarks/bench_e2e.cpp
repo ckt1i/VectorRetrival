@@ -147,6 +147,10 @@ static std::string CrcParamsSidecarPath(const std::string& index_dir) {
     return index_dir + "/crc_calibration_params.bin";
 }
 
+static const char* ExRaBitQStorageFormatName(uint32_t clu_file_version) {
+    return (clu_file_version >= 10) ? "packed_sign" : "legacy_byte_sign";
+}
+
 static Status WriteCalibrationResults(const std::string& path,
                                       const CalibrationResults& results) {
     std::ofstream f(path, std::ios::binary);
@@ -351,6 +355,9 @@ struct QueryResult {
     double probe_stage2_ms = 0;
     double probe_classify_ms = 0;
     double probe_submit_ms = 0;
+    double probe_submit_prepare_vec_only_ms = 0;
+    double probe_submit_prepare_all_ms = 0;
+    double probe_submit_emit_ms = 0;
     double rerank_cpu_ms = 0;
     double prefetch_submit_ms = 0;
     double prefetch_wait_ms = 0;
@@ -364,6 +371,9 @@ struct QueryResult {
     double parse_cluster_ms = 0;
     double fetch_missing_ms = 0;
     uint32_t submit_calls = 0;
+    uint32_t submit_window_flushes = 0;
+    uint32_t submit_window_tail_flushes = 0;
+    double submit_window_requests = 0;
     double candidate_batches_per_cluster = 0;
     double crc_estimates_buffered_per_cluster = 0;
     double crc_estimates_merged_per_cluster = 0;
@@ -415,6 +425,9 @@ struct RoundMetrics {
     double avg_probe_stage2 = 0;
     double avg_probe_classify = 0;
     double avg_probe_submit = 0;
+    double avg_probe_submit_prepare_vec_only = 0;
+    double avg_probe_submit_prepare_all = 0;
+    double avg_probe_submit_emit = 0;
     double avg_rerank_cpu = 0;
     double avg_prefetch_submit = 0;
     double avg_prefetch_wait = 0;
@@ -428,6 +441,9 @@ struct RoundMetrics {
     double avg_parse_cluster = 0;
     double avg_fetch_missing = 0;
     double avg_submit_calls = 0;
+    double avg_submit_window_flushes = 0;
+    double avg_submit_window_tail_flushes = 0;
+    double avg_submit_window_requests = 0;
     double avg_probed = 0;
     double avg_safe_in = 0;
     double avg_safe_out = 0;
@@ -521,6 +537,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.probe_stage2_ms = results.stats().probe_stage2_ms;
         qr.probe_classify_ms = results.stats().probe_classify_ms;
         qr.probe_submit_ms = results.stats().probe_submit_ms;
+        qr.probe_submit_prepare_vec_only_ms =
+            results.stats().probe_submit_prepare_vec_only_ms;
+        qr.probe_submit_prepare_all_ms =
+            results.stats().probe_submit_prepare_all_ms;
+        qr.probe_submit_emit_ms = results.stats().probe_submit_emit_ms;
         qr.rerank_cpu_ms = results.stats().rerank_cpu_ms;
         qr.prefetch_submit_ms = results.stats().prefetch_submit_ms;
         qr.prefetch_wait_ms = results.stats().prefetch_wait_ms;
@@ -534,6 +555,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         qr.parse_cluster_ms = results.stats().parse_cluster_ms;
         qr.fetch_missing_ms = results.stats().fetch_missing_ms;
         qr.submit_calls = results.stats().total_submit_calls;
+        qr.submit_window_flushes = results.stats().total_submit_window_flushes;
+        qr.submit_window_tail_flushes =
+            results.stats().total_submit_window_tail_flushes;
+        qr.submit_window_requests =
+            static_cast<double>(results.stats().total_submit_window_requests);
         const uint32_t probed_clusters_u32 =
             (results.stats().crc_clusters_probed > 0)
                 ? results.stats().crc_clusters_probed
@@ -636,6 +662,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_probe_stage1_mask = 0, sum_probe_stage1_iterate = 0;
     double sum_probe_stage1_classify_only = 0, sum_probe_stage2 = 0;
     double sum_probe_classify = 0, sum_probe_submit = 0;
+    double sum_probe_submit_prepare_vec_only = 0;
+    double sum_probe_submit_prepare_all = 0;
+    double sum_probe_submit_emit = 0;
     double sum_rerank_cpu = 0;
     double sum_prefetch_submit = 0, sum_prefetch_wait = 0;
     double sum_safein_payload_prefetch = 0, sum_candidate_collect = 0;
@@ -644,6 +673,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     double sum_uring_prep = 0, sum_uring_submit = 0;
     double sum_parse_cluster = 0, sum_fetch_missing = 0;
     double sum_submit_calls = 0;
+    double sum_submit_window_flushes = 0;
+    double sum_submit_window_tail_flushes = 0;
+    double sum_submit_window_requests = 0;
     double sum_candidate_batches_per_cluster = 0;
     double sum_crc_estimates_buffered_per_cluster = 0;
     double sum_crc_estimates_merged_per_cluster = 0;
@@ -682,6 +714,11 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_probe_stage2 += qresults[qi].probe_stage2_ms;
         sum_probe_classify += qresults[qi].probe_classify_ms;
         sum_probe_submit += qresults[qi].probe_submit_ms;
+        sum_probe_submit_prepare_vec_only +=
+            qresults[qi].probe_submit_prepare_vec_only_ms;
+        sum_probe_submit_prepare_all +=
+            qresults[qi].probe_submit_prepare_all_ms;
+        sum_probe_submit_emit += qresults[qi].probe_submit_emit_ms;
         sum_rerank_cpu += qresults[qi].rerank_cpu_ms;
         sum_prefetch_submit += qresults[qi].prefetch_submit_ms;
         sum_prefetch_wait += qresults[qi].prefetch_wait_ms;
@@ -695,6 +732,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
         sum_parse_cluster += qresults[qi].parse_cluster_ms;
         sum_fetch_missing += qresults[qi].fetch_missing_ms;
         sum_submit_calls += qresults[qi].submit_calls;
+        sum_submit_window_flushes += qresults[qi].submit_window_flushes;
+        sum_submit_window_tail_flushes +=
+            qresults[qi].submit_window_tail_flushes;
+        sum_submit_window_requests += qresults[qi].submit_window_requests;
         sum_candidate_batches_per_cluster += qresults[qi].candidate_batches_per_cluster;
         sum_crc_estimates_buffered_per_cluster +=
             qresults[qi].crc_estimates_buffered_per_cluster;
@@ -730,6 +771,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_probe_stage2 = sum_probe_stage2 / Q;
     m.avg_probe_classify = sum_probe_classify / Q;
     m.avg_probe_submit = sum_probe_submit / Q;
+    m.avg_probe_submit_prepare_vec_only = sum_probe_submit_prepare_vec_only / Q;
+    m.avg_probe_submit_prepare_all = sum_probe_submit_prepare_all / Q;
+    m.avg_probe_submit_emit = sum_probe_submit_emit / Q;
     m.avg_rerank_cpu = sum_rerank_cpu / Q;
     m.avg_prefetch_submit = sum_prefetch_submit / Q;
     m.avg_prefetch_wait = sum_prefetch_wait / Q;
@@ -743,6 +787,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.avg_parse_cluster = sum_parse_cluster / Q;
     m.avg_fetch_missing = sum_fetch_missing / Q;
     m.avg_submit_calls = sum_submit_calls / Q;
+    m.avg_submit_window_flushes = sum_submit_window_flushes / Q;
+    m.avg_submit_window_tail_flushes = sum_submit_window_tail_flushes / Q;
+    m.avg_submit_window_requests = sum_submit_window_requests / Q;
     m.avg_candidate_batches_per_cluster = sum_candidate_batches_per_cluster / Q;
     m.avg_crc_estimates_buffered_per_cluster =
         sum_crc_estimates_buffered_per_cluster / Q;
@@ -789,6 +836,9 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     Log("  %s: probe_prepare=%.3f ms  stage1=%.3f ms  stage2=%.3f ms  classify=%.3f ms  submit=%.3f ms\n",
         label, m.avg_probe_prepare, m.avg_probe_stage1, m.avg_probe_stage2,
         m.avg_probe_classify, m.avg_probe_submit);
+    Log("  %s: submit_prepare_vec_only=%.3f ms  submit_prepare_all=%.3f ms  submit_emit=%.3f ms\n",
+        label, m.avg_probe_submit_prepare_vec_only,
+        m.avg_probe_submit_prepare_all, m.avg_probe_submit_emit);
     Log("  %s: stage1_estimate=%.3f ms  stage1_mask=%.3f ms  stage1_iterate=%.3f ms  stage1_classify=%.3f ms\n",
         label, m.avg_probe_stage1_estimate, m.avg_probe_stage1_mask,
         m.avg_probe_stage1_iterate, m.avg_probe_stage1_classify_only);
@@ -801,6 +851,10 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     Log("  %s: uring_prep=%.3f ms  uring_submit=%.3f ms  parse_cluster=%.3f ms  fetch_missing=%.3f ms\n",
         label, m.avg_uring_prep, m.avg_uring_submit, m.avg_parse_cluster, m.avg_fetch_missing);
     Log("  %s: submit_calls=%.1f\n", label, m.avg_submit_calls);
+    Log("  %s: submit_window_flushes=%.1f  submit_window_tail_flushes=%.1f  submit_window_requests=%.1f\n",
+        label, m.avg_submit_window_flushes,
+        m.avg_submit_window_tail_flushes,
+        m.avg_submit_window_requests);
     Log("  %s: candidate_batches_per_cluster=%.2f  crc_buffered_per_cluster=%.2f  crc_merged_per_cluster=%.2f\n",
         label, m.avg_candidate_batches_per_cluster,
         m.avg_crc_estimates_buffered_per_cluster,
@@ -903,7 +957,7 @@ int main(int argc, char* argv[]) {
     int arg_query_only = GetIntArg(argc, argv, "--query-only", 0);
     int arg_skip_gt = GetIntArg(argc, argv, "--skip-gt", 0);
     int arg_fine_grained_timing =
-        GetIntArg(argc, argv, "--fine-grained-timing", 1);
+        GetIntArg(argc, argv, "--fine-grained-timing", 0);
 
     bool arg_cold = HasFlag(argc, argv, "--cold");
     bool arg_direct_io = HasFlag(argc, argv, "--direct-io");
@@ -1015,6 +1069,8 @@ int main(int argc, char* argv[]) {
     float arg_crc_alpha = GetFloatArg(argc, argv, "--crc-alpha", 0.1f);
     float arg_crc_calib = GetFloatArg(argc, argv, "--crc-calib", 0.7f);
     float arg_crc_tune  = GetFloatArg(argc, argv, "--crc-tune", 0.2f);
+    float arg_override_eps_ip = GetFloatArg(argc, argv, "--override-eps-ip", -1.0f);
+    float arg_override_d_k = GetFloatArg(argc, argv, "--override-d-k", -1.0f);
     int arg_crc_samples = GetIntArg(argc, argv, "--crc-samples", 1000);
 
     std::string ds_name = DatasetName(data_dir);
@@ -1254,6 +1310,17 @@ int main(int argc, char* argv[]) {
         index.conann().epsilon(), index.conann().d_k());
     Log("  Index source: %s  resolved_index_dir=%s\n",
         index_source.c_str(), resolved_index_dir.c_str());
+    if (arg_override_eps_ip >= 0.0f || arg_override_d_k >= 0.0f) {
+        const float eps = (arg_override_eps_ip >= 0.0f)
+            ? arg_override_eps_ip
+            : index.conann().epsilon();
+        const float dk = (arg_override_d_k >= 0.0f)
+            ? arg_override_d_k
+            : index.conann().d_k();
+        index.OverrideConANN(eps, dk);
+        Log("  Override params applied: eps_ip=%.6f  d_k=%.6f\n",
+            index.conann().epsilon(), index.conann().d_k());
+    }
 
     CalibrationResults calib_results;
     bool crc_loaded = false;
@@ -1594,6 +1661,9 @@ int main(int argc, char* argv[]) {
         skip_gt ? "skipped" : "computed");
     Log("  index_source=%s  resolved_index_dir=%s\n",
         index_source.c_str(), resolved_index_dir.c_str());
+    Log("  exrabitq_storage_version=%u  exrabitq_storage_format=%s\n",
+        index.segment().cluster_reader().file_version(),
+        ExRaBitQStorageFormatName(index.segment().cluster_reader().file_version()));
     Log("  loaded_eps_ip=%.6f  loaded_d_k=%.6f\n",
         index.conann().epsilon(), index.conann().d_k());
     Log("  assignment_mode=%s  assignment_factor=%u  clustering_source=%s\n",
@@ -1606,6 +1676,9 @@ int main(int argc, char* argv[]) {
         metrics.avg_io_wait, metrics.avg_cpu, metrics.avg_coarse_select,
         metrics.avg_coarse_score, metrics.avg_coarse_topn, metrics.avg_probe);
     Log("  fine_grained_timing=%d\n", search_cfg.enable_fine_grained_timing ? 1 : 0);
+    if (!search_cfg.enable_fine_grained_timing) {
+        Log("  timing_mode=low_overhead_coarse_split (stage1/stage2 are workload-weighted classify splits)\n");
+    }
     Log("  probe_prepare=%.3f ms  probe_stage1=%.3f ms  probe_stage2=%.3f ms  probe_classify=%.3f ms  probe_submit=%.3f ms\n",
         metrics.avg_probe_prepare, metrics.avg_probe_stage1, metrics.avg_probe_stage2,
         metrics.avg_probe_classify, metrics.avg_probe_submit);
@@ -1652,6 +1725,11 @@ int main(int argc, char* argv[]) {
         f << "  " << JStr("gt_mode", skip_gt ? "skipped" : "computed") << ",\n";
         f << "  " << JStr("index_source", index_source) << ",\n";
         f << "  " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
+        f << "  " << JInt("exrabitq_storage_version",
+                          index.segment().cluster_reader().file_version()) << ",\n";
+        f << "  " << JStr("exrabitq_storage_format",
+                          ExRaBitQStorageFormatName(
+                              index.segment().cluster_reader().file_version())) << ",\n";
         f << "  " << JInt("num_images", N) << ",\n";
         f << "  " << JInt("num_queries", Q) << ",\n";
         f << "  " << JInt("dimension", dim) << ",\n";
@@ -1692,7 +1770,11 @@ int main(int argc, char* argv[]) {
         f << "    " << JStr("submission_mode", arg_submission_mode) << ",\n";
         f << "    " << JStr("clu_read_mode", arg_clu_read_mode) << ",\n";
         f << "    " << JBool("use_resident_clusters", search_cfg.use_resident_clusters) << ",\n";
-        f << "    " << JBool("enable_fine_grained_timing", search_cfg.enable_fine_grained_timing) << "\n";
+        f << "    " << JBool("enable_fine_grained_timing", search_cfg.enable_fine_grained_timing) << ",\n";
+        f << "    " << JStr("timing_mode",
+                             search_cfg.enable_fine_grained_timing
+                                 ? "fine_grained_diagnostic"
+                                 : "low_overhead_coarse_split") << "\n";
         f << "  },\n";
         f << "  \"crc_config\": {\n";
         f << "    " << JBool("enabled", arg_crc_enable != 0) << ",\n";
@@ -1727,6 +1809,11 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("brute_force_time_ms", brute_force_time_ms) << ",\n";
         f << "    " << JStr("index_source", index_source) << ",\n";
         f << "    " << JStr("resolved_index_dir", resolved_index_dir) << ",\n";
+        f << "    " << JInt("exrabitq_storage_version",
+                            index.segment().cluster_reader().file_version()) << ",\n";
+        f << "    " << JStr("exrabitq_storage_format",
+                            ExRaBitQStorageFormatName(
+                                index.segment().cluster_reader().file_version())) << ",\n";
         f << "    " << JNum("loaded_eps_ip", index.conann().epsilon()) << ",\n";
         f << "    " << JNum("loaded_d_k", index.conann().d_k()) << ",\n";
         f << "    " << JBool("recall_available", metrics.recall_available) << ",\n";
@@ -1778,6 +1865,9 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_probe_stage2_ms", metrics.avg_probe_stage2) << ",\n";
         f << "    " << JNum("avg_probe_classify_ms", metrics.avg_probe_classify) << ",\n";
         f << "    " << JNum("avg_probe_submit_ms", metrics.avg_probe_submit) << ",\n";
+        f << "    " << JNum("avg_probe_submit_prepare_vec_only_ms", metrics.avg_probe_submit_prepare_vec_only) << ",\n";
+        f << "    " << JNum("avg_probe_submit_prepare_all_ms", metrics.avg_probe_submit_prepare_all) << ",\n";
+        f << "    " << JNum("avg_probe_submit_emit_ms", metrics.avg_probe_submit_emit) << ",\n";
         f << "    " << JNum("avg_rerank_cpu_ms", metrics.avg_rerank_cpu) << ",\n";
         f << "    " << JNum("avg_prefetch_submit_ms", metrics.avg_prefetch_submit) << ",\n";
         f << "    " << JNum("avg_prefetch_wait_ms", metrics.avg_prefetch_wait) << ",\n";
@@ -1791,6 +1881,9 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("avg_parse_cluster_ms", metrics.avg_parse_cluster) << ",\n";
         f << "    " << JNum("avg_fetch_missing_ms", metrics.avg_fetch_missing) << ",\n";
         f << "    " << JNum("avg_submit_calls", metrics.avg_submit_calls) << ",\n";
+        f << "    " << JNum("avg_submit_window_flushes", metrics.avg_submit_window_flushes) << ",\n";
+        f << "    " << JNum("avg_submit_window_tail_flushes", metrics.avg_submit_window_tail_flushes) << ",\n";
+        f << "    " << JNum("avg_submit_window_requests", metrics.avg_submit_window_requests) << ",\n";
         f << "    " << JNum("avg_candidate_batches_per_cluster", metrics.avg_candidate_batches_per_cluster) << ",\n";
         f << "    " << JNum("avg_crc_estimates_buffered_per_cluster", metrics.avg_crc_estimates_buffered_per_cluster) << ",\n";
         f << "    " << JNum("avg_crc_estimates_merged_per_cluster", metrics.avg_crc_estimates_merged_per_cluster) << ",\n";
@@ -1847,6 +1940,9 @@ int main(int argc, char* argv[]) {
             f << "      " << JNum("probe_stage2_ms", qr.probe_stage2_ms) << ",\n";
             f << "      " << JNum("probe_classify_ms", qr.probe_classify_ms) << ",\n";
             f << "      " << JNum("probe_submit_ms", qr.probe_submit_ms) << ",\n";
+            f << "      " << JNum("probe_submit_prepare_vec_only_ms", qr.probe_submit_prepare_vec_only_ms) << ",\n";
+            f << "      " << JNum("probe_submit_prepare_all_ms", qr.probe_submit_prepare_all_ms) << ",\n";
+            f << "      " << JNum("probe_submit_emit_ms", qr.probe_submit_emit_ms) << ",\n";
             f << "      " << JNum("prefetch_submit_ms", qr.prefetch_submit_ms) << ",\n";
             f << "      " << JNum("prefetch_wait_ms", qr.prefetch_wait_ms) << ",\n";
             f << "      " << JNum("safein_payload_prefetch_ms", qr.safein_payload_prefetch_ms) << ",\n";
@@ -1858,6 +1954,10 @@ int main(int argc, char* argv[]) {
             f << "      " << JInt("num_candidates_reranked", qr.num_candidates_reranked) << ",\n";
             f << "      " << JInt("num_safein_payload_prefetched", qr.num_safein_payload_prefetched) << ",\n";
             f << "      " << JInt("num_remaining_payload_fetches", qr.num_remaining_payload_fetches) << ",\n";
+            f << "      " << JInt("submit_calls", qr.submit_calls) << ",\n";
+            f << "      " << JInt("submit_window_flushes", qr.submit_window_flushes) << ",\n";
+            f << "      " << JInt("submit_window_tail_flushes", qr.submit_window_tail_flushes) << ",\n";
+            f << "      " << JNum("submit_window_requests", qr.submit_window_requests) << ",\n";
             f << "      " << JBool("early_stopped", qr.early_stopped) << ",\n";
             f << "      " << JInt("clusters_skipped", qr.clusters_skipped) << "\n";
             f << "    }";

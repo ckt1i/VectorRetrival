@@ -51,7 +51,7 @@ struct SearchConfig {
     // NOTE: For workloads with many vec reads per cluster (e.g., ~26 reads/cluster with SQ depth=64),
     // batching shifts overhead from uring_submit_ms to uring_prep_ms (auto-flush inside PrepRead)
     // without reducing total latency. Keep at 0 unless SQ depth is increased significantly.
-    uint32_t submit_batch_size = 0;
+    uint32_t submit_batch_size = 16;
 };
 
 struct SearchStats {
@@ -65,6 +65,9 @@ struct SearchStats {
     uint32_t total_payload_fetched = 0;
     uint32_t total_safein_payload_prefetched = 0;
     uint32_t total_submit_calls = 0;
+    uint32_t total_submit_window_flushes = 0;
+    uint32_t total_submit_window_tail_flushes = 0;
+    uint32_t total_submit_window_requests = 0;
     uint32_t total_candidate_batches = 0;
     uint32_t total_crc_estimates_buffered = 0;
     uint32_t total_crc_estimates_merged = 0;
@@ -93,6 +96,9 @@ struct SearchStats {
     double probe_stage2_ms = 0;
     double probe_classify_ms = 0;
     double probe_submit_ms = 0;
+    double probe_submit_prepare_vec_only_ms = 0;
+    double probe_submit_prepare_all_ms = 0;
+    double probe_submit_emit_ms = 0;
     double rerank_time_ms = 0;
     double rerank_cpu_ms = 0;
     double total_time_ms = 0;

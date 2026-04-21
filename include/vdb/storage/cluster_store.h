@@ -89,6 +89,8 @@ class ClusterStoreReader {
         uint32_t num_fastscan_blocks = 0;
         const uint8_t* exrabitq_entries = nullptr;
         uint32_t exrabitq_entry_size = 0;
+        uint32_t exrabitq_sign_bytes = 0;
+        bool exrabitq_sign_packed = false;
         uint32_t num_records = 0;
         float epsilon = 0.0f;
         const RawAddressEntryV2* raw_addresses = nullptr;
@@ -103,6 +105,8 @@ class ClusterStoreReader {
             pc.num_fastscan_blocks = num_fastscan_blocks;
             pc.exrabitq_entries = exrabitq_entries;
             pc.exrabitq_entry_size = exrabitq_entry_size;
+            pc.exrabitq_sign_bytes = exrabitq_sign_bytes;
+            pc.exrabitq_sign_packed = exrabitq_sign_packed;
             pc.num_records = num_records;
             pc.epsilon = epsilon;
             pc.raw_addresses = raw_addresses;
@@ -200,9 +204,14 @@ class ClusterStoreReader {
     uint32_t fastscan_block_bytes() const {
         return fastscan_packed_size() + 32 * sizeof(float);
     }
+    uint32_t exrabitq_sign_bytes() const {
+        if (info_.rabitq_config.bits <= 1) return 0;
+        if (file_version_ >= 10) return (info_.dim + 7) / 8;
+        return info_.dim;
+    }
     uint32_t exrabitq_entry_size() const {
         if (info_.rabitq_config.bits <= 1) return 0;
-        return 2 * info_.dim + sizeof(float);
+        return info_.dim + exrabitq_sign_bytes() + sizeof(float);
     }
 
     Status ParseClusterBlockView(uint32_t cluster_id,

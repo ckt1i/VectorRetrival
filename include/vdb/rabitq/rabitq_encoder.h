@@ -40,8 +40,8 @@ struct RaBitQCode {
 
     // ExRaBitQ fields (populated when bits > 1)
     std::vector<uint8_t> ex_code;  // per-dimension code_abs values [0, 2^M-1]
-    std::vector<uint8_t> ex_sign;  // per-dimension sign (1=positive, 0=negative)
-    float xipnorm = 0.0f;         // 1 / Σ(code_abs[i]+0.5)*|o'[i]|
+    std::vector<uint8_t> ex_sign_packed;  // packed sign bits, little-endian by dimension
+    float xipnorm = 0.0f;                 // 1 / Σ(code_abs[i]+0.5)*|o'[i]|
 };
 
 // ============================================================================

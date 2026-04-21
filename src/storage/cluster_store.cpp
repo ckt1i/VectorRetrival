@@ -14,7 +14,8 @@ namespace vdb {
 namespace storage {
 
 static constexpr uint32_t kGlobalMagic = 0x4C4D4356;
-static constexpr uint32_t kFileVersion = 9;
+static constexpr uint32_t kFileVersion = 10;
+static constexpr uint32_t kFileVersionV9 = 9;
 static constexpr uint32_t kFileVersionV8 = 8;
 static constexpr uint32_t kFileVersionV7 = 7;
 static constexpr uint32_t kAlignSize = 4096;
@@ -22,6 +23,10 @@ static constexpr uint32_t kBlockMagic = 0x424C4356;
 static constexpr uint32_t kAddressFormatV2 = 2;
 
 namespace {
+
+inline uint32_t PackedSignBytes(Dim dim) {
+    return (dim + 7) / 8;
+}
 
 inline void WriteRaw(std::fstream& f, const void* data, size_t len) {
     f.write(reinterpret_cast<const char*>(data), static_cast<std::streamsize>(len));
@@ -201,18 +206,21 @@ Status ClusterStoreWriter::WriteVectors(
         static_cast<uint32_t>(current_offset_ - block_start_);
 
     if (info_.rabitq_config.bits > 1) {
+        const uint32_t sign_bytes =
+            (file_.is_open() ? PackedSignBytes(dim) : PackedSignBytes(dim));
         for (const auto& code : codes) {
-            if (code.ex_code.size() != dim || code.ex_sign.size() != dim) {
+            if (code.ex_code.size() != dim ||
+                code.ex_sign_packed.size() != sign_bytes) {
                 return Status::InvalidArgument(
                     "ExRaBitQ code/sign size mismatch with dim");
             }
             WriteRaw(file_, code.ex_code.data(), dim);
-            WriteRaw(file_, code.ex_sign.data(), dim);
+            WriteRaw(file_, code.ex_sign_packed.data(), sign_bytes);
             WriteVal(file_, code.xipnorm);
             if (!file_.good()) {
                 return Status::IOError("Failed to write ExRaBitQ entry");
             }
-            current_offset_ += 2 * dim + sizeof(float);
+            current_offset_ += dim + sign_bytes + sizeof(float);
         }
     }
 
@@ -282,7 +290,9 @@ Status ClusterStoreWriter::EndCluster() {
 
     const uint64_t trailer_start = current_offset_;
     const uint32_t ex_entry_size =
-        (info_.rabitq_config.bits <= 1) ? 0u : (2 * info_.dim + sizeof(float));
+        (info_.rabitq_config.bits <= 1)
+            ? 0u
+            : (info_.dim + PackedSignBytes(info_.dim) + sizeof(float));
     const uint32_t address_entry_size = sizeof(RawAddressEntryV2);
     const uint32_t num_entries =
         static_cast<uint32_t>(current_address_column_.raw_entries.size());
@@ -483,7 +493,8 @@ Status ClusterStoreReader::Open(const std::string& path, bool use_direct_io) {
         }
         std::memcpy(&version, p, 4);
         p += 4;
-        if (version != kFileVersion && version != kFileVersionV8 &&
+        if (version != kFileVersion && version != kFileVersionV9 &&
+            version != kFileVersionV8 &&
             version != kFileVersionV7) {
             std::free(hdr_buf);
             Close();
@@ -673,7 +684,7 @@ Status ClusterStoreReader::EnsureClusterLoaded(uint32_t cluster_id) {
     uint32_t v9_payload_bytes = 0;
     uint32_t num_blocks = 0;
 
-    if (file_version_ >= kFileVersion) {
+    if (file_version_ >= kFileVersionV9) {
         if (!ReadT(address_format_version) ||
             !ReadT(v9_page_size) ||
             !ReadT(v9_entry_size) ||
@@ -874,7 +885,7 @@ Status ClusterStoreReader::ParseClusterBlockView(
     uint32_t v9_payload_offset = 0;
     uint32_t v9_payload_bytes = 0;
 
-    if (file_version_ >= kFileVersion) {
+    if (file_version_ >= kFileVersionV9) {
         uint32_t address_format_version = 0;
         uint32_t address_entry_size = 0;
         uint32_t num_entries = 0;
@@ -1001,6 +1012,8 @@ Status ClusterStoreReader::ParseClusterBlockView(
     out.num_fastscan_blocks = entry.num_fastscan_blocks;
     out.exrabitq_entries = (ex_entry_size > 0) ? block_ptr + region1_size : nullptr;
     out.exrabitq_entry_size = ex_entry_size;
+    out.exrabitq_sign_bytes = exrabitq_sign_bytes();
+    out.exrabitq_sign_packed = (file_version_ >= kFileVersion);
     out.num_records = entry.num_records;
     out.epsilon = entry.epsilon;
     out.raw_addresses = raw_addresses;
@@ -1067,6 +1080,8 @@ Status ClusterStoreReader::PreloadAllClusters() {
         view.num_fastscan_blocks = parsed.num_fastscan_blocks;
         view.exrabitq_entries = parsed.exrabitq_entries;
         view.exrabitq_entry_size = parsed.exrabitq_entry_size;
+        view.exrabitq_sign_bytes = parsed.exrabitq_sign_bytes;
+        view.exrabitq_sign_packed = parsed.exrabitq_sign_packed;
         view.num_records = parsed.num_records;
         view.epsilon = parsed.epsilon;
         view.raw_addresses = parsed.raw_addresses;
@@ -1212,9 +1227,25 @@ Status ClusterStoreReader::LoadCodes(
             const uint32_t region1_size = entry.num_fastscan_blocks * fb_bytes;
             const uint8_t* ex_ptr = cluster_data.codes_buffer.data() + region1_size +
                                     static_cast<size_t>(indices[i]) * ex_entry_sz;
+            const uint32_t sign_bytes = exrabitq_sign_bytes();
             out_codes[i].ex_code.assign(ex_ptr, ex_ptr + dim);
-            out_codes[i].ex_sign.assign(ex_ptr + dim, ex_ptr + 2 * dim);
-            std::memcpy(&out_codes[i].xipnorm, ex_ptr + 2 * dim, sizeof(float));
+            out_codes[i].ex_sign_packed.resize(PackedSignBytes(dim));
+            if (file_version_ >= kFileVersion) {
+                out_codes[i].ex_sign_packed.assign(ex_ptr + dim,
+                                                   ex_ptr + dim + sign_bytes);
+            } else {
+                std::fill(out_codes[i].ex_sign_packed.begin(),
+                          out_codes[i].ex_sign_packed.end(), 0);
+                const uint8_t* legacy_sign = ex_ptr + dim;
+                for (uint32_t d = 0; d < dim; ++d) {
+                    if (legacy_sign[d]) {
+                        out_codes[i].ex_sign_packed[d / 8] |=
+                            static_cast<uint8_t>(1u << (d % 8));
+                    }
+                }
+            }
+            std::memcpy(&out_codes[i].xipnorm, ex_ptr + dim + sign_bytes,
+                        sizeof(float));
         }
     }
 

@@ -40,6 +40,8 @@ struct ParsedCluster {
     struct ExRaBitQView {
         const uint8_t* code_abs = nullptr;
         const uint8_t* sign = nullptr;
+        uint32_t sign_bytes = 0;
+        bool sign_packed = false;
         float xipnorm = 0.0f;
     };
 
@@ -52,7 +54,9 @@ struct ParsedCluster {
 
     // --- Region 2: ExRaBitQ ---
     const uint8_t* exrabitq_entries = nullptr;  // Pointer to first entry (nullptr if bits=1)
-    uint32_t exrabitq_entry_size = 0;           // 2*D + 4 (0 if bits=1)
+    uint32_t exrabitq_entry_size = 0;           // dim + sign_bytes + 4 (format-dependent)
+    uint32_t exrabitq_sign_bytes = 0;           // dim for legacy, ceil(dim/8) for packed-sign
+    bool exrabitq_sign_packed = false;
 
     // --- Existing ---
     uint32_t num_records = 0;
@@ -88,7 +92,9 @@ struct ParsedCluster {
             exrabitq_entries + static_cast<size_t>(vec_idx) * exrabitq_entry_size;
         view.code_abs = entry;
         view.sign = entry + dim;
-        std::memcpy(&view.xipnorm, entry + 2 * dim, sizeof(float));
+        view.sign_bytes = exrabitq_sign_bytes;
+        view.sign_packed = exrabitq_sign_packed;
+        std::memcpy(&view.xipnorm, entry + dim + exrabitq_sign_bytes, sizeof(float));
         return view;
     }
 
@@ -100,11 +106,15 @@ struct ParsedCluster {
         return exrabitq_entries + static_cast<size_t>(vec_idx) * exrabitq_entry_size + dim;
     }
 
+    uint32_t ex_sign_bytes() const { return exrabitq_sign_bytes; }
+    bool ex_sign_is_packed() const { return exrabitq_sign_packed; }
+
     float xipnorm(uint32_t vec_idx, Dim dim) const {
         float val;
         std::memcpy(
             &val,
-            exrabitq_entries + static_cast<size_t>(vec_idx) * exrabitq_entry_size + 2 * dim,
+            exrabitq_entries + static_cast<size_t>(vec_idx) * exrabitq_entry_size +
+                dim + exrabitq_sign_bytes,
             sizeof(float));
         return val;
     }
