@@ -136,6 +136,11 @@ NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
     uint64_t* sign_code_words,
     uint32_t num_words,
     uint32_t dim) {
+    const uint32_t full_words = dim / 64;
+    const uint32_t tail_bits = dim % 64;
+    if (tail_bits != 0 && full_words < num_words) {
+        sign_code_words[full_words] = 0;
+    }
 #if defined(VDB_USE_AVX512)
     __m512 vscale = _mm512_set1_ps(inv_norm);
     __m512 vzero = _mm512_setzero_ps();
@@ -155,7 +160,12 @@ NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
         const __mmask16 mask = _mm512_cmp_ps_mask(v, vzero, _CMP_GE_OQ);
         const uint32_t word_idx = i / 64;
         const uint32_t bit_off = i % 64;
-        sign_code_words[word_idx] |= (static_cast<uint64_t>(mask) << bit_off);
+        const uint64_t bits = static_cast<uint64_t>(mask) << bit_off;
+        if (bit_off == 0) {
+            sign_code_words[word_idx] = bits;
+        } else {
+            sign_code_words[word_idx] |= bits;
+        }
         if (bit_off + 16 > 64 && word_idx + 1 < num_words) {
             sign_code_words[word_idx + 1] |=
                 (static_cast<uint64_t>(mask) >> (64 - bit_off));
@@ -184,7 +194,12 @@ NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
         const uint64_t mask = static_cast<uint64_t>(_mm256_movemask_ps(ge));
         const uint32_t word_idx = i / 64;
         const uint32_t bit_off = i % 64;
-        sign_code_words[word_idx] |= (mask << bit_off);
+        const uint64_t bits = mask << bit_off;
+        if (bit_off == 0) {
+            sign_code_words[word_idx] = bits;
+        } else {
+            sign_code_words[word_idx] |= bits;
+        }
         if (bit_off + 8 > 64 && word_idx + 1 < num_words) {
             sign_code_words[word_idx + 1] |= (mask >> (64 - bit_off));
         }
@@ -202,9 +217,12 @@ NormalizeSignSumResult SimdNormalizeSignSumMaxAbs(
         vec[i] *= inv_norm;
         result += vec[i];
         max_abs = std::max(max_abs, std::abs(vec[i]));
+        const uint32_t word_idx = i / 64;
+        const uint32_t bit_idx = i % 64;
+        if (bit_idx == 0) {
+            sign_code_words[word_idx] = 0;
+        }
         if (vec[i] >= 0.0f) {
-            const uint32_t word_idx = i / 64;
-            const uint32_t bit_idx = i % 64;
             sign_code_words[word_idx] |= (1ULL << bit_idx);
         }
     }

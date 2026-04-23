@@ -56,12 +56,21 @@ struct ProbeStats {
     uint32_t s2_uncertain = 0;
     uint32_t num_stage1_blocks = 0;
     uint32_t num_stage2_candidates = 0;
+    uint32_t num_stage2_block_lookups = 0;
+    uint32_t num_stage2_block_reuses = 0;
     double stage1_ms = 0;
     double stage1_estimate_ms = 0;
     double stage1_mask_ms = 0;
     double stage1_iterate_ms = 0;
     double stage1_classify_ms = 0;
     double stage2_ms = 0;
+    double stage2_collect_ms = 0;
+    double stage2_kernel_ms = 0;
+    double stage2_scatter_ms = 0;
+    double stage2_kernel_sign_flip_ms = 0;
+    double stage2_kernel_abs_fma_ms = 0;
+    double stage2_kernel_tail_ms = 0;
+    double stage2_kernel_reduce_ms = 0;
 };
 
 /// Cluster candidate classifier implementing the two-stage RaBitQ pipeline.

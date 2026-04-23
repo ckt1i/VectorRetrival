@@ -165,6 +165,31 @@
 - **THEN** 系统 MAY 使用 resident 专用轻量候选提交组织方式
 - **AND** 最终 recall 语义与结果排序 MUST 与参考路径保持一致
 
+## ADDED Requirements (from quantize-lut-fusion-simd-optimization)
+
+### Requirement: Query pipeline SHALL treat survivor compaction and batch classify as formal SIMD boundaries
+resident 查询路径在完成 block-driven submit 之后，系统 MUST 将 Stage1 survivor compaction 和 batch classify 视为正式的下一轮 SIMD 边界。后续优化 MAY 保持结果语义不变，但 MUST 允许从 SafeOut mask 到 survivor index、再到 SafeIn/Uncertain 分类的批量处理，而不继续把 `mask` 之后的主路径固定为逐 lane 控制流。
+
+#### Scenario: Survivor compaction is a formal optimization boundary
+- **WHEN** 一个 FastScan block 产生多个非-SafeOut 候选
+- **THEN** 系统 MUST 允许批量提取 survivor index
+- **AND** 该边界 MUST 可作为独立优化点继续演进
+
+#### Scenario: Batch classify preserves result semantics
+- **WHEN** Stage1 采用 batch classify 处理 survivor
+- **THEN** recall、最终排序和 SafeIn/Uncertain 语义 MUST 与参考路径保持一致
+
+### Requirement: Query pipeline SHALL expose address batch decode and submit-prep as follow-up SIMD candidates
+在 resident 查询路径下，`DecodeAddressBatch` 与 batch submit 前整理 SHALL 被视为正式的后续 SIMD / layout 优化点。实现 MAY 暂时保留标量内部逻辑，但系统 MUST 不把这两段重新隐藏回逐候选提交流程中。
+
+#### Scenario: Address batch decode remains batch-first
+- **WHEN** resident 路径处理一个 candidate batch
+- **THEN** 地址解码 MUST 保持批量接口和批量语义
+
+#### Scenario: Submit preparation remains batch-first
+- **WHEN** resident 路径准备一次 batch submit
+- **THEN** slot 分配、class 分组或后续整理 MUST 可以按 batch 粒度继续优化
+
 ---
 
 ## Feature: ClusterStoreReader Codes 缓存
@@ -260,3 +285,103 @@ The query pipeline SHALL allow coarse cluster selection to consume a centroid la
 - **THEN** `SafeIn` 候选仍然必须走 `ALL` 路径
 - **AND** `Uncertain` 候选仍然必须走 `VEC_ONLY` 路径
 - **AND** CRC estimate merge 与 early-stop 判定仍然必须仅在 cluster 边界更新
+
+## ADDED Requirements (from ip-exrabitq-two-stage-optimization)
+
+### Requirement: Query Pipeline Must Expose Stable Hotspot Boundaries
+The query pipeline SHALL expose stable timing and profiling boundaries for coarse selection, prepare, Stage 1, Stage 2, submit, and rerank so that optimization work can be evaluated without conflating multiple segments.
+
+#### Scenario: Fine-grained timing reports stage boundaries
+- **WHEN** fine-grained timing is enabled for benchmark analysis
+- **THEN** the system SHALL continue to report stable prepare, Stage 1, Stage 2, and submit boundaries that can be compared across optimization rounds
+
+#### Scenario: Clean perf excludes fine-grained timing pollution
+- **WHEN** clean perf is run with `fine_grained_timing=0`
+- **THEN** the query pipeline SHALL not execute prepare sub-stage timing code that materially pollutes the query CPU hotspot profile
+
+### Requirement: Stage 2 Optimization Shall Preserve Query Semantics
+The query pipeline SHALL preserve query semantics when optimizing Stage 2 `IPExRaBitQ`, including candidate ordering behavior, SafeIn/SafeOut semantics, and downstream rerank eligibility.
+
+#### Scenario: Stage 2 kernel replacement preserves classification behavior
+- **WHEN** the Stage 2 kernel is replaced by an optimized implementation
+- **THEN** the resulting Stage2 distance estimates and classification outcomes SHALL remain compatible with the existing query pipeline semantics
+
+#### Scenario: Later layout upgrades remain pipeline-compatible
+- **WHEN** a later stage introduces `sign bit-pack` or compact ex-code layout
+- **THEN** the query pipeline SHALL continue to present an equivalent Stage2 query contract to `ClusterProber` and downstream consumers
+
+## ADDED Requirements (from ipexrabitq-stage2-dualpath-optimization)
+
+### Requirement: Query pipeline SHALL support a packed-sign dedicated Stage2 kernel path
+The query pipeline SHALL support a Stage2 execution path that dispatches candidates with v10 packed-sign ExRaBitQ payloads to a packed-sign dedicated `IPExRaBitQ` kernel.
+
+#### Scenario: Packed-sign candidate dispatches to dedicated Stage2 path
+- **WHEN** the query pipeline boosts a candidate whose Stage2 payload is v10 packed-sign
+- **THEN** the pipeline SHALL dispatch that candidate through the packed-sign dedicated Stage2 kernel path
+
+### Requirement: Query pipeline SHALL support a batch Stage2 boosting path
+The query pipeline SHALL support a Stage2 batch boosting path that collects uncertain candidates and boosts them as a batch while preserving the same top-k result semantics.
+
+#### Scenario: Stage2 boosting happens after candidate collection
+- **WHEN** batch Stage2 boosting mode is active
+- **THEN** the query pipeline SHALL be able to collect uncertain candidates before issuing Stage2 boosting work
+- **AND** the final top-k semantics SHALL match the non-batch path
+
+### Requirement: Query pipeline SHALL preserve serving semantics across both Stage2 routes
+The query pipeline SHALL preserve recall, ranking, CRC, payload, and resident-serving semantics regardless of whether Stage2 uses the packed-sign dedicated kernel route or the batch boosting route.
+
+#### Scenario: Stage2 route does not change serving semantics
+- **WHEN** the query pipeline is run with the same query, index, and serving parameters under different Stage2 optimization routes
+- **THEN** the serving result semantics SHALL remain unchanged
+
+## ADDED Requirements (from exrabitq-storage-format-upgrade)
+
+### Requirement: Query pipeline SHALL support packed-sign ExRaBitQ Stage2 evaluation
+查询路径 MUST 支持在 `bits > 1` 且索引使用 packed-sign ExRaBitQ storage 版本时，直接以 packed sign 作为 Stage2 `IPExRaBitQ` 的输入，而不是继续要求逐维 `sign[dim bytes]` 作为查询期主表示。
+
+#### Scenario: Stage2 consumes packed sign directly
+- **WHEN** 查询路径在新格式 `.clu` 上执行 Stage2 ExRaBitQ estimation
+- **THEN** `IPExRaBitQ` 必须能够直接消费 packed sign
+- **AND** 查询路径不得要求解析阶段先把 packed sign 反解为逐维 byte-sign 才能进入 Stage2
+
+### Requirement: Packed-sign query path SHALL preserve current recall and ranking semantics
+引入 packed-sign ExRaBitQ storage 后，query pipeline MUST 保持与旧 byte-sign 格式一致的 recall 口径、结果排序语义和 resident serving 语义，不得因为 sign 存储形式变化而改变 top-k 定义。
+
+#### Scenario: New storage format does not change result semantics
+- **WHEN** 使用同一 query 集、相同索引内容和相同搜索参数比较 byte-sign 格式与 packed-sign 格式
+- **THEN** 查询输出的 recall 定义必须一致
+- **AND** 最终 top-k 排序语义必须一致
+
+### Requirement: Packed-sign query path SHALL remain cross-dimension compatible
+查询路径中的 packed-sign Stage2 实现 MUST 适用于不同常见维度，而不能只对单一维度硬编码。查询系统 SHALL 在 resident + IVF 路径下继续支持跨维度 block 化 Stage2 执行。
+
+#### Scenario: Packed-sign Stage2 supports multiple dimensions
+- **WHEN** 系统在不同常见 embedding 维度上运行 packed-sign ExRaBitQ Stage2
+- **THEN** 查询路径必须继续保持正确性
+- **AND** 不得要求只在单一维度上才能进入 packed-sign 主路径
+
+## ADDED Requirements (from ipexrabitq-compact-layout-rebuild)
+
+### Requirement: Query pipeline SHALL expose a compact Stage2 batch-block view
+The query pipeline SHALL expose a batch-block Stage2 view for compact `v11` indexes, rather than requiring the Stage2 hot path to reconstruct a batch from independent per-candidate pointers.
+
+#### Scenario: Parsed cluster exposes compact Stage2 block view
+- **WHEN** a resident or parsed cluster is opened from a `v11` compact index
+- **THEN** the query pipeline SHALL be able to retrieve a Stage2 batch-block view from that cluster
+- **AND** that view SHALL describe a compact Stage2 block rather than a single candidate payload
+
+### Requirement: Query pipeline SHALL support compact Stage2 block-aware dispatch
+The query pipeline SHALL support dispatching Stage2 boosting by compact batch block and lane selection, rather than only by uncertain candidate list iteration.
+
+#### Scenario: Stage2 dispatch follows block order
+- **WHEN** Stage1 produces uncertain candidates for a `v11` compact cluster
+- **THEN** the query pipeline SHALL transform them into block-aware Stage2 dispatch units
+- **AND** it SHALL drive Stage2 boosting from those block-aware units
+
+### Requirement: Compact Stage2 integration SHALL preserve query semantics
+Introducing compact Stage2 block views and block-aware dispatch SHALL NOT change recall computation, final result ordering, CRC semantics, payload semantics, or resident serving semantics.
+
+#### Scenario: Compact Stage2 path preserves serving contract
+- **WHEN** the query pipeline serves a query from a compact `v11` index
+- **THEN** the final query contract SHALL remain compatible with the existing serving path
+- **AND** compact Stage2 integration SHALL not require changes to the user-visible search interface

@@ -222,6 +222,21 @@ VDB_FORCE_INLINE void BuildLutAndStoreGroup(uint8_t* VDB_RESTRICT lut_out,
 #endif
 }
 
+VDB_FORCE_INLINE int16_t QuantizeLane14Bit(float value, float inv_width) {
+    float scaled = value * inv_width;
+    return static_cast<int16_t>(scaled + 0.5f - (scaled < 0.0f));
+}
+
+VDB_FORCE_INLINE void BuildFusedLutGroup(uint8_t* VDB_RESTRICT lut_out,
+                                         uint32_t group_idx,
+                                         int16_t q0,
+                                         int16_t q1,
+                                         int16_t q2,
+                                         int16_t q3,
+                                         int32_t* VDB_RESTRICT total_shift) {
+    BuildLutAndStoreGroup(lut_out, group_idx, q0, q1, q2, q3, total_shift);
+}
+
 }  // namespace
 
 // ============================================================================
@@ -412,15 +427,15 @@ float QuantizeQuery14BitWithMaxToFastScanLUT(
 
     const uint32_t M = dim >> 2;
     constexpr uint32_t kGroupsPerChunk = 4;
-    alignas(32) int16_t q_chunk[kGroupsPerChunk * 4];
 
     for (uint32_t group = 0; group < M; group += kGroupsPerChunk) {
         const uint32_t groups_this_round = std::min<uint32_t>(kGroupsPerChunk, M - group);
-        auto q0 = measure ? std::chrono::steady_clock::now()
-                          : std::chrono::steady_clock::time_point{};
 #if defined(VDB_USE_AVX512)
         uint32_t g = 0;
         if (groups_this_round == 4) {
+            alignas(32) int16_t q16[16];
+            auto q0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
             __m512 v = _mm512_loadu_ps(query + group * 4);
             const __m512 v_inv_width = _mm512_set1_ps(inv_width);
             const __m512 v_pos_bias = _mm512_set1_ps(0.5f);
@@ -439,28 +454,61 @@ float QuantizeQuery14BitWithMaxToFastScanLUT(
             __m128i qv3 = _mm256_extracti128_si256(q32_hi, 1);
             __m128i q16_lo = _mm_packs_epi32(qv0, qv1);
             __m128i q16_hi = _mm_packs_epi32(qv2, qv3);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk), q16_lo);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk + 8), q16_hi);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q16), q16_lo);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q16 + 8), q16_hi);
             if (quant_out_opt != nullptr) {
                 _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + group * 4), q16_lo);
                 _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + group * 4 + 8), q16_hi);
             }
+            if (measure) {
+                quantize_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - q0).count();
+            }
+            auto t0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
+            for (uint32_t group_off = 0; group_off < 4; ++group_off) {
+                const int16_t* q = q16 + group_off * 4;
+                BuildFusedLutGroup(
+                    lut_out, group + group_off, q[0], q[1], q[2], q[3], &total_shift);
+            }
+            if (measure) {
+                lut_build_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
+            }
             g = 4;
         }
         for (; g < groups_this_round; ++g) {
+            const uint32_t base_idx = (group + g) * 4;
+            int16_t qvals[4];
+            auto q0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
             for (int lane = 0; lane < 4; ++lane) {
-                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
-                float tmp = query[idx] * inv_width;
-                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
-                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                const uint32_t idx = base_idx + static_cast<uint32_t>(lane);
+                const int16_t q = QuantizeLane14Bit(query[idx], inv_width);
+                qvals[static_cast<uint32_t>(lane)] = q;
                 if (quant_out_opt != nullptr) {
                     quant_out_opt[idx] = q;
                 }
+            }
+            if (measure) {
+                quantize_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - q0).count();
+            }
+            auto t0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
+            BuildFusedLutGroup(
+                lut_out, group + g, qvals[0], qvals[1], qvals[2], qvals[3], &total_shift);
+            if (measure) {
+                lut_build_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
             }
         }
 #elif defined(VDB_USE_AVX2)
         uint32_t g = 0;
         for (; g + 2 <= groups_this_round; g += 2) {
+            alignas(16) int16_t q8[8];
+            auto q0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
             __m256 v = _mm256_loadu_ps(query + (group + g) * 4);
             const __m256 v_inv_width = _mm256_set1_ps(inv_width);
             const __m256 v_pos_bias = _mm256_set1_ps(0.5f);
@@ -474,51 +522,79 @@ float QuantizeQuery14BitWithMaxToFastScanLUT(
             __m128i q32_lo = _mm256_castsi256_si128(q32);
             __m128i q32_hi = _mm256_extracti128_si256(q32, 1);
             __m128i q16 = _mm_packs_epi32(q32_lo, q32_hi);
-            _mm_storeu_si128(reinterpret_cast<__m128i*>(q_chunk + g * 4), q16);
+            _mm_storeu_si128(reinterpret_cast<__m128i*>(q8), q16);
             if (quant_out_opt != nullptr) {
                 _mm_storeu_si128(reinterpret_cast<__m128i*>(quant_out_opt + (group + g) * 4), q16);
             }
+            if (measure) {
+                quantize_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - q0).count();
+            }
+            auto t0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
+            BuildFusedLutGroup(
+                lut_out, group + g, q8[0], q8[1], q8[2], q8[3], &total_shift);
+            BuildFusedLutGroup(
+                lut_out, group + g + 1, q8[4], q8[5], q8[6], q8[7], &total_shift);
+            if (measure) {
+                lut_build_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
+            }
         }
         for (; g < groups_this_round; ++g) {
+            const uint32_t base_idx = (group + g) * 4;
+            int16_t qvals[4];
+            auto q0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
             for (int lane = 0; lane < 4; ++lane) {
-                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
-                float tmp = query[idx] * inv_width;
-                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
-                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                const uint32_t idx = base_idx + static_cast<uint32_t>(lane);
+                const int16_t q = QuantizeLane14Bit(query[idx], inv_width);
+                qvals[static_cast<uint32_t>(lane)] = q;
                 if (quant_out_opt != nullptr) {
                     quant_out_opt[idx] = q;
                 }
+            }
+            if (measure) {
+                quantize_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - q0).count();
+            }
+            auto t0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
+            BuildFusedLutGroup(
+                lut_out, group + g, qvals[0], qvals[1], qvals[2], qvals[3], &total_shift);
+            if (measure) {
+                lut_build_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
             }
         }
 #else
         for (uint32_t g = 0; g < groups_this_round; ++g) {
+            const uint32_t base_idx = (group + g) * 4;
+            int16_t qvals[4];
+            auto q0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
             for (int lane = 0; lane < 4; ++lane) {
-                const uint32_t idx = (group + g) * 4 + static_cast<uint32_t>(lane);
-                float tmp = query[idx] * inv_width;
-                const int16_t q = static_cast<int16_t>(tmp + 0.5f - (tmp < 0.0f));
-                q_chunk[g * 4 + static_cast<uint32_t>(lane)] = q;
+                const uint32_t idx = base_idx + static_cast<uint32_t>(lane);
+                const int16_t q = QuantizeLane14Bit(query[idx], inv_width);
+                qvals[static_cast<uint32_t>(lane)] = q;
                 if (quant_out_opt != nullptr) {
                     quant_out_opt[idx] = q;
                 }
             }
+            if (measure) {
+                quantize_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - q0).count();
+            }
+            auto t0 = measure ? std::chrono::steady_clock::now()
+                              : std::chrono::steady_clock::time_point{};
+            BuildFusedLutGroup(
+                lut_out, group + g, qvals[0], qvals[1], qvals[2], qvals[3], &total_shift);
+            if (measure) {
+                lut_build_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t0).count();
+            }
         }
 #endif
-        if (measure) {
-            quantize_ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - q0).count();
-        }
-
-        auto t0 = measure ? std::chrono::steady_clock::now()
-                          : std::chrono::steady_clock::time_point{};
-        for (uint32_t g = 0; g < groups_this_round; ++g) {
-            const int16_t* q = q_chunk + g * 4;
-            BuildLutAndStoreGroup(
-                lut_out, group + g, q[0], q[1], q[2], q[3], &total_shift);
-        }
-        if (measure) {
-            lut_build_ms += std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - t0).count();
-        }
     }
 
     *fs_shift_out = total_shift;

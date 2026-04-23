@@ -403,14 +403,21 @@ void OverlapScheduler::ProbeResidentThinPath(
                 float est_kth = (est_heap_.size() >= est_top_k_)
                     ? est_heap_.front().first
                     : std::numeric_limits<float>::infinity();
-                if (crc_stopper_.ShouldStop(
-                        static_cast<uint32_t>(i + 1), est_kth)) {
-                    ctx.stats().early_stopped = true;
-                    ctx.stats().clusters_skipped =
-                        static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
-                    ctx.stats().crc_clusters_probed =
-                        static_cast<uint32_t>(i + 1);
-                    break;
+                auto t_crc_decision = std::chrono::steady_clock::now();
+                const bool should_stop = crc_stopper_.ShouldStop(
+                    static_cast<uint32_t>(i + 1), est_kth);
+                ctx.stats().crc_decision_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t_crc_decision).count();
+                if (should_stop) {
+                    ctx.stats().total_crc_would_stop++;
+                    if (!config_.crc_no_break) {
+                        ctx.stats().early_stopped = true;
+                        ctx.stats().clusters_skipped =
+                            static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                        ctx.stats().crc_clusters_probed =
+                            static_cast<uint32_t>(i + 1);
+                        break;
+                    }
                 }
             } else if (ctx.collector().Full() &&
                        ctx.collector().TopDistance() < index_.conann().d_k()) {
@@ -732,6 +739,7 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
 
     void FinalizeCluster() {
         if (crc_pending_) {
+            auto t_crc_merge = std::chrono::steady_clock::now();
             ctx_.stats().total_crc_estimates_merged +=
                 static_cast<uint32_t>(crc_estimates_.size());
             for (float est_dist : crc_estimates_) {
@@ -746,6 +754,8 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
             }
             crc_pending_ = false;
             crc_estimates_.clear();
+            ctx_.stats().crc_merge_ms += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - t_crc_merge).count();
         }
     }
 
@@ -785,8 +795,11 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
             ctx_.stats().unique_fetch_candidates++;
 
             if (sched_.use_crc_) {
+                auto t_crc_buffer = std::chrono::steady_clock::now();
                 crc_estimates_.push_back(batch.est_dist[i]);
                 ctx_.stats().total_crc_estimates_buffered++;
+                ctx_.stats().crc_buffer_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t_crc_buffer).count();
             }
 
             const bool use_vec_all =
@@ -915,6 +928,13 @@ void OverlapScheduler::ProbeCluster(
         ctx.stats().probe_stage1_iterate_ms += local_stats.stage1_iterate_ms;
         ctx.stats().probe_stage1_classify_only_ms += local_stats.stage1_classify_ms;
         ctx.stats().probe_stage2_ms += local_stats.stage2_ms;
+        ctx.stats().probe_stage2_collect_ms += local_stats.stage2_collect_ms;
+        ctx.stats().probe_stage2_kernel_ms += local_stats.stage2_kernel_ms;
+        ctx.stats().probe_stage2_scatter_ms += local_stats.stage2_scatter_ms;
+        ctx.stats().probe_stage2_kernel_sign_flip_ms += local_stats.stage2_kernel_sign_flip_ms;
+        ctx.stats().probe_stage2_kernel_abs_fma_ms += local_stats.stage2_kernel_abs_fma_ms;
+        ctx.stats().probe_stage2_kernel_tail_ms += local_stats.stage2_kernel_tail_ms;
+        ctx.stats().probe_stage2_kernel_reduce_ms += local_stats.stage2_kernel_reduce_ms;
     } else {
         const double stage1_unit =
             static_cast<double>(local_stats.num_stage1_blocks);
@@ -1084,32 +1104,39 @@ void OverlapScheduler::ProbeAndDrainInterleaved(
                 float est_kth = (est_heap_.size() >= est_top_k_)
                     ? est_heap_.front().first
                     : std::numeric_limits<float>::infinity();
-                if (crc_stopper_.ShouldStop(
-                        static_cast<uint32_t>(i + 1), est_kth)) {
-                    ctx.stats().early_stopped = true;
-                    ctx.stats().clusters_skipped =
-                        static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
-                    ctx.stats().crc_clusters_probed =
-                        static_cast<uint32_t>(i + 1);
-                    if (isolated_submission_mode_) {
-                        if (PendingDataRequestCount() > 0) {
-                            EmitPendingDataRequests(ctx, PendingDataRequestCount());
-                            ctx.stats().total_submit_window_flushes++;
-                            ctx.stats().total_submit_window_tail_flushes++;
+                auto t_crc_decision = std::chrono::steady_clock::now();
+                const bool should_stop = crc_stopper_.ShouldStop(
+                    static_cast<uint32_t>(i + 1), est_kth);
+                ctx.stats().crc_decision_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - t_crc_decision).count();
+                if (should_stop) {
+                    ctx.stats().total_crc_would_stop++;
+                    if (!config_.crc_no_break) {
+                        ctx.stats().early_stopped = true;
+                        ctx.stats().clusters_skipped =
+                            static_cast<uint32_t>(sorted_clusters.size() - 1 - i);
+                        ctx.stats().crc_clusters_probed =
+                            static_cast<uint32_t>(i + 1);
+                        if (isolated_submission_mode_) {
+                            if (PendingDataRequestCount() > 0) {
+                                EmitPendingDataRequests(ctx, PendingDataRequestCount());
+                                ctx.stats().total_submit_window_flushes++;
+                                ctx.stats().total_submit_window_tail_flushes++;
+                            }
+                            flush_isolated_readers(/*force=*/true,
+                                                   /*prioritize_cluster_reads=*/false,
+                                                   /*vec_batch_ready=*/true);
+                        } else {
+                            if (PendingDataRequestCount() > 0) {
+                                EmitPendingDataRequests(ctx, PendingDataRequestCount());
+                                ctx.stats().total_submit_window_flushes++;
+                                ctx.stats().total_submit_window_tail_flushes++;
+                            }
+                            flush_shared_reader(/*force=*/true,
+                                                /*prioritize_cluster_reads=*/false);
                         }
-                        flush_isolated_readers(/*force=*/true,
-                                               /*prioritize_cluster_reads=*/false,
-                                               /*vec_batch_ready=*/true);
-                    } else {
-                        if (PendingDataRequestCount() > 0) {
-                            EmitPendingDataRequests(ctx, PendingDataRequestCount());
-                            ctx.stats().total_submit_window_flushes++;
-                            ctx.stats().total_submit_window_tail_flushes++;
-                        }
-                        flush_shared_reader(/*force=*/true,
-                                            /*prioritize_cluster_reads=*/false);
+                        break;
                     }
-                    break;
                 }
             } else {
                 // Legacy early stop: exact L2 collector vs static d_k

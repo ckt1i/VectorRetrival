@@ -146,6 +146,12 @@ class Segment {
     uint64_t resident_cluster_mem_bytes() const {
         return clu_reader_.resident_cluster_mem_bytes();
     }
+    uint64_t resident_parallel_view_bytes() const {
+        return clu_reader_.resident_parallel_view_bytes();
+    }
+    double resident_parallel_view_build_ms() const {
+        return clu_reader_.resident_parallel_view_build_ms();
+    }
 
     const ClusterStoreReader::ResidentClusterView* GetResidentClusterView(
         uint32_t cluster_id) const {

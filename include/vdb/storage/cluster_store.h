@@ -91,6 +91,18 @@ class ClusterStoreReader {
         uint32_t exrabitq_entry_size = 0;
         uint32_t exrabitq_sign_bytes = 0;
         bool exrabitq_sign_packed = false;
+        uint32_t exrabitq_storage_version = 0;
+        const uint8_t* exrabitq_batch_blocks = nullptr;
+        uint32_t exrabitq_batch_block_size = 0;
+        uint32_t exrabitq_batch_size = 0;
+        uint32_t exrabitq_dim_block = 0;
+        uint32_t exrabitq_num_dim_blocks = 0;
+        uint32_t exrabitq_num_batch_blocks = 0;
+        std::vector<uint8_t> exrabitq_parallel_abs_blocks_storage;
+        std::vector<uint16_t> exrabitq_parallel_sign_words_storage;
+        uint32_t exrabitq_parallel_abs_block_size = 0;
+        uint32_t exrabitq_parallel_sign_words_per_block = 0;
+        uint32_t exrabitq_parallel_slices_per_dim_block = 0;
         uint32_t num_records = 0;
         float epsilon = 0.0f;
         const RawAddressEntryV2* raw_addresses = nullptr;
@@ -107,6 +119,26 @@ class ClusterStoreReader {
             pc.exrabitq_entry_size = exrabitq_entry_size;
             pc.exrabitq_sign_bytes = exrabitq_sign_bytes;
             pc.exrabitq_sign_packed = exrabitq_sign_packed;
+            pc.exrabitq_storage_version = exrabitq_storage_version;
+            pc.exrabitq_batch_blocks = exrabitq_batch_blocks;
+            pc.exrabitq_batch_block_size = exrabitq_batch_block_size;
+            pc.exrabitq_batch_size = exrabitq_batch_size;
+            pc.exrabitq_dim_block = exrabitq_dim_block;
+            pc.exrabitq_num_dim_blocks = exrabitq_num_dim_blocks;
+            pc.exrabitq_num_batch_blocks = exrabitq_num_batch_blocks;
+            pc.exrabitq_parallel_abs_blocks =
+                exrabitq_parallel_abs_blocks_storage.empty()
+                ? nullptr
+                : exrabitq_parallel_abs_blocks_storage.data();
+            pc.exrabitq_parallel_sign_words =
+                exrabitq_parallel_sign_words_storage.empty()
+                ? nullptr
+                : exrabitq_parallel_sign_words_storage.data();
+            pc.exrabitq_parallel_abs_block_size = exrabitq_parallel_abs_block_size;
+            pc.exrabitq_parallel_sign_words_per_block =
+                exrabitq_parallel_sign_words_per_block;
+            pc.exrabitq_parallel_slices_per_dim_block =
+                exrabitq_parallel_slices_per_dim_block;
             pc.num_records = num_records;
             pc.epsilon = epsilon;
             pc.raw_addresses = raw_addresses;
@@ -171,6 +203,8 @@ class ClusterStoreReader {
     const ResidentClusterView* GetResidentClusterView(uint32_t cluster_id) const;
     const query::ParsedCluster* GetResidentParsedCluster(uint32_t cluster_id) const;
     uint64_t resident_cluster_mem_bytes() const { return resident_cluster_mem_bytes_; }
+    uint64_t resident_parallel_view_bytes() const { return resident_parallel_view_bytes_; }
+    double resident_parallel_view_build_ms() const { return resident_parallel_view_build_ms_; }
     bool is_open() const { return fd_ >= 0; }
 
  private:
@@ -198,6 +232,8 @@ class ClusterStoreReader {
     uint64_t resident_preload_bytes_ = 0;
     uint64_t resident_cluster_mem_bytes_ = 0;
     double resident_preload_time_ms_ = 0.0;
+    uint64_t resident_parallel_view_bytes_ = 0;
+    double resident_parallel_view_build_ms_ = 0.0;
 
     uint32_t num_code_words() const { return (info_.dim + 63) / 64; }
     uint32_t fastscan_packed_size() const { return info_.dim * 4; }
@@ -211,7 +247,27 @@ class ClusterStoreReader {
     }
     uint32_t exrabitq_entry_size() const {
         if (info_.rabitq_config.bits <= 1) return 0;
+        if (file_version_ >= 11) return 0;
         return info_.dim + exrabitq_sign_bytes() + sizeof(float);
+    }
+    uint32_t exrabitq_batch_size() const { return 8; }
+    uint32_t exrabitq_dim_block() const { return 64; }
+    uint32_t exrabitq_num_batch_blocks(uint32_t num_records) const {
+        const uint32_t bs = exrabitq_batch_size();
+        return bs == 0 ? 0 : (num_records + bs - 1) / bs;
+    }
+    uint32_t exrabitq_dim_block_count() const {
+        const uint32_t db = exrabitq_dim_block();
+        return db == 0 ? 0 : (info_.dim + db - 1) / db;
+    }
+    uint32_t exrabitq_batch_block_size() const {
+        if (info_.rabitq_config.bits <= 1 || file_version_ < 11) return 0;
+        const uint32_t batch = exrabitq_batch_size();
+        const uint32_t db = exrabitq_dim_block();
+        const uint32_t blocks = exrabitq_dim_block_count();
+        const uint32_t abs_bytes = blocks * batch * db;
+        const uint32_t sign_bytes = blocks * batch * (db / 8);
+        return sizeof(uint32_t) + abs_bytes + sign_bytes + batch * sizeof(float);
     }
 
     Status ParseClusterBlockView(uint32_t cluster_id,

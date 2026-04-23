@@ -9,7 +9,7 @@
 - [x] 2.1 调整 `RaBitQCode` / encoder 输出，使 packed sign 成为 ExRaBitQ 的持久化主表示
 - [x] 2.2 更新 `ClusterStoreWriter::WriteVectors()`，按新版本写出 `ex_code + packed_sign + xipnorm`
 - [x] 2.3 更新 `ClusterStoreReader` 的 entry-size 计算和 parse 逻辑，使其按 file version 区分旧/新 ExRaBitQ 布局
-- [ ] 2.4 明确旧 reader / 新 reader 对不同版本 `.clu` 的接受、拒绝和错误提示行为
+- [x] 2.4 明确旧 reader / 新 reader 对不同版本 `.clu` 的接受、拒绝和错误提示行为
 
 ## 3. Resident Parse And Query Path
 

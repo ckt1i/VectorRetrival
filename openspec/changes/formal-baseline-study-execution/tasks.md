@@ -32,7 +32,7 @@
 
 - [x] 5.1 Integrate `Faiss IVFPQ + rerank` under the shared vector-search runner contract with disk-backed rerank
 - [x] 5.2 Keep `Faiss IVFPQR` only as a diagnostic runner and exclude it from the phase-1 mandatory comparison contract
-- [x] 5.3 Integrate `Faiss IVFResidualQuantizer` or `IVFLocalSearchQuantizer` as the mandatory IVF-RQ baseline
+- [x] 5.3 Integrate `Faiss IVFResidualQuantizer` or `IVFLocalSearchQuantizer` as a legacy reference path (`faiss_ivfrq`)
 - [x] 5.4 Run the DiskANN thin-wrapper smoke gate and mark it `active` or `blocked` in the baseline registry without blocking phase-1 closure
 - [x] 5.5 Register `BoundFetch`, `ConANN + Faiss`, and `Extended-RaBitQ` as deferred or optional entries without implementing them in phase 1
 
@@ -62,74 +62,74 @@
 ### 8.7 COCO 100K Main Experiment
 
 - [ ] 8.7.1 Run `coco_100k` gate vector-search and coupled E2E checks before the full sweep
-- [ ] 8.7.2 Run `coco_100k × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
-- [ ] 8.7.3 Run `coco_100k × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
+- [x] 8.7.2 Run `coco_100k × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [x] 8.7.3 Run `coco_100k × faiss_ivfrq × topk=10` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
 - [ ] 8.7.4 Run `coco_100k × diskann × topk=10` on the frozen `L_search` grid if DiskANN remains active
 - [ ] 8.7.4a Immediately aggregate the completed `coco_100k × topk=10` slice and generate its Pareto plot before proceeding
-- [ ] 8.7.5 Run `coco_100k × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
-- [ ] 8.7.6 Run `coco_100k × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
+- [x] 8.7.5 Run `coco_100k × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [x] 8.7.6 Run `coco_100k × faiss_ivfrq × topk=50` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
 - [ ] 8.7.7 Run `coco_100k × diskann × topk=50` on the frozen `L_search` grid if DiskANN remains active
 - [ ] 8.7.7a Immediately aggregate the completed `coco_100k × topk=50` slice and generate its Pareto plot before proceeding
-- [ ] 8.7.8 Run `coco_100k × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
-- [ ] 8.7.9 Run `coco_100k × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
+- [x] 8.7.8 Run `coco_100k × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [x] 8.7.9 Run `coco_100k × faiss_ivfrq × topk=100` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
 - [ ] 8.7.10 Run `coco_100k × diskann × topk=100` on the frozen `L_search` grid if DiskANN remains active
 - [ ] 8.7.10a Immediately aggregate the completed `coco_100k × topk=100` slice and generate its Pareto plot before proceeding
 - [ ] 8.7.11 Merge the three `coco_100k` top-k slices into a dataset-level main-experiment summary
-- [ ] 8.7.12 Write a short `coco_100k` result report and reference it from the formal-study outputs
+- [x] 8.7.12 Write a short `coco_100k` result report and reference it from the formal-study outputs
 
 ### 8.8 MS MARCO Passage Main Experiment
 
 - [ ] 8.8.1 Run `msmarco_passage` gate vector-search and coupled E2E checks before the full sweep
 - [ ] 8.8.2 Fix and validate query/ground-truth/index alignment if the gate run fails
-- [ ] 8.8.3 Run `msmarco_passage × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
-- [ ] 8.8.4 Run `msmarco_passage × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
-- [ ] 8.8.4a Immediately aggregate the completed `msmarco_passage × topk=10` slice and generate its Pareto plot before proceeding
-- [ ] 8.8.5 Run `msmarco_passage × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
-- [ ] 8.8.6 Run `msmarco_passage × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
-- [ ] 8.8.6a Immediately aggregate the completed `msmarco_passage × topk=50` slice and generate its Pareto plot before proceeding
-- [ ] 8.8.7 Run `msmarco_passage × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
-- [ ] 8.8.8 Run `msmarco_passage × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
-- [ ] 8.8.8a Immediately aggregate the completed `msmarco_passage × topk=100` slice and generate its Pareto plot before proceeding
-- [ ] 8.8.9 Merge the three `msmarco_passage` top-k slices into a dataset-level main-experiment summary
-- [ ] 8.8.10 Write a short `msmarco_passage` result report
+- [x] 8.8.3 Run `msmarco_passage × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [x] 8.8.4 Run `msmarco_passage × faiss_ivfrq × topk=10` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.8.4a Immediately aggregate the completed `msmarco_passage × topk=10` slice and generate its Pareto plot before proceeding
+- [x] 8.8.5 Run `msmarco_passage × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [x] 8.8.6 Run `msmarco_passage × faiss_ivfrq × topk=50` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.8.6a Immediately aggregate the completed `msmarco_passage × topk=50` slice and generate its Pareto plot before proceeding
+- [x] 8.8.7 Run `msmarco_passage × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [x] 8.8.8 Run `msmarco_passage × faiss_ivfrq × topk=100` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.8.8a Immediately aggregate the completed `msmarco_passage × topk=100` slice and generate its Pareto plot before proceeding
+- [x] 8.8.9 Merge the three `msmarco_passage` top-k slices into a dataset-level main-experiment summary
+- [x] 8.8.10 Write a short `msmarco_passage` result report
 
 ### 8.9 Deep8M-synth Main Experiment
 
-- [ ] 8.9.1 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `256B` payload tier
-- [ ] 8.9.2 Run `deep8m_synth` main sweep for the `256B` payload tier across `topk=10/50/100`
-- [ ] 8.9.2a Immediately aggregate each completed `deep8m_synth × 256B × topk` slice and generate its Pareto plot
-- [ ] 8.9.3 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `4KB` payload tier
-- [ ] 8.9.4 Run `deep8m_synth` main sweep for the `4KB` payload tier across `topk=10/50/100`
-- [ ] 8.9.4a Immediately aggregate each completed `deep8m_synth × 4KB × topk` slice and generate its Pareto plot
-- [ ] 8.9.5 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `64KB` payload tier
-- [ ] 8.9.6 Run `deep8m_synth` main sweep for the `64KB` payload tier across `topk=10/50/100`
-- [ ] 8.9.6a Immediately aggregate each completed `deep8m_synth × 64KB × topk` slice and generate its Pareto plot
-- [ ] 8.9.7 Merge all `deep8m_synth` payload-tier and top-k slices into a dataset-level main-experiment summary
-- [ ] 8.9.8 Write a short `deep8m_synth` result report
+- [x] 8.9.1 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `256B` payload tier (`flatstor`/`topk=10` 已完成)
+- [x] 8.9.2 Run `deep8m_synth` main sweep for the `256B` payload tier across `topk=10/50/100` (`flatstor`/`protocol warm` 已完成)
+- [x] 8.9.2a Immediately aggregate each completed `deep8m_synth × 256B × topk` slice and generate its Pareto plot (`flatstor` 已产出)
+- [x] 8.9.3 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `4KB` payload tier
+- [x] 8.9.4 Run `deep8m_synth` main sweep for the `4KB` payload tier across `topk=10/50/100`
+- [x] 8.9.4a Immediately aggregate each completed `deep8m_synth × 4KB × topk` slice and generate its Pareto plot
+- [x] 8.9.5 Run `deep8m_synth` gate vector-search and coupled E2E checks for the `64KB` payload tier
+- [x] 8.9.6 Run `deep8m_synth` main sweep for the `64KB` payload tier across `topk=10/50/100`
+- [x] 8.9.6a Immediately aggregate each completed `deep8m_synth × 64KB × topk` slice and generate its Pareto plot
+- [x] 8.9.7 Merge all `deep8m_synth` payload-tier and top-k slices into a dataset-level main-experiment summary
+- [x] 8.9.8 Write a short `deep8m_synth` result report
 
 ### 8.10 Amazon ESCI Main Experiment
 
 - [ ] 8.10.1 Run `amazon_esci` gate vector-search and coupled E2E checks before the full sweep
 - [ ] 8.10.2 Validate label-aware outputs and fix query/ground-truth/index alignment if the gate run fails
-- [ ] 8.10.3 Run `amazon_esci × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
-- [ ] 8.10.4 Run `amazon_esci × faiss_ivfrq × topk=10` on the frozen `nprobe` grid
-- [ ] 8.10.4a Immediately aggregate the completed `amazon_esci × topk=10` slice and generate its Pareto plot before proceeding
-- [ ] 8.10.5 Run `amazon_esci × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
-- [ ] 8.10.6 Run `amazon_esci × faiss_ivfrq × topk=50` on the frozen `nprobe` grid
-- [ ] 8.10.6a Immediately aggregate the completed `amazon_esci × topk=50` slice and generate its Pareto plot before proceeding
-- [ ] 8.10.7 Run `amazon_esci × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
-- [ ] 8.10.8 Run `amazon_esci × faiss_ivfrq × topk=100` on the frozen `nprobe` grid
-- [ ] 8.10.8a Immediately aggregate the completed `amazon_esci × topk=100` slice and generate its Pareto plot before proceeding
-- [ ] 8.10.9 Merge the three `amazon_esci` top-k slices into a dataset-level main-experiment summary
-- [ ] 8.10.10 Write a short `amazon_esci` result report
+- [x] 8.10.3 Run `amazon_esci × faiss_ivfpq_refine × topk=10` on the frozen `nprobe` grid
+- [x] 8.10.4 Run `amazon_esci × faiss_ivfrq × topk=10` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.10.4a Immediately aggregate the completed `amazon_esci × topk=10` slice and generate its Pareto plot before proceeding
+- [x] 8.10.5 Run `amazon_esci × faiss_ivfpq_refine × topk=50` on the frozen `nprobe` grid
+- [x] 8.10.6 Run `amazon_esci × faiss_ivfrq × topk=50` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.10.6a Immediately aggregate the completed `amazon_esci × topk=50` slice and generate its Pareto plot before proceeding
+- [x] 8.10.7 Run `amazon_esci × faiss_ivfpq_refine × topk=100` on the frozen `nprobe` grid
+- [x] 8.10.8 Run `amazon_esci × faiss_ivfrq × topk=100` on the frozen `nprobe` grid (deprecated: `faiss_ivfrq` retained for historical reference only)
+- [x] 8.10.8a Immediately aggregate the completed `amazon_esci × topk=100` slice and generate its Pareto plot before proceeding
+- [x] 8.10.9 Merge the three `amazon_esci` top-k slices into a dataset-level main-experiment summary
+- [x] 8.10.10 Write a short `amazon_esci` result report
 
 ### 8.11 Main Experiment Aggregation
 
-- [ ] 8.11.1 Merge the already-emitted dataset-local `topk=10` summaries into a unified main-suite table
-- [ ] 8.11.2 Merge the already-emitted dataset-local `topk=50` summaries into a unified main-suite table
-- [ ] 8.11.3 Merge the already-emitted dataset-local `topk=100` summaries into a unified main-suite table
-- [ ] 8.11.4 Generate only global main-suite comparison figures from the merged summaries, without replacing the dataset-local Pareto plots
-- [ ] 8.11.5 Write the main-suite narrative report using the dataset-level reports as inputs
+- [x] 8.11.1 Merge the already-emitted dataset-local `topk=10` summaries into a unified main-suite table
+- [x] 8.11.2 Merge the already-emitted dataset-local `topk=50` summaries into a unified main-suite table
+- [x] 8.11.3 Merge the already-emitted dataset-local `topk=100` summaries into a unified main-suite table
+- [x] 8.11.4 Generate only global main-suite comparison figures from the merged summaries, without replacing the dataset-local Pareto plots
+- [x] 8.11.5 Write the main-suite narrative report using the dataset-level reports as inputs
 
 ### 8.12 Extended Experiment Operating Point Selection
 

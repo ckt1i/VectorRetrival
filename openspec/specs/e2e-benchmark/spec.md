@@ -49,7 +49,7 @@ The E2E benchmark workflow SHALL support direct before/after comparison between 
 - 新增 `GetFloatArg` 辅助函数支持 float 类型参数
 - config.json 输出中包含所有参数值（含默认值）
 
-## Additional Requirements (from fastscan-epsilon-bound-validation)
+## MODIFIED Requirements (from quantize-lut-fusion-simd-optimization)
 
 ### Requirement: E2E benchmark 必须报告 epsilon 验证元数据
 warm-serving benchmark 的输出必须包含足够的元数据，用来区分构建阶段的 epsilon 输入和运行时加载到的 FastScan 边界。
@@ -58,6 +58,34 @@ warm-serving benchmark 的输出必须包含足够的元数据，用来区分构
 - **当** `bench_e2e` 在重建索引或预构建索引上运行时
 - **则** 输出中必须包含加载后的运行时 `eps_ip`
 - **并且** 输出中必须标明这次运行使用的是重建后的索引，还是通过 `--index-dir` 复用的索引
+
+### Requirement: E2E benchmark MUST preserve prepare and Stage1 fine-grained observability for fused-kernel comparison
+在 query 主路径继续推进 fused `quantize + lut_build` 和 Stage1 后续 SIMD 优化时，benchmark 输出 SHALL 保持 prepare 与 Stage1 的细粒度子项可见，以便同口径比较参考路径、保留两段版和融合版。
+
+prepare 至少 MUST 包含：
+
+- `probe_prepare_subtract_ms`
+- `probe_prepare_normalize_ms`
+- `probe_prepare_quantize_ms`
+- `probe_prepare_lut_build_ms`
+
+Stage1 至少 MUST 包含：
+
+- `probe_stage1_estimate_ms`
+- `probe_stage1_mask_ms`
+- `probe_stage1_iterate_ms`
+- `probe_stage1_classify_only_ms`
+- `probe_submit_ms`
+
+#### Scenario: Fused prepare is benchmarked under the same field schema
+- **WHEN** 系统切换到 fused `quantize + lut_build` 路径
+- **THEN** benchmark 输出 MUST 仍然保留 prepare 四段字段
+- **AND** 这些字段 MUST 能与参考路径直接对比
+
+#### Scenario: Stage1 follow-up SIMD work remains attributable
+- **WHEN** survivor compaction、batch classify 或 submit-prep 被继续优化
+- **THEN** benchmark 输出 MUST 仍然能区分 Stage1 子项和 submit CPU 成本
+- **AND** 不得把 submit 开销重新混入 Stage1 内部字段
 
 ### Requirement: E2E benchmark 必须报告 Stage 1 和 Stage 2 的候选流统计
 用于 epsilon 验证和 resident 主路径分析的 benchmark 输出 MUST 包含分析候选流与 query 主路径变化所需的统计，而不能只输出最终延迟。除现有 Stage 1 / Stage 2 候选计数外，resident 主路径运行还 MUST 导出 `coarse_select_ms`、`probe_prepare_ms`、`probe_stage1_ms`、`probe_stage2_ms`、`probe_classify_ms` 和 `probe_submit_ms`。
@@ -231,3 +259,134 @@ The benchmark output SHALL continue to expose a separate coarse breakdown after 
 - **AND** 必须能够区分 `all` 批量 prepare 成本
 - **AND** 必须能够区分批量 SQE 发射成本
 - **AND** `uring_submit_ms` 仍然必须单独输出
+
+## MODIFIED Requirements (from ip-exrabitq-two-stage-optimization)
+
+### Requirement: Benchmark Must Support Clean Perf and Full E2E As Separate Truths
+The benchmark system SHALL treat clean perf and full E2E as separate but equally required evaluation modes for query optimization work.
+
+#### Scenario: Clean perf isolates query CPU hotspots
+- **WHEN** benchmark runs in query-only mode with `fine_grained_timing=0`
+- **THEN** it SHALL provide a hotspot profile that is not materially polluted by fine-grained timing instrumentation in prepare sub-stages
+
+#### Scenario: Full E2E remains the end-to-end truth
+- **WHEN** benchmark runs in the standard full E2E mode
+- **THEN** it SHALL continue to report recall and end-to-end latency fields required to judge whether a kernel optimization improves real search latency
+
+### Requirement: Benchmark Must Support Stage2 Optimization Decisions
+The benchmark system SHALL provide enough information to decide whether `IPExRaBitQ` optimization should stop at Stage 1 or continue into storage-layout changes.
+
+#### Scenario: Stage 1 decision uses clean perf
+- **WHEN** Stage 1 `IPExRaBitQ` kernel work is completed
+- **THEN** clean perf results SHALL be sufficient to determine whether `IPExRaBitQ` remains a significant hotspot
+
+#### Scenario: Stage 2 decision also checks end-to-end latency
+- **WHEN** clean perf shows kernel improvement
+- **THEN** full E2E results SHALL also be used to determine whether further storage-layout work is still justified
+
+## ADDED Requirements (from ipexrabitq-stage2-dualpath-optimization)
+
+### Requirement: Benchmarking SHALL measure the packed-sign kernel route before batch boosting
+The benchmark workflow SHALL evaluate the packed-sign dedicated Stage2 kernel route before Stage2 batch boosting is considered for implementation.
+
+#### Scenario: Packed-sign kernel route gets a standalone benchmark pass
+- **WHEN** this change is evaluated
+- **THEN** the benchmark workflow SHALL include a standalone measurement pass for the packed-sign dedicated Stage2 kernel route before any batch boosting result is used for decision making
+
+### Requirement: Benchmarking SHALL distinguish kernel gains from Stage2 structure gains
+The benchmark workflow SHALL preserve enough output and profiling context to distinguish gains from the packed-sign kernel route and gains from the Stage2 batch boosting route.
+
+#### Scenario: Perf result can be attributed to one route
+- **WHEN** clean perf is collected for this change
+- **THEN** the result SHALL remain sufficient to attribute whether the observed improvement came primarily from the Stage2 kernel path or from the Stage2 batch boosting structure
+
+### Requirement: This change SHALL continue to use clean perf and full E2E together
+The benchmark workflow for this change SHALL continue to use both clean perf and full E2E, so that Stage2 compute gains and end-to-end serving gains can both be judged.
+
+#### Scenario: Both benchmark modes are produced
+- **WHEN** a route in this change is evaluated
+- **THEN** the evaluation SHALL include query-only clean perf
+- **AND** it SHALL include the corresponding full E2E run under the formal serving parameters
+
+## ADDED Requirements (from crc-discrete-threshold-solver)
+
+### Requirement: E2E benchmark SHALL expose runtime CRC solver selection
+The runtime CRC preparation path in `bench_e2e` MUST allow explicit selection of the CRC calibration solver so that `brent` and `discrete_threshold` can be compared under the same serving operating point. The benchmark default SHALL remain `brent`.
+
+#### Scenario: Benchmark runs without a solver override
+- **WHEN** `bench_e2e` runs with CRC enabled and no solver override is provided
+- **THEN** it MUST use `brent` as the runtime calibration solver
+
+#### Scenario: Benchmark runs with a discrete solver override
+- **WHEN** `bench_e2e` runs with CRC enabled and `discrete_threshold` is selected
+- **THEN** it MUST run runtime CRC calibration with the discrete solver
+- **AND** it MUST report that solver choice in the benchmark output
+
+### Requirement: E2E benchmark SHALL export CRC solver provenance fields
+When runtime CRC calibration is performed, the benchmark output MUST include the solver provenance and internal cost fields needed to compare Brent and discrete threshold solving under the same index and query settings.
+
+#### Scenario: Runtime CRC provenance is written to results
+- **WHEN** `bench_e2e` completes a run that performs runtime CRC calibration
+- **THEN** the exported result MUST include `crc_solver`
+- **AND** it MUST include `crc_candidate_count`
+- **AND** it MUST include `crc_solver_ms`
+- **AND** it MUST include `crc_profile_build_ms`
+- **AND** it MUST include `crc_objective_evals`
+
+## ADDED Requirements (from exrabitq-storage-format-upgrade)
+
+### Requirement: E2E benchmark SHALL expose ExRaBitQ storage version metadata
+当 benchmark 在 `bits > 1` 的 ExRaBitQ 索引上运行时，输出 MUST 显式记录当前索引使用的 ExRaBitQ storage 版本或等价格式标识，以便区分旧的 byte-sign 布局和新的 packed-sign 布局。
+
+#### Scenario: Benchmark output records storage version
+- **WHEN** `bench_e2e` 在 ExRaBitQ 索引上完成一次运行并导出结果
+- **THEN** 结果中必须包含 ExRaBitQ storage version 或等价格式标识
+- **AND** 该字段必须足以区分 byte-sign 与 packed-sign 两种布局
+
+### Requirement: Benchmark SHALL validate packed-sign format under both clean perf and full E2E
+针对 ExRaBitQ storage 升级，benchmark MUST 同时提供 query-only clean perf 与 full E2E 两个口径的验收结果，以验证 packed-sign 是否真实降低了 Stage2 成本，并确认结果语义未退化。
+
+#### Scenario: Query-only benchmark can attribute Stage2 benefit
+- **WHEN** packed-sign 格式与旧格式进行 query-only perf 对比
+- **THEN** 输出必须能够用于判断 Stage2 热点占比是否迁移
+- **AND** 不得把该对比建立在被细粒度打点污染的口径上
+
+#### Scenario: Full E2E benchmark validates semantic compatibility
+- **WHEN** packed-sign 格式与旧格式进行 full E2E 对比
+- **THEN** 输出必须包含 recall 和端到端时延字段
+- **AND** 必须能够确认 packed-sign 未改变结果语义
+
+### Requirement: Benchmark SHALL make rebuild / format provenance explicit
+当 benchmark 运行在升级后的 ExRaBitQ storage 格式上时，输出 MUST 能区分该结果来自旧格式索引还是新格式重建索引，并为后续 perf / 实验解释提供格式来源信息。
+
+#### Scenario: Output distinguishes rebuilt packed-sign index from legacy index
+- **WHEN** benchmark 导出一条 ExRaBitQ 结果记录
+- **THEN** 结果中必须能区分该运行使用的是 legacy byte-sign 索引还是 rebuilt packed-sign 索引
+- **AND** 该区分必须可用于后续分析和对照
+
+## ADDED Requirements (from ipexrabitq-compact-layout-rebuild)
+
+### Requirement: E2E benchmark SHALL report compact-layout rebuild identity
+The E2E benchmark output SHALL make it explicit whether a run used the legacy `v10 packed_sign` Stage2 layout or the rebuild-required `v11` compact layout.
+
+#### Scenario: Benchmark output distinguishes `v10` and `v11`
+- **WHEN** benchmark results are exported for Stage2 layout comparison
+- **THEN** the output SHALL identify whether the index uses `v10 packed_sign` or `v11 compact layout`
+- **AND** that identity SHALL be stable enough for before/after comparison
+
+### Requirement: E2E benchmark SHALL compare compact-layout serving against the current low-overhead baseline
+The benchmark workflow SHALL support direct comparison between the current low-overhead serving baseline and the rebuilt compact-layout serving path under the same query parameters.
+
+#### Scenario: Same operating point is run before and after compact rebuild
+- **WHEN** the compact layout change is evaluated
+- **THEN** benchmark runs SHALL use the same dataset, `nlist`, `nprobe`, `topk`, query count, preload mode, resident mode, and CRC settings before and after rebuild
+- **AND** the exported results SHALL remain directly comparable
+
+### Requirement: E2E benchmark SHALL expose Stage2 benefit after compact rebuild
+The benchmark output SHALL continue to expose Stage2 and end-to-end breakdown fields after compact rebuild, so that the effect of the new layout can be attributed.
+
+#### Scenario: Stage2 and E2E fields remain available after compact rebuild
+- **WHEN** benchmark runs on a `v11` compact index
+- **THEN** the output SHALL still include `avg_query_ms`
+- **AND** it SHALL still include `avg_probe_stage2_ms`
+- **AND** it SHALL still include the existing low-overhead query-path timing fields needed to explain the result

@@ -40,14 +40,21 @@ struct PreparedQuery {
     float                 fs_width = 0.0f;  // Quantization step width
     int32_t               fs_shift = 0;     // Accumulated v_min shift from BuildFastScanLUT
     uint8_t*              lut_aligned = nullptr;  // compatibility alias into scratch
+    uint32_t              rotated_size = 0;       // steady-state logical size
+    uint32_t              sign_code_size = 0;     // steady-state logical size
 };
 
 /// Reusable scratch owned by the query wrapper, but not part of the logical
 /// prepared-view contract.
 struct ClusterPreparedScratch {
+    std::vector<float> residual;       // residual or normalized pre-rotation buffer
     std::vector<int16_t> quant_query;   // 14-bit quantized q' (length = dim)
     std::vector<uint8_t> fastscan_lut;  // Packed VPSHUFB LUT storage
     uint8_t*             lut_aligned = nullptr;
+    const uint8_t*       lut_raw_base = nullptr;
+    uint32_t             residual_size = 0;
+    uint32_t             quant_query_size = 0;
+    uint32_t             fastscan_lut_size = 0;
 };
 
 /// Lightweight per-cluster view used by probe / FastScan consumers.

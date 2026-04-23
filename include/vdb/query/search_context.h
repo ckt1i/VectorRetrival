@@ -46,6 +46,7 @@ struct SearchConfig {
 
     // CRC early stop parameters (nullptr = use legacy d_k early stop)
     const index::CalibrationResults* crc_params = nullptr;
+    bool crc_no_break = false;  // experiment mode: evaluate CRC but never break
 
     // Submit batching: Submit when prepped() SQEs reach N (0 = submit every probe, original behavior).
     // NOTE: For workloads with many vec reads per cluster (e.g., ~26 reads/cluster with SQ depth=64),
@@ -71,6 +72,9 @@ struct SearchStats {
     uint32_t total_candidate_batches = 0;
     uint32_t total_crc_estimates_buffered = 0;
     uint32_t total_crc_estimates_merged = 0;
+    uint32_t total_crc_would_stop = 0;
+    uint32_t total_stage2_block_lookups = 0;
+    uint32_t total_stage2_block_reuses = 0;
     uint32_t duplicate_candidates = 0;
     uint32_t deduplicated_candidates = 0;
     uint32_t unique_fetch_candidates = 0;
@@ -94,6 +98,13 @@ struct SearchStats {
     double probe_stage1_iterate_ms = 0;
     double probe_stage1_classify_only_ms = 0;
     double probe_stage2_ms = 0;
+    double probe_stage2_collect_ms = 0;
+    double probe_stage2_kernel_ms = 0;
+    double probe_stage2_scatter_ms = 0;
+    double probe_stage2_kernel_sign_flip_ms = 0;
+    double probe_stage2_kernel_abs_fma_ms = 0;
+    double probe_stage2_kernel_tail_ms = 0;
+    double probe_stage2_kernel_reduce_ms = 0;
     double probe_classify_ms = 0;
     double probe_submit_ms = 0;
     double probe_submit_prepare_vec_only_ms = 0;
@@ -119,6 +130,9 @@ struct SearchStats {
     double pool_vector_read_ms = 0;         // Batch read/visit of prefetched vectors from memory pool
     double rerank_compute_ms = 0;           // Batch L2/top-k compute
     double remaining_payload_fetch_ms = 0;  // Final missing payload fetch
+    double crc_decision_ms = 0;             // Time spent inside CrcStopper::ShouldStop
+    double crc_buffer_ms = 0;               // Time spent buffering CRC estimates
+    double crc_merge_ms = 0;                // Time spent merging CRC estimates into est_heap
 };
 
 class SearchContext {

@@ -45,12 +45,22 @@ struct QueryScores {
 /// Computes CalibrationResults from a calibration query set + IVF clusters.
 class CrcCalibrator {
  public:
+    enum class Solver {
+        Brent,
+        DiscreteThreshold,
+    };
+
+    static const char* SolverName(Solver solver);
+
     struct Config {
         float alpha = 0.1f;          // target FNR upper bound
         uint32_t top_k = 10;         // k for top-k search
         float calib_ratio = 0.5f;    // fraction of queries for calibration
         float tune_ratio = 0.1f;     // fraction for tuning (k_reg, λ_reg)
         uint64_t seed = 42;          // random seed for query split
+        Solver solver = Solver::Brent;
+        bool use_stratified_split = false;  // distribute by query difficulty strata
+        uint32_t split_buckets = 4;        // bins for stratified split
     };
 
     /// Evaluation results from CRC calibration.
@@ -64,6 +74,11 @@ class CrcCalibrator {
         float recall_at_5 = 0.0f;
         float recall_at_10 = 0.0f;
         uint32_t test_size = 0;
+        Solver solver_used = Solver::Brent;
+        uint32_t candidate_count = 0;
+        uint32_t objective_evals = 0;
+        double profile_build_ms = 0.0;
+        double solver_ms = 0.0;
     };
 
     /// Core calibration — distance-space agnostic.

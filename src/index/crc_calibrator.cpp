@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <fstream>
@@ -272,26 +273,78 @@ static NormParams ComputeNormParams(const std::vector<QueryScores>& scores) {
     return {d_min, d_max};
 }
 
-static std::vector<std::vector<float>> NormalizeScores(
-    const std::vector<QueryScores>& scores, const NormParams& norm) {
+// subset static cache: reusable data independent of reg_lambda
+// ============================================================================
+
+struct QueryStaticCache {
+    std::vector<float> nonconf;          // [nlist]
+    std::vector<uint32_t> rank_by_step;  // [nlist], 1-based
+    std::vector<uint32_t> overlap_by_step;  // [nlist]
+    uint32_t gt_size = 0;
+};
+
+struct SubsetStaticCache {
+    std::vector<QueryStaticCache> queries;
+    uint32_t total_gt = 0;
+};
+
+static uint32_t ComputeOverlapCount(const std::vector<uint32_t>& predicted,
+                                    const std::vector<uint32_t>& gt) {
+    uint32_t overlap = 0;
+    for (uint32_t gt_id : gt) {
+        for (uint32_t pred_id : predicted) {
+            if (pred_id == gt_id) {
+                ++overlap;
+                break;
+            }
+        }
+    }
+    return overlap;
+}
+
+static SubsetStaticCache BuildSubsetStaticCache(
+    const std::vector<QueryScores>& scores,
+    const NormParams& norm,
+    const std::vector<std::vector<uint32_t>>& gt,
+    const std::vector<uint32_t>& query_indices) {
 
     float range = norm.d_max - norm.d_min;
     float inv_range = (range > 0.0f) ? (1.0f / range) : 0.0f;
 
-    std::vector<std::vector<float>> nonconf(scores.size());
+    SubsetStaticCache cache;
+    cache.queries.resize(scores.size());
+
     for (size_t q = 0; q < scores.size(); ++q) {
         uint32_t nlist = static_cast<uint32_t>(scores[q].raw_scores.size());
-        nonconf[q].resize(nlist);
+        uint32_t qi = query_indices[q];
+        const auto& gt_ids = gt[qi];
+
+        auto& qc = cache.queries[q];
+        qc.nonconf.resize(nlist);
+        qc.rank_by_step.resize(nlist);
+        qc.overlap_by_step.resize(nlist);
+        qc.gt_size = static_cast<uint32_t>(gt_ids.size());
+        cache.total_gt += qc.gt_size;
+
+        std::vector<std::pair<float, uint32_t>> sorted_nonconf(nlist);
         for (uint32_t p = 0; p < nlist; ++p) {
             float d = scores[q].raw_scores[p];
-            if (!std::isfinite(d)) {
-                nonconf[q][p] = 1.0f;  // heap not full
-            } else {
-                nonconf[q][p] = std::clamp((d - norm.d_min) * inv_range, 0.0f, 1.0f);
-            }
+            float nonconf = !std::isfinite(d)
+                                ? 1.0f
+                                : std::clamp((d - norm.d_min) * inv_range, 0.0f, 1.0f);
+            qc.nonconf[p] = nonconf;
+            sorted_nonconf[p] = {nonconf, p};
+            qc.overlap_by_step[p] =
+                ComputeOverlapCount(scores[q].predictions[p], gt_ids);
+        }
+        std::sort(sorted_nonconf.begin(), sorted_nonconf.end(),
+                  [](const auto& a, const auto& b) { return a.first > b.first; });
+        for (uint32_t j = 0; j < nlist; ++j) {
+            qc.rank_by_step[sorted_nonconf[j].second] = j + 1;
         }
     }
-    return nonconf;
+
+    return cache;
 }
 
 // ============================================================================
@@ -307,109 +360,243 @@ static float ComputeMaxRegVal(float reg_lambda, uint32_t nlist, uint32_t kreg) {
 }
 
 static std::vector<std::vector<float>> RegularizeScores(
-    const std::vector<std::vector<float>>& nonconf,
+    const SubsetStaticCache& cache,
     uint32_t nlist, float reg_lambda, uint32_t kreg) {
 
     float max_reg_val = ComputeMaxRegVal(reg_lambda, nlist, kreg);
 
-    std::vector<std::vector<float>> reg(nonconf.size());
-    for (size_t q = 0; q < nonconf.size(); ++q) {
-        // Sort clusters by nonconf score descending to compute rank.
-        std::vector<std::pair<float, uint32_t>> sorted(nlist);
+    std::vector<std::vector<float>> reg(cache.queries.size());
+    for (size_t q = 0; q < cache.queries.size(); ++q) {
+        const auto& qc = cache.queries[q];
         for (uint32_t p = 0; p < nlist; ++p) {
-            sorted[p] = {nonconf[q][p], p};
-        }
-        std::sort(sorted.begin(), sorted.end(),
-                  [](const auto& a, const auto& b) { return a.first > b.first; });
-
-        reg[q].resize(nlist);
-        for (uint32_t j = 0; j < nlist; ++j) {
-            uint32_t original_idx = sorted[j].second;
-            uint32_t rank = j + 1;  // 1-based
-            float E = (1.0f - nonconf[q][original_idx]) +
+            uint32_t rank = qc.rank_by_step[p];
+            float E = (1.0f - qc.nonconf[p]) +
                       reg_lambda * std::max(0, static_cast<int>(rank) -
                                                static_cast<int>(kreg));
-            reg[q][original_idx] = E / max_reg_val;
+            reg[q].push_back(E / max_reg_val);
         }
     }
     return reg;
 }
 
 // ============================================================================
-// compute_predictions: given λ, find stopping point per query
+// stop profiles: pre-sort once, reuse across repeated lambda evaluations
 // ============================================================================
 
-struct PredictionResult {
-    std::vector<std::vector<uint32_t>> predictions;  // [n_queries] predicted IDs
-    std::vector<int> clusters_searched;               // [n_queries] # clusters
+struct QueryStopProfile {
+    std::vector<float> sorted_scores;          // ascending reg_scores
+    std::vector<uint32_t> sorted_to_step;      // sorted idx -> original step
+    std::vector<uint32_t> clusters_searched;   // sorted idx -> # clusters
+    std::vector<uint32_t> overlap_at_sorted;   // sorted idx -> overlap count
 };
 
-static PredictionResult ComputePredictions(
-    float lambda,
+struct StopProfiles {
+    std::vector<QueryStopProfile> profiles;
+    uint32_t total_gt = 0;
+};
+
+struct LambdaEvalResult {
+    uint32_t total_overlap = 0;
+    uint32_t total_gt = 0;
+    uint64_t sum_clusters = 0;
+    uint32_t valid_queries = 0;
+    std::vector<int> selected_sorted_indices;  // -1 means no stop step selected
+};
+
+struct SolverStats {
+    uint32_t candidate_count = 0;
+    uint32_t objective_evals = 0;
+    double profile_build_ms = 0.0;
+    double solver_ms = 0.0;
+};
+
+static StopProfiles BuildStopProfiles(
     const std::vector<std::vector<float>>& reg_scores,
-    const std::vector<QueryScores>& all_scores) {
+    const SubsetStaticCache& cache) {
 
     size_t nq = reg_scores.size();
-    PredictionResult result;
-    result.predictions.resize(nq);
-    result.clusters_searched.resize(nq, -1);
+    StopProfiles out;
+    out.profiles.resize(nq);
+    out.total_gt = cache.total_gt;
 
     for (size_t q = 0; q < nq; ++q) {
         uint32_t nlist = static_cast<uint32_t>(reg_scores[q].size());
+        const auto& qc = cache.queries[q];
 
-        // Sort reg_scores ascending to find last one <= lambda.
-        std::vector<std::pair<float, uint32_t>> indexed(nlist);
+        auto& profile = out.profiles[q];
+        profile.sorted_scores.resize(nlist);
+        profile.sorted_to_step.resize(nlist);
+        profile.clusters_searched.resize(nlist);
+        profile.overlap_at_sorted.resize(nlist);
+
+        // Sort reg_scores ascending; preserve the legacy "last <= lambda" rule.
+        std::vector<std::pair<float, uint32_t>> indexed;
+        indexed.reserve(nlist);
         for (uint32_t p = 0; p < nlist; ++p) {
-            indexed[p] = {reg_scores[q][p], p};
+            indexed.push_back({reg_scores[q][p], p});
         }
         std::sort(indexed.begin(), indexed.end());
 
-        int last_valid = -1;
-        uint32_t last_index = 0;
-        for (size_t i = 0; i < indexed.size(); ++i) {
-            if (indexed[i].first <= lambda) {
-                last_valid = static_cast<int>(i);
-                last_index = indexed[i].second;
-            } else {
-                break;
-            }
-        }
-
-        if (last_valid >= 0) {
-            result.predictions[q] = all_scores[q].predictions[last_index];
-            result.clusters_searched[q] = last_valid + 1;
-        } else {
-            result.predictions[q] = {};
-            result.clusters_searched[q] = 0;
+        for (uint32_t i = 0; i < nlist; ++i) {
+            uint32_t step = indexed[i].second;
+            profile.sorted_scores[i] = indexed[i].first;
+            profile.sorted_to_step[i] = step;
+            profile.clusters_searched[i] = i + 1;
+            profile.overlap_at_sorted[i] = qc.overlap_by_step[step];
         }
     }
+    return out;
+}
+
+static int SelectStep(float lambda, const QueryStopProfile& profile) {
+    auto it = std::upper_bound(profile.sorted_scores.begin(),
+                               profile.sorted_scores.end(), lambda);
+    if (it == profile.sorted_scores.begin()) {
+        return -1;
+    }
+    return static_cast<int>(std::distance(profile.sorted_scores.begin(), it) - 1);
+}
+
+static LambdaEvalResult EvaluateLambda(float lambda,
+                                       const StopProfiles& profiles,
+                                       bool collect_selected_steps = false) {
+    LambdaEvalResult result;
+    result.total_gt = profiles.total_gt;
+    if (collect_selected_steps) {
+        result.selected_sorted_indices.resize(profiles.profiles.size(), -1);
+    }
+
+    for (size_t q = 0; q < profiles.profiles.size(); ++q) {
+        const auto& profile = profiles.profiles[q];
+        int selected = SelectStep(lambda, profile);
+        if (collect_selected_steps) {
+            result.selected_sorted_indices[q] = selected;
+        }
+        if (selected < 0) continue;
+
+        result.total_overlap += profile.overlap_at_sorted[static_cast<size_t>(selected)];
+        result.sum_clusters += profile.clusters_searched[static_cast<size_t>(selected)];
+        ++result.valid_queries;
+    }
+
     return result;
 }
 
-// ============================================================================
-// false_negative_rate
-// ============================================================================
+static double FalseNegativeRate(const LambdaEvalResult& eval) {
+    if (eval.total_gt == 0) return 0.0;
+    return 1.0 - static_cast<double>(eval.total_overlap) / eval.total_gt;
+}
 
-static double FalseNegativeRate(
-    const std::vector<std::vector<uint32_t>>& predictions,
-    const std::vector<std::vector<uint32_t>>& gt,
-    const std::vector<uint32_t>& query_indices) {
+// Difficulty-aware query ordering for stratified calibration splits.
+// Higher difficulty values indicate lower overlap at the midpoint probe step.
+static std::vector<float> ComputeQueryDifficulties(
+    const std::vector<QueryScores>& all_scores,
+    const std::vector<std::vector<uint32_t>>& ground_truth,
+    uint32_t nlist) {
+    std::vector<float> difficulty(all_scores.size(), 0.0f);
 
-    int total_overlap = 0;
-    int total_gt = 0;
-    for (size_t i = 0; i < predictions.size(); ++i) {
-        uint32_t qi = query_indices[i];
-        const auto& gt_ids = gt[qi];
-        const std::set<uint32_t> pred_set(predictions[i].begin(), predictions[i].end());
-        int overlap = 0;
-        for (uint32_t id : gt_ids) {
-            if (pred_set.count(id)) ++overlap;
+    if (all_scores.empty()) return difficulty;
+
+    uint32_t stride = std::max(1u, nlist / 2);
+    uint32_t step = std::min(nlist - 1, stride);
+
+    for (size_t qi = 0; qi < all_scores.size(); ++qi) {
+        const auto& qs = all_scores[qi];
+        const auto& gt = ground_truth[qi];
+        if (gt.empty() || qs.predictions.empty()) {
+            difficulty[qi] = 0.0f;
+            continue;
         }
-        total_overlap += overlap;
-        total_gt += static_cast<int>(gt_ids.size());
+        uint32_t overlap = ComputeOverlapCount(qs.predictions[step], gt);
+        float denom = static_cast<float>(gt.size());
+        if (denom > 0.0f) {
+            difficulty[qi] = 1.0f - (static_cast<float>(overlap) / denom);
+        }
     }
-    if (total_gt == 0) return 0.0;
-    return 1.0 - static_cast<double>(total_overlap) / total_gt;
+    return difficulty;
+}
+
+static void SplitQueryIndices(
+    const std::vector<float>& difficulty,
+    float calib_ratio,
+    float tune_ratio,
+    uint64_t seed,
+    bool use_stratified_split,
+    uint32_t split_buckets,
+    std::vector<uint32_t>& calib_idx,
+    std::vector<uint32_t>& tune_idx,
+    std::vector<uint32_t>& test_idx) {
+    const uint32_t num_queries = static_cast<uint32_t>(difficulty.size());
+    std::vector<uint32_t> indices(num_queries);
+    std::iota(indices.begin(), indices.end(), 0u);
+
+    uint32_t n_calib = static_cast<uint32_t>(num_queries * calib_ratio);
+    uint32_t n_tune = static_cast<uint32_t>(num_queries * tune_ratio);
+    if (n_calib < 1) n_calib = 1;
+    if (n_tune < 1) n_tune = 1;
+    uint32_t n_test = num_queries - n_calib - n_tune;
+    if (n_test < 1) {
+        n_tune = std::max(1u, num_queries - n_calib - 1);
+        n_test = num_queries - n_calib - n_tune;
+    }
+
+    if (!use_stratified_split || num_queries <= split_buckets || split_buckets <= 1) {
+        std::mt19937_64 rng(seed);
+        std::shuffle(indices.begin(), indices.end(), rng);
+        calib_idx.assign(indices.begin(), indices.begin() + n_calib);
+        tune_idx.assign(indices.begin() + n_calib,
+                        indices.begin() + n_calib + n_tune);
+        test_idx.assign(indices.begin() + n_calib + n_tune, indices.end());
+        return;
+    }
+
+    uint32_t bucket_count = std::min(split_buckets, num_queries);
+    std::vector<float> order = difficulty;
+    std::vector<uint32_t> sorted_idx(num_queries);
+    std::iota(sorted_idx.begin(), sorted_idx.end(), 0u);
+    std::sort(
+        sorted_idx.begin(), sorted_idx.end(),
+        [&](uint32_t a, uint32_t b) { return order[a] < order[b]; });
+
+    std::vector<std::vector<uint32_t>> buckets(bucket_count);
+    for (uint32_t i = 0; i < num_queries; ++i) {
+        buckets[i % bucket_count].push_back(sorted_idx[i]);
+    }
+
+    for (auto& bucket : buckets) {
+        std::mt19937_64 rng(seed + bucket.size());
+        std::shuffle(bucket.begin(), bucket.end(), rng);
+    }
+
+    std::vector<uint32_t> merged_order;
+    merged_order.reserve(num_queries);
+    for (uint32_t pos = 0; ; ++pos) {
+        bool added = false;
+        for (uint32_t b = 0; b < bucket_count; ++b) {
+            if (pos < buckets[b].size()) {
+                merged_order.push_back(buckets[b][pos]);
+                added = true;
+            }
+        }
+        if (!added) break;
+    }
+
+    uint32_t calib_end = std::min(num_queries, n_calib);
+    uint32_t tune_end = std::min(num_queries, calib_end + n_tune);
+    calib_idx.assign(merged_order.begin(),
+                     merged_order.begin() + calib_end);
+    tune_idx.assign(merged_order.begin() + calib_end,
+                    merged_order.begin() + tune_end);
+    test_idx.assign(merged_order.begin() + tune_end, merged_order.end());
+    // Safety fallbacks if bucketed order unexpectedly short.
+    if (calib_idx.size() < n_calib && !merged_order.empty()) {
+        indices = merged_order;
+        calib_idx.assign(indices.begin(), indices.begin() + std::min<uint32_t>(n_calib, num_queries));
+        tune_idx.assign(indices.begin() + calib_idx.size(),
+                        indices.begin() + std::min<uint32_t>(n_calib + n_tune, num_queries));
+        test_idx.assign(indices.begin() + calib_idx.size() + tune_idx.size(),
+                        indices.end());
+    }
 }
 
 // ============================================================================
@@ -418,27 +605,27 @@ static double FalseNegativeRate(
 
 struct BrentParams {
     float target_fnr;
-    const std::vector<std::vector<float>>* reg_scores;
-    const std::vector<QueryScores>* all_scores;
-    const std::vector<std::vector<uint32_t>>* gt;
-    const std::vector<uint32_t>* query_indices;
+    const StopProfiles* profiles;
+    uint32_t* objective_evals;
 };
 
 static double BrentObjective(double lambda, void* params) {
     auto* p = static_cast<BrentParams*>(params);
-    auto pred = ComputePredictions(static_cast<float>(lambda),
-                                   *p->reg_scores, *p->all_scores);
-    double fnr = FalseNegativeRate(pred.predictions, *p->gt, *p->query_indices);
+    if (p->objective_evals != nullptr) {
+        ++(*p->objective_evals);
+    }
+    auto eval = EvaluateLambda(static_cast<float>(lambda), *p->profiles);
+    double fnr = FalseNegativeRate(eval);
     return fnr - p->target_fnr;
 }
 
 static float BrentSolve(float target_fnr,
-                         const std::vector<std::vector<float>>& reg_scores,
-                         const std::vector<QueryScores>& all_scores,
-                         const std::vector<std::vector<uint32_t>>& gt,
-                         const std::vector<uint32_t>& query_indices) {
+                        const StopProfiles& profiles,
+                        SolverStats* stats = nullptr) {
 
-    BrentParams params{target_fnr, &reg_scores, &all_scores, &gt, &query_indices};
+    auto t_solver_start = std::chrono::steady_clock::now();
+    uint32_t objective_evals = 0;
+    BrentParams params{target_fnr, &profiles, &objective_evals};
 
     // Check boundary conditions.
     // CRC semantics: small λ → aggressive stopping → high FNR (f > 0)
@@ -471,7 +658,99 @@ static float BrentSolve(float target_fnr,
     }
 
     gsl_root_fsolver_free(solver);
+    if (stats != nullptr) {
+        stats->objective_evals = objective_evals;
+        stats->candidate_count = 0;
+        stats->solver_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_solver_start).count();
+    }
     return static_cast<float>(lamhat);
+}
+
+static std::vector<float> CollectCandidateThresholds(const StopProfiles& profiles) {
+    std::vector<float> candidates;
+    size_t total = 0;
+    for (const auto& profile : profiles.profiles) {
+        total += profile.sorted_scores.size();
+    }
+    candidates.reserve(total);
+    for (const auto& profile : profiles.profiles) {
+        candidates.insert(candidates.end(),
+                          profile.sorted_scores.begin(),
+                          profile.sorted_scores.end());
+    }
+    std::sort(candidates.begin(), candidates.end());
+    candidates.erase(std::unique(candidates.begin(), candidates.end()),
+                     candidates.end());
+    return candidates;
+}
+
+static float SolveDiscreteThreshold(float target_fnr,
+                                    const StopProfiles& profiles,
+                                    SolverStats* stats = nullptr) {
+    auto t_solver_start = std::chrono::steady_clock::now();
+    auto candidates = CollectCandidateThresholds(profiles);
+
+    float best_lambda = candidates.empty() ? 1.0f : candidates.back();
+    uint32_t objective_evals = 0;
+    if (!candidates.empty()) {
+        size_t lo = 0;
+        size_t hi = candidates.size();
+        size_t first_legal = candidates.size();
+        while (lo < hi) {
+            size_t mid = lo + (hi - lo) / 2;
+            ++objective_evals;
+            auto eval = EvaluateLambda(candidates[mid], profiles);
+            double fnr = FalseNegativeRate(eval);
+            if (fnr <= target_fnr) {
+                first_legal = mid;
+                hi = mid;
+            } else {
+                lo = mid + 1;
+            }
+        }
+
+        if (first_legal == candidates.size()) {
+            best_lambda = candidates.back();
+        } else {
+            auto best_eval = EvaluateLambda(candidates[first_legal], profiles);
+            ++objective_evals;
+            uint64_t best_num = best_eval.sum_clusters;
+            uint32_t best_den = std::max(best_eval.valid_queries, 1u);
+            best_lambda = candidates[first_legal];
+            for (size_t i = first_legal + 1; i < candidates.size(); ++i) {
+                ++objective_evals;
+                auto eval = EvaluateLambda(candidates[i], profiles);
+                uint64_t lhs = eval.sum_clusters * static_cast<uint64_t>(best_den);
+                uint64_t rhs = best_num * static_cast<uint64_t>(std::max(eval.valid_queries, 1u));
+                if (lhs != rhs) {
+                    break;
+                }
+                best_lambda = candidates[i];
+            }
+        }
+    }
+
+    if (stats != nullptr) {
+        stats->candidate_count = static_cast<uint32_t>(candidates.size());
+        stats->objective_evals = objective_evals;
+        stats->solver_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_solver_start).count();
+    }
+    return best_lambda;
+}
+
+static float SolveLamhat(CrcCalibrator::Solver solver,
+                         float target_fnr,
+                         const StopProfiles& profiles,
+                         SolverStats* stats = nullptr) {
+    switch (solver) {
+        case CrcCalibrator::Solver::Brent:
+            return BrentSolve(target_fnr, profiles, stats);
+        case CrcCalibrator::Solver::DiscreteThreshold:
+            return SolveDiscreteThreshold(target_fnr, profiles, stats);
+    }
+    return BrentSolve(target_fnr, profiles, stats);
 }
 
 // ============================================================================
@@ -479,44 +758,40 @@ static float BrentSolve(float target_fnr,
 // ============================================================================
 
 static float PickLambdaReg(
+    CrcCalibrator::Solver solver,
     float alpha, uint32_t kreg, uint32_t nlist,
-    const std::vector<std::vector<float>>& calib_nonconf,
-    const std::vector<QueryScores>& calib_scores,
-    const std::vector<uint32_t>& calib_indices,
-    const std::vector<std::vector<float>>& tune_nonconf,
-    const std::vector<QueryScores>& tune_scores,
-    const std::vector<uint32_t>& tune_indices,
-    const std::vector<std::vector<uint32_t>>& gt) {
+    const SubsetStaticCache& calib_cache,
+    const SubsetStaticCache& tune_cache) {
 
     static const float kLambdaValues[] = {0.0f, 0.001f, 0.01f, 0.1f};
     float best_lambda = 0.0f;
     float best_avg_cls = static_cast<float>(nlist);
 
-    int n_calib = static_cast<int>(calib_nonconf.size());
+    int n_calib = static_cast<int>(calib_cache.queries.size());
     float target_fnr = (static_cast<float>(n_calib) + 1.0f) / n_calib * alpha -
                        1.0f / (n_calib + 1.0f);
     if (target_fnr < 0.0f) target_fnr = 0.0f;
 
     for (float reg_lam : kLambdaValues) {
         // Regularize calib scores.
-        auto calib_reg = RegularizeScores(calib_nonconf, nlist, reg_lam, kreg);
+        auto calib_reg = RegularizeScores(calib_cache, nlist, reg_lam, kreg);
+        auto calib_profiles = BuildStopProfiles(calib_reg, calib_cache);
 
         // Find lamhat on calib set.
-        float lamhat = BrentSolve(target_fnr, calib_reg, calib_scores, gt, calib_indices);
+        float lamhat = SolveLamhat(solver, target_fnr, calib_profiles);
 
         // Regularize tune scores with same parameters.
-        auto tune_reg = RegularizeScores(tune_nonconf, nlist, reg_lam, kreg);
+        auto tune_reg = RegularizeScores(tune_cache, nlist, reg_lam, kreg);
+        auto tune_profiles = BuildStopProfiles(tune_reg, tune_cache);
 
         // Evaluate on tune set.
-        auto pred = ComputePredictions(lamhat, tune_reg, tune_scores);
-        double fnr = FalseNegativeRate(pred.predictions, gt, tune_indices);
+        auto eval = EvaluateLambda(lamhat, tune_profiles);
+        double fnr = FalseNegativeRate(eval);
 
         float avg_cls = 0.0f;
-        int valid = 0;
-        for (int c : pred.clusters_searched) {
-            if (c > 0) { avg_cls += c; ++valid; }
+        if (eval.valid_queries > 0) {
+            avg_cls = static_cast<float>(eval.sum_clusters) / eval.valid_queries;
         }
-        if (valid > 0) avg_cls /= valid;
 
         if (fnr <= alpha && avg_cls < best_avg_cls) {
             best_lambda = reg_lam;
@@ -548,9 +823,19 @@ static float ComputeRecall(const std::vector<uint32_t>& predicted,
 // CrcCalibrator::Calibrate — core (scores-only, distance-space agnostic)
 // ============================================================================
 
+const char* CrcCalibrator::SolverName(Solver solver) {
+    switch (solver) {
+        case Solver::Brent:
+            return "brent";
+        case Solver::DiscreteThreshold:
+            return "discrete_threshold";
+    }
+    return "brent";
+}
+
 std::pair<CalibrationResults, CrcCalibrator::EvalResults>
 CrcCalibrator::Calibrate(
-    const Config& config,
+const Config& config,
     const std::vector<QueryScores>& all_scores,
     uint32_t nlist) {
 
@@ -566,26 +851,13 @@ CrcCalibrator::Calibrate(
     }
 
     // Step 0: Split queries into calib / tune / test.
-    std::vector<uint32_t> indices(num_queries);
-    std::iota(indices.begin(), indices.end(), 0u);
-    std::mt19937_64 rng(config.seed);
-    std::shuffle(indices.begin(), indices.end(), rng);
-
-    uint32_t n_calib = static_cast<uint32_t>(num_queries * config.calib_ratio);
-    uint32_t n_tune = static_cast<uint32_t>(num_queries * config.tune_ratio);
-    if (n_calib < 1) n_calib = 1;
-    if (n_tune < 1) n_tune = 1;
-    uint32_t n_test = num_queries - n_calib - n_tune;
-    if (n_test < 1) {
-        n_tune = std::max(1u, num_queries - n_calib - 1);
-        n_test = num_queries - n_calib - n_tune;
-    }
-
-    std::vector<uint32_t> calib_idx(indices.begin(), indices.begin() + n_calib);
-    std::vector<uint32_t> tune_idx(indices.begin() + n_calib,
-                                   indices.begin() + n_calib + n_tune);
-    std::vector<uint32_t> test_idx(indices.begin() + n_calib + n_tune,
-                                   indices.end());
+    auto difficulties = ComputeQueryDifficulties(all_scores, ground_truth, nlist);
+    std::vector<uint32_t> calib_idx;
+    std::vector<uint32_t> tune_idx;
+    std::vector<uint32_t> test_idx;
+    SplitQueryIndices(difficulties, config.calib_ratio, config.tune_ratio,
+                      config.seed, config.use_stratified_split,
+                      config.split_buckets, calib_idx, tune_idx, test_idx);
 
     // Extract subset scores by reference (indices map into all_scores).
     auto extract_scores = [&](const std::vector<uint32_t>& idx) {
@@ -601,54 +873,72 @@ CrcCalibrator::Calibrate(
 
     // Step 2: Normalize using calib set statistics.
     auto norm = ComputeNormParams(calib_scores);
-    auto calib_nonconf = NormalizeScores(calib_scores, norm);
-    auto tune_nonconf = NormalizeScores(tune_scores, norm);
+    auto calib_cache = BuildSubsetStaticCache(calib_scores, norm, ground_truth, calib_idx);
+    auto tune_cache = BuildSubsetStaticCache(tune_scores, norm, ground_truth, tune_idx);
 
     // Step 3-4: Pick (kreg, reg_lambda) on tune set.
     uint32_t kreg = 1;
-    float reg_lambda = PickLambdaReg(config.alpha, kreg, nlist,
-                                     calib_nonconf, calib_scores, calib_idx,
-                                     tune_nonconf, tune_scores, tune_idx,
-                                     ground_truth);
+    float reg_lambda = PickLambdaReg(config.solver, config.alpha, kreg, nlist,
+                                     calib_cache, tune_cache);
 
     // Step 5: Final Brent solve on calib set with chosen parameters.
-    auto calib_reg = RegularizeScores(calib_nonconf, nlist, reg_lambda, kreg);
+    SolverStats solver_stats;
+    uint32_t n_calib = static_cast<uint32_t>(calib_idx.size());
+    if (n_calib < 1) n_calib = 1;
+    auto calib_reg = RegularizeScores(calib_cache, nlist, reg_lambda, kreg);
+    auto t_profile_start = std::chrono::steady_clock::now();
+    auto calib_profiles = BuildStopProfiles(calib_reg, calib_cache);
+    solver_stats.profile_build_ms =
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - t_profile_start).count();
     float target_fnr = (static_cast<float>(n_calib) + 1.0f) / n_calib *
                            config.alpha -
                        1.0f / (n_calib + 1.0f);
     if (target_fnr < 0.0f) target_fnr = 0.0f;
 
-    float lamhat = BrentSolve(target_fnr, calib_reg, calib_scores,
-                              ground_truth, calib_idx);
+    float lamhat = SolveLamhat(config.solver, target_fnr, calib_profiles,
+                               &solver_stats);
 
     CalibrationResults cal{lamhat, kreg, reg_lambda, norm.d_min, norm.d_max};
 
     // Step 6: Evaluate on test set.
     EvalResults eval;
     eval.test_size = static_cast<uint32_t>(test_idx.size());
+    eval.solver_used = config.solver;
+    eval.candidate_count = solver_stats.candidate_count;
+    eval.objective_evals = solver_stats.objective_evals;
+    eval.profile_build_ms = solver_stats.profile_build_ms;
+    eval.solver_ms = solver_stats.solver_ms;
 
     if (eval.test_size > 0) {
         auto test_scores = extract_scores(test_idx);
-        auto test_nonconf = NormalizeScores(test_scores, norm);
-        auto test_reg = RegularizeScores(test_nonconf, nlist, reg_lambda, kreg);
-        auto test_pred = ComputePredictions(lamhat, test_reg, test_scores);
+        auto test_cache = BuildSubsetStaticCache(test_scores, norm, ground_truth, test_idx);
+        auto test_reg = RegularizeScores(test_cache, nlist, reg_lambda, kreg);
+        auto test_profiles = BuildStopProfiles(test_reg, test_cache);
+        auto test_eval = EvaluateLambda(lamhat, test_profiles, true);
 
-        eval.actual_fnr = static_cast<float>(
-            FalseNegativeRate(test_pred.predictions, ground_truth, test_idx));
+        eval.actual_fnr = static_cast<float>(FalseNegativeRate(test_eval));
 
-        float sum_probed = 0.0f;
-        int valid = 0;
-        for (int c : test_pred.clusters_searched) {
-            if (c > 0) { sum_probed += c; ++valid; }
+        if (test_eval.valid_queries > 0) {
+            eval.avg_probed = static_cast<float>(test_eval.sum_clusters) /
+                              test_eval.valid_queries;
+        } else {
+            eval.avg_probed = 0.0f;
         }
-        eval.avg_probed = valid > 0 ? sum_probed / valid : 0.0f;
 
         float sum_r1 = 0, sum_r5 = 0, sum_r10 = 0;
         for (size_t i = 0; i < test_idx.size(); ++i) {
             uint32_t qi = test_idx[i];
-            sum_r1 += ComputeRecall(test_pred.predictions[i], ground_truth[qi], 1);
-            sum_r5 += ComputeRecall(test_pred.predictions[i], ground_truth[qi], 5);
-            sum_r10 += ComputeRecall(test_pred.predictions[i], ground_truth[qi],
+            int selected = test_eval.selected_sorted_indices[i];
+            std::vector<uint32_t> predicted;
+            if (selected >= 0) {
+                uint32_t step = test_profiles.profiles[i]
+                                    .sorted_to_step[static_cast<size_t>(selected)];
+                predicted = test_scores[i].predictions[step];
+            }
+            sum_r1 += ComputeRecall(predicted, ground_truth[qi], 1);
+            sum_r5 += ComputeRecall(predicted, ground_truth[qi], 5);
+            sum_r10 += ComputeRecall(predicted, ground_truth[qi],
                                      std::min(10u, config.top_k));
         }
         float n = static_cast<float>(test_idx.size());

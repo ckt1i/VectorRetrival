@@ -22,15 +22,49 @@ namespace {
 
 constexpr bool kUseFusedFastScanPrepare = true;
 
+void EnsurePrepareBuffers(Dim dim,
+                          uint32_t words_per_plane,
+                          PreparedQuery* pq,
+                          ClusterPreparedScratch* scratch) {
+    const uint32_t dim_u32 = static_cast<uint32_t>(dim);
+    const size_t lut_size = static_cast<size_t>(dim) * 8 + 63;
+
+    if (pq->rotated_size != dim_u32) {
+        pq->rotated.resize(dim);
+        pq->rotated_size = dim_u32;
+    }
+    if (pq->sign_code_size != words_per_plane) {
+        pq->sign_code.resize(words_per_plane);
+        pq->sign_code_size = words_per_plane;
+    }
+    if (scratch->residual_size != dim_u32) {
+        scratch->residual.resize(dim);
+        scratch->residual_size = dim_u32;
+    }
+    if (scratch->fastscan_lut_size != lut_size) {
+        scratch->fastscan_lut.resize(lut_size);
+        scratch->fastscan_lut_size = static_cast<uint32_t>(lut_size);
+    }
+    if (scratch->quant_query_size != dim_u32) {
+        scratch->quant_query.resize(dim);
+        scratch->quant_query_size = dim_u32;
+    }
+
+    const uint8_t* raw_base = scratch->fastscan_lut.data();
+    if (scratch->lut_raw_base != raw_base || scratch->lut_aligned == nullptr) {
+        uintptr_t raw = reinterpret_cast<uintptr_t>(scratch->fastscan_lut.data());
+        uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
+        scratch->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
+        scratch->lut_raw_base = raw_base;
+    }
+}
+
 void PrepareFastScanReference(const float* rotated,
                               float max_abs,
                               Dim dim,
                               PreparedQuery* pq,
                               ClusterPreparedScratch* scratch,
                               PrepareTimingBreakdown* timing) {
-    if (scratch->quant_query.size() < dim) {
-        scratch->quant_query.resize(dim);
-    }
     auto t0 = std::chrono::steady_clock::now();
     pq->fs_width = simd::QuantizeQuery14BitWithMax(
         rotated, max_abs, scratch->quant_query.data(), dim);
@@ -57,11 +91,6 @@ void PrepareFastScanFused(const float* rotated,
     simd::FastScanPrepareTimingBreakdown fastscan_timing;
     simd::FastScanPrepareTimingBreakdown* timing_ptr =
         (timing != nullptr) ? &fastscan_timing : nullptr;
-#ifndef NDEBUG
-    if (scratch->quant_query.size() < dim) {
-        scratch->quant_query.resize(dim);
-    }
-#endif
     pq->fs_width = simd::QuantizeQuery14BitWithMaxToFastScanLUT(
         rotated, max_abs, scratch->lut_aligned, dim, &pq->fs_shift, timing_ptr,
 #ifndef NDEBUG
@@ -148,9 +177,9 @@ void RaBitQEstimator::PrepareQueryInto(
     pq->dim       = dim_;
     pq->num_words = words_per_plane_;
     pq->bits      = bits_;
+    EnsurePrepareBuffers(dim_, words_per_plane_, pq, scratch);
 
-    // Use stack buffer for residual (dim is small, e.g. 96 → 384 bytes)
-    alignas(64) float residual[1024];
+    float* residual = scratch->residual.data();
 
     // Fused subtract + norm_sq in one memory pass
     auto t0 = std::chrono::steady_clock::now();
@@ -176,14 +205,9 @@ void RaBitQEstimator::PrepareQueryInto(
     }
 
     // Rotate — Apply reads from residual, writes to rotated
-    pq->rotated.resize(L);
     rotation.Apply(residual, pq->rotated.data());
 
     // Fused sign-quantize + sum_q in one memory pass
-    pq->sign_code.resize(words_per_plane_);
-    for (uint32_t w = 0; w < words_per_plane_; ++w) {
-        pq->sign_code[w] = 0;
-    }
     // inv_norm=1.0f: rotated is already unit-length; the multiply is a no-op
     simd::NormalizeSignSumResult norm_result =
         simd::SimdNormalizeSignSumMaxAbs(
@@ -195,17 +219,10 @@ void RaBitQEstimator::PrepareQueryInto(
     // FastScan prepare boundary:
     //   prepare_query.cpp owns subtract / normalize / sign / max_abs
     //   fastscan.cpp owns reference and fused quantize+LUT generation
-    const size_t lut_size = static_cast<size_t>(dim_) * 8;
-    if (scratch->fastscan_lut.capacity() < lut_size + 63) {
-        scratch->fastscan_lut.reserve(lut_size + 63);
-    }
-    scratch->fastscan_lut.resize(lut_size + 63);
-    uintptr_t raw = reinterpret_cast<uintptr_t>(scratch->fastscan_lut.data());
-    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
-    scratch->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
     // Note: BuildFastScanLUT writes every byte (M = dim/4 groups × 16 entries
-    // × 2 bytes lo/hi = lut_size bytes), so the prior zero-init is dead work.
+    // × 2 bytes lo/hi = dim*8 bytes), so the prior zero-init is dead work.
 #ifndef NDEBUG
+    const size_t lut_size = static_cast<size_t>(dim_) * 8;
     std::memset(scratch->lut_aligned, 0xCD, lut_size);  // sentinel to catch bugs
 #endif
 
@@ -238,10 +255,10 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
     pq->dim       = dim_;
     pq->num_words = words_per_plane_;
     pq->bits      = bits_;
+    EnsurePrepareBuffers(dim_, words_per_plane_, pq, scratch);
 
     // Step 1: diff = rotated_q - rotated_centroid; norm_sq = ‖diff‖²
     // Reuse pq->rotated as the diff buffer (same length L).
-    pq->rotated.resize(L);
     auto t0 = std::chrono::steady_clock::now();
     pq->norm_qc_sq = simd::SimdSubtractAndNormSq(
         rotated_q, rotated_centroid, pq->rotated.data(), static_cast<uint32_t>(L));
@@ -253,10 +270,6 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
 
     // Step 2: Fused normalize + sign-quantize + sum_q.
     // diff → normalized diff = diff / ‖diff‖, extracting sign bits and sum.
-    pq->sign_code.resize(words_per_plane_);
-    for (uint32_t w = 0; w < words_per_plane_; ++w) {
-        pq->sign_code[w] = 0;
-    }
     float inv_norm = (pq->norm_qc > 1e-30f) ? (1.0f / pq->norm_qc) : 1.0f;
     auto t1 = std::chrono::steady_clock::now();
     simd::NormalizeSignSumResult norm_result =
@@ -272,15 +285,8 @@ void RaBitQEstimator::PrepareQueryRotatedInto(
     }
 
     // Step 3: FastScan quantization + LUT (reference and fused paths live in fastscan.cpp)
-    const size_t lut_size = static_cast<size_t>(dim_) * 8;
-    if (scratch->fastscan_lut.capacity() < lut_size + 63) {
-        scratch->fastscan_lut.reserve(lut_size + 63);
-    }
-    scratch->fastscan_lut.resize(lut_size + 63);
-    uintptr_t raw = reinterpret_cast<uintptr_t>(scratch->fastscan_lut.data());
-    uintptr_t aligned = (raw + 63) & ~uintptr_t(63);
-    scratch->lut_aligned = reinterpret_cast<uint8_t*>(aligned);
 #ifndef NDEBUG
+    const size_t lut_size = static_cast<size_t>(dim_) * 8;
     std::memset(scratch->lut_aligned, 0xCD, lut_size);
 #endif
 

@@ -1,5 +1,6 @@
 #include "vdb/simd/ip_exrabitq.h"
 
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -389,6 +390,318 @@ void IPExRaBitQBatchPackedSign(const float* VDB_RESTRICT query,
             __builtin_trap();
         }
     }
+#endif
+}
+
+void IPExRaBitQBatchPackedSignCompact(const float* VDB_RESTRICT query,
+                                      const uint8_t* VDB_RESTRICT abs_blocks,
+                                      const uint8_t* VDB_RESTRICT sign_blocks,
+                                      uint32_t valid_count,
+                                      Dim dim,
+                                      uint32_t dim_block,
+                                      float* VDB_RESTRICT out_ip_raw,
+                                      IPExRaBitQBatchPackedSignCompactTiming* timing) {
+    const uint32_t num_dim_blocks = (dim + dim_block - 1) / dim_block;
+    const uint32_t sign_block_bytes = dim_block / 8;
+#if defined(VDB_USE_AVX512)
+    const bool measure = timing != nullptr;
+    __m512 dot[8];
+    __m512 bias[8];
+    for (uint32_t lane = 0; lane < valid_count; ++lane) {
+        dot[lane] = _mm512_setzero_ps();
+        bias[lane] = _mm512_setzero_ps();
+    }
+
+    for (uint32_t db = 0; db < num_dim_blocks; ++db) {
+        const uint32_t dim_start = db * dim_block;
+        const uint32_t remaining = std::min(dim_block, dim - dim_start);
+        const uint8_t* abs_base = abs_blocks + static_cast<size_t>(db) * 8 * dim_block;
+        const uint8_t* sign_base = sign_blocks + static_cast<size_t>(db) * 8 * sign_block_bytes;
+
+        uint32_t i = 0;
+        for (; i + 64 <= remaining; i += 64) {
+            const __m512 q0 = _mm512_loadu_ps(query + dim_start + i);
+            const __m512 q1 = _mm512_loadu_ps(query + dim_start + i + 16);
+            const __m512 q2 = _mm512_loadu_ps(query + dim_start + i + 32);
+            const __m512 q3 = _mm512_loadu_ps(query + dim_start + i + 48);
+            for (uint32_t lane = 0; lane < valid_count; ++lane) {
+                const auto sign_start = measure ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+                uint64_t sign_chunk = 0;
+                std::memcpy(&sign_chunk,
+                            sign_base + lane * sign_block_bytes + i / 8, sizeof(uint64_t));
+                const __m512 sq0 = FlipQuery16PackedChunkAvx512(q0, sign_chunk, 0);
+                const __m512 sq1 = FlipQuery16PackedChunkAvx512(q1, sign_chunk, 1);
+                const __m512 sq2 = FlipQuery16PackedChunkAvx512(q2, sign_chunk, 2);
+                const __m512 sq3 = FlipQuery16PackedChunkAvx512(q3, sign_chunk, 3);
+                if (measure) {
+                    timing->sign_flip_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - sign_start).count();
+                }
+
+                const auto abs_start = measure ? std::chrono::steady_clock::now()
+                                               : std::chrono::steady_clock::time_point{};
+                const uint8_t* lane_abs = abs_base + lane * dim_block + i;
+                dot[lane] = _mm512_fmadd_ps(sq0, LoadAbsMagnitude16Avx512(lane_abs), dot[lane]);
+                dot[lane] = _mm512_fmadd_ps(sq1, LoadAbsMagnitude16Avx512(lane_abs + 16), dot[lane]);
+                dot[lane] = _mm512_fmadd_ps(sq2, LoadAbsMagnitude16Avx512(lane_abs + 32), dot[lane]);
+                dot[lane] = _mm512_fmadd_ps(sq3, LoadAbsMagnitude16Avx512(lane_abs + 48), dot[lane]);
+                bias[lane] = _mm512_add_ps(bias[lane], sq0);
+                bias[lane] = _mm512_add_ps(bias[lane], sq1);
+                bias[lane] = _mm512_add_ps(bias[lane], sq2);
+                bias[lane] = _mm512_add_ps(bias[lane], sq3);
+                if (measure) {
+                    timing->abs_fma_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - abs_start).count();
+                }
+            }
+        }
+        for (; i + 32 <= remaining; i += 32) {
+            const __m512 q0 = _mm512_loadu_ps(query + dim_start + i);
+            const __m512 q1 = _mm512_loadu_ps(query + dim_start + i + 16);
+            for (uint32_t lane = 0; lane < valid_count; ++lane) {
+                const auto sign_start = measure ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+                uint64_t sign_chunk = 0;
+                std::memcpy(&sign_chunk,
+                            sign_base + lane * sign_block_bytes + i / 8,
+                            sizeof(uint32_t));
+                const __m512 sq0 = FlipQuery16PackedChunkAvx512(q0, sign_chunk, 0);
+                const __m512 sq1 = FlipQuery16PackedChunkAvx512(q1, sign_chunk, 1);
+                if (measure) {
+                    timing->sign_flip_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - sign_start).count();
+                }
+
+                const auto abs_start = measure ? std::chrono::steady_clock::now()
+                                               : std::chrono::steady_clock::time_point{};
+                const uint8_t* lane_abs = abs_base + lane * dim_block + i;
+                dot[lane] = _mm512_fmadd_ps(sq0, LoadAbsMagnitude16Avx512(lane_abs), dot[lane]);
+                dot[lane] = _mm512_fmadd_ps(sq1, LoadAbsMagnitude16Avx512(lane_abs + 16), dot[lane]);
+                bias[lane] = _mm512_add_ps(bias[lane], sq0);
+                bias[lane] = _mm512_add_ps(bias[lane], sq1);
+                if (measure) {
+                    timing->abs_fma_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - abs_start).count();
+                }
+            }
+        }
+        for (; i + 16 <= remaining; i += 16) {
+            const __m512 q0 = _mm512_loadu_ps(query + dim_start + i);
+            for (uint32_t lane = 0; lane < valid_count; ++lane) {
+                const auto sign_start = measure ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+                uint64_t sign_chunk = 0;
+                std::memcpy(&sign_chunk,
+                            sign_base + lane * sign_block_bytes + i / 8,
+                            sizeof(uint16_t));
+                const __m512 sq0 = FlipQuery16PackedChunkAvx512(q0, sign_chunk, 0);
+                if (measure) {
+                    timing->sign_flip_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - sign_start).count();
+                }
+
+                const auto abs_start = measure ? std::chrono::steady_clock::now()
+                                               : std::chrono::steady_clock::time_point{};
+                const uint8_t* lane_abs = abs_base + lane * dim_block + i;
+                dot[lane] = _mm512_fmadd_ps(sq0, LoadAbsMagnitude16Avx512(lane_abs), dot[lane]);
+                bias[lane] = _mm512_add_ps(bias[lane], sq0);
+                if (measure) {
+                    timing->abs_fma_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - abs_start).count();
+                }
+            }
+        }
+        for (; i < remaining; ++i) {
+            const auto tail_start = measure ? std::chrono::steady_clock::now()
+                                            : std::chrono::steady_clock::time_point{};
+            for (uint32_t lane = 0; lane < valid_count; ++lane) {
+                const bool positive =
+                    ((sign_base[lane * sign_block_bytes + i / 8] >> (i % 8)) & 1u) != 0;
+                const float signed_q = positive ? query[dim_start + i] : -query[dim_start + i];
+                out_ip_raw[lane] +=
+                    signed_q * static_cast<float>(abs_base[lane * dim_block + i]) + 0.5f * signed_q;
+            }
+            if (measure) {
+                timing->tail_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - tail_start).count();
+            }
+        }
+    }
+    const auto reduce_start = measure ? std::chrono::steady_clock::now()
+                                      : std::chrono::steady_clock::time_point{};
+    for (uint32_t lane = 0; lane < valid_count; ++lane) {
+        out_ip_raw[lane] += _mm512_reduce_add_ps(dot[lane]) +
+                            0.5f * _mm512_reduce_add_ps(bias[lane]);
+    }
+    if (measure) {
+        timing->reduce_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - reduce_start).count();
+    }
+#else
+    const uint8_t* code_abs_ptrs[8] = {};
+    const uint8_t* packed_sign_ptrs[8] = {};
+    alignas(64) uint8_t abs_scratch[8][1536] = {};
+    alignas(64) uint8_t sign_scratch[8][192] = {};
+    for (uint32_t lane = 0; lane < valid_count; ++lane) {
+        for (uint32_t db = 0; db < num_dim_blocks; ++db) {
+            const uint32_t dim_start = db * dim_block;
+            const uint32_t copy = std::min(dim_block, dim - dim_start);
+            const uint8_t* abs_ptr =
+                abs_blocks + static_cast<size_t>(db) * 8 * dim_block + lane * dim_block;
+            std::memcpy(abs_scratch[lane] + dim_start, abs_ptr, copy);
+            const uint8_t* sign_ptr =
+                sign_blocks + static_cast<size_t>(db) * 8 * sign_block_bytes +
+                lane * sign_block_bytes;
+            std::memcpy(sign_scratch[lane] + dim_start / 8, sign_ptr, sign_block_bytes);
+        }
+        code_abs_ptrs[lane] = abs_scratch[lane];
+        packed_sign_ptrs[lane] = sign_scratch[lane];
+    }
+    IPExRaBitQBatchPackedSign(
+        query, code_abs_ptrs, packed_sign_ptrs, valid_count, dim, out_ip_raw);
+#endif
+}
+
+void IPExRaBitQBatchPackedSignParallelCompact(
+    const float* VDB_RESTRICT query,
+    const uint8_t* VDB_RESTRICT abs_slices,
+    const uint16_t* VDB_RESTRICT sign_words,
+    uint32_t valid_count,
+    Dim dim,
+    uint32_t dim_block,
+    uint32_t slices_per_dim_block,
+    float* VDB_RESTRICT out_ip_raw,
+    IPExRaBitQBatchPackedSignCompactTiming* timing) {
+#if defined(VDB_USE_AVX512)
+    const bool measure = timing != nullptr;
+    const uint32_t num_dim_blocks = (dim + dim_block - 1) / dim_block;
+    constexpr uint32_t kLaneBatch = 4;
+    __m512 dot[8];
+    __m512 bias[8];
+    for (uint32_t lane = 0; lane < valid_count; ++lane) {
+        dot[lane] = _mm512_setzero_ps();
+        bias[lane] = _mm512_setzero_ps();
+    }
+
+    for (uint32_t db = 0; db < num_dim_blocks; ++db) {
+        const uint32_t dim_start = db * dim_block;
+        const uint32_t remaining = std::min(dim_block, dim - dim_start);
+        const uint32_t full_slices = remaining / 16;
+        for (uint32_t sub = 0; sub < full_slices; ++sub) {
+            const __m512 q = _mm512_loadu_ps(query + dim_start + sub * 16u);
+            const uint16_t* sign_base =
+                sign_words + (static_cast<size_t>(db) * slices_per_dim_block + sub) * 8;
+            const uint8_t* abs_base =
+                abs_slices + ((static_cast<size_t>(db) * slices_per_dim_block + sub) * 8) * 16;
+            uint32_t lane = 0;
+            for (; lane + kLaneBatch <= valid_count; lane += kLaneBatch) {
+                const auto sign_start = measure ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+                const __m512 signed_q0 = FlipQuery16PackedChunkAvx512(
+                    q, static_cast<uint64_t>(sign_base[lane + 0]), 0);
+                const __m512 signed_q1 = FlipQuery16PackedChunkAvx512(
+                    q, static_cast<uint64_t>(sign_base[lane + 1]), 0);
+                const __m512 signed_q2 = FlipQuery16PackedChunkAvx512(
+                    q, static_cast<uint64_t>(sign_base[lane + 2]), 0);
+                const __m512 signed_q3 = FlipQuery16PackedChunkAvx512(
+                    q, static_cast<uint64_t>(sign_base[lane + 3]), 0);
+                if (measure) {
+                    timing->sign_flip_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - sign_start).count();
+                }
+                const auto abs_start = measure ? std::chrono::steady_clock::now()
+                                               : std::chrono::steady_clock::time_point{};
+                dot[lane + 0] = _mm512_fmadd_ps(
+                    signed_q0,
+                    LoadAbsMagnitude16Avx512(abs_base + (lane + 0) * 16),
+                    dot[lane + 0]);
+                dot[lane + 1] = _mm512_fmadd_ps(
+                    signed_q1,
+                    LoadAbsMagnitude16Avx512(abs_base + (lane + 1) * 16),
+                    dot[lane + 1]);
+                dot[lane + 2] = _mm512_fmadd_ps(
+                    signed_q2,
+                    LoadAbsMagnitude16Avx512(abs_base + (lane + 2) * 16),
+                    dot[lane + 2]);
+                dot[lane + 3] = _mm512_fmadd_ps(
+                    signed_q3,
+                    LoadAbsMagnitude16Avx512(abs_base + (lane + 3) * 16),
+                    dot[lane + 3]);
+                bias[lane + 0] = _mm512_add_ps(bias[lane + 0], signed_q0);
+                bias[lane + 1] = _mm512_add_ps(bias[lane + 1], signed_q1);
+                bias[lane + 2] = _mm512_add_ps(bias[lane + 2], signed_q2);
+                bias[lane + 3] = _mm512_add_ps(bias[lane + 3], signed_q3);
+                if (measure) {
+                    timing->abs_fma_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - abs_start).count();
+                }
+            }
+            for (; lane < valid_count; ++lane) {
+                const auto sign_start = measure ? std::chrono::steady_clock::now()
+                                                : std::chrono::steady_clock::time_point{};
+                const __m512 sq = FlipQuery16PackedChunkAvx512(
+                    q, static_cast<uint64_t>(sign_base[lane]), 0);
+                if (measure) {
+                    timing->sign_flip_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - sign_start).count();
+                }
+
+                const auto abs_start = measure ? std::chrono::steady_clock::now()
+                                               : std::chrono::steady_clock::time_point{};
+                dot[lane] = _mm512_fmadd_ps(
+                    sq, LoadAbsMagnitude16Avx512(abs_base + lane * 16), dot[lane]);
+                bias[lane] = _mm512_add_ps(bias[lane], sq);
+                if (measure) {
+                    timing->abs_fma_ms += std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - abs_start).count();
+                }
+            }
+        }
+
+        const uint32_t tail_start = full_slices * 16;
+        for (uint32_t t = tail_start; t < remaining; ++t) {
+            const auto tail_ts = measure ? std::chrono::steady_clock::now()
+                                         : std::chrono::steady_clock::time_point{};
+            const uint32_t sub = t / 16;
+            const uint32_t offset = t % 16;
+            const uint16_t* sign_base =
+                sign_words + (static_cast<size_t>(db) * slices_per_dim_block + sub) * 8;
+            const uint8_t* abs_base =
+                abs_slices + ((static_cast<size_t>(db) * slices_per_dim_block + sub) * 8) * 16;
+            for (uint32_t lane = 0; lane < valid_count; ++lane) {
+                const bool positive = ((sign_base[lane] >> offset) & 1u) != 0;
+                const float signed_q = positive ? query[dim_start + t] : -query[dim_start + t];
+                out_ip_raw[lane] +=
+                    signed_q * static_cast<float>(abs_base[lane * 16 + offset]) + 0.5f * signed_q;
+            }
+            if (measure) {
+                timing->tail_ms += std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - tail_ts).count();
+            }
+        }
+    }
+
+    const auto reduce_start = measure ? std::chrono::steady_clock::now()
+                                      : std::chrono::steady_clock::time_point{};
+    for (uint32_t lane = 0; lane < valid_count; ++lane) {
+        out_ip_raw[lane] += _mm512_reduce_add_ps(dot[lane]) +
+                            0.5f * _mm512_reduce_add_ps(bias[lane]);
+    }
+    if (measure) {
+        timing->reduce_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - reduce_start).count();
+    }
+#else
+    (void)query;
+    (void)abs_slices;
+    (void)sign_words;
+    (void)valid_count;
+    (void)dim;
+    (void)dim_block;
+    (void)slices_per_dim_block;
+    (void)out_ip_raw;
+    (void)timing;
 #endif
 }
 

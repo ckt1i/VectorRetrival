@@ -15,6 +15,21 @@ add_executable(bench_e2e bench_e2e.cpp)
 target_link_libraries(bench_e2e PRIVATE vdb_query vdb_io vdb_crc)
 vdb_enable_target_avx512(bench_e2e)
 
+# ----- ExRaBitQ Payload Compare Utility -----
+add_executable(bench_compare_exrabitq_payloads bench_compare_exrabitq_payloads.cpp)
+target_link_libraries(bench_compare_exrabitq_payloads PRIVATE vdb_storage)
+vdb_enable_target_avx512(bench_compare_exrabitq_payloads)
+
+# ----- Stage1/Stage2 Path Compare Utility -----
+add_executable(bench_compare_stage_paths bench_compare_stage_paths.cpp)
+target_link_libraries(bench_compare_stage_paths PRIVATE vdb_query vdb_io)
+vdb_enable_target_avx512(bench_compare_stage_paths)
+
+# ----- Index Geometry Utility -----
+add_executable(bench_index_geometry bench_index_geometry.cpp)
+target_link_libraries(bench_index_geometry PRIVATE vdb_index vdb_io)
+vdb_enable_target_avx512(bench_index_geometry)
+
 # ----- IVF Clustering Export Utility -----
 add_executable(export_ivf_clustering export_ivf_clustering.cpp)
 target_link_libraries(export_ivf_clustering PRIVATE vdb_index vdb_io)
