@@ -22,6 +22,10 @@ benchmarks/CMakeFiles/
 benchmarks/Makefile
 benchmarks/cmake_install.cmake
 
+# Pycache
+*pycache*
+
+
 # IDE
 .idea/
 .vscode/
@@ -60,3 +64,5 @@ _deps/
 
 # Test outputs
 Testing/
+# Added by code-review-graph
+.code-review-graph/

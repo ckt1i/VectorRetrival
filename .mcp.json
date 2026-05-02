@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "code-review-graph": {
-      "command": "code-review-graph",
+      "command": "/home/zcq/anaconda3/envs/labnew/bin/code-review-graph",
       "args": [
         "serve"
       ],
