@@ -28,6 +28,17 @@ benchmarks/cmake_install.cmake
 *.swp
 *.swo
 *~
+*.mcp
+*.opencode*
+.agents*
+.aris*
+.claude*
+.codex*
+.cursor*
+.windsurfrules*
+AGENTS.md
+GENIMI.md
+CLAUDE.md
 
 # Compiled files
 *.o
