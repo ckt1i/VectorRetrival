@@ -45,6 +45,37 @@ The thesis main-sweep SHALL freeze the dataset-level operating-point grids so th
 - **AND** the sweep axis SHALL be `nprobe ∈ {16, 32, 64, 128, 256, 512, 1024}`
 - **AND** `T010` sanity SHALL be a single-point run within that same contract
 
+### Requirement: Thesis main execution SHALL use fixed method parameters for BoundFetch-Guarded
+The thesis main-sweep SHALL freeze the BoundFetch-Guarded mainline parameters so that the method is measured under the intended candidate-filtering semantics.
+
+#### Scenario: BoundFetch mainline parameters are fixed
+- **WHEN** BoundFetch-Guarded is scheduled for any thesis main sanity run or full sweep
+- **THEN** the run SHALL use `crc=1`
+- **AND** the run SHALL use `early-stop=0`
+- **AND** the run SHALL use `bits=4`
+- **AND** the run SHALL use strict recall for measurement with `skip_gt=0`
+
+#### Scenario: `crc=0` is not a thesis mainline result
+- **WHEN** a `crc=0` BoundFetch run is executed for debugging or ablation
+- **THEN** the run SHALL NOT be mixed into the thesis main conclusion
+- **AND** the tracker SHALL distinguish it from the `crc=1, early-stop=0` mainline
+- **AND** any `crc=0` result SHALL be interpreted as a separate semantic mode rather than a replacement for BoundFetch-Guarded mainline execution
+
+### Requirement: Thesis main execution SHALL separate warmup from formal measurement
+Each thesis main-sweep operating point SHALL run through a warmup step before the formal measurement step so that cold-read and initialization effects do not pollute the thesis latency metrics.
+
+#### Scenario: Warmup precedes every full-sweep measurement
+- **WHEN** any full-sweep operating point is scheduled for `T005-T009` or `T011-T015`
+- **THEN** the workflow SHALL first run a warmup invocation for the same dataset, system, canonical artifact, nprobe, bits, storage backend, `crc`, and `early-stop` settings
+- **AND** the warmup output SHALL NOT be used as the thesis main recall/latency result
+- **AND** the formal measurement invocation SHALL start only after the warmup invocation has completed
+
+#### Scenario: Formal measurement uses strict recall
+- **WHEN** a full-sweep measurement invocation is recorded as a thesis main result
+- **THEN** it SHALL use `skip_gt=0`
+- **AND** it SHALL load the approved GT file for the dataset when recall is available
+- **AND** it SHALL export recall and latency fields from the measurement run rather than from the warmup run
+
 ### Requirement: Thesis main execution SHALL preserve the thesis sanity gates before dataset-wide sweeps
 The thesis main-sweep SHALL keep explicit sanity gates so that schema, metrics, and runner compatibility issues are caught before spending time on the full matrix.
 

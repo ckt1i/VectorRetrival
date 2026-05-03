@@ -33,3 +33,7 @@
 | 2026-05-02 15:29 | /experiment-plan | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_PLAN.md | implementation | latest thesis experiment plan |
 | 2026-05-02 15:29 | /experiment-plan | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_TRACKER_20260502_152959.md | implementation | timestamped thesis experiment tracker |
 | 2026-05-02 15:29 | /experiment-plan | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_TRACKER.md | implementation | latest thesis experiment tracker |
+| 2026-05-03 13:44 | /idea-discovery | idea-stage/THESIS_BLUEPRINT_20260503_134437.md | idea-discovery | timestamped thesis writing blueprint from existing refine logs, experiments, code, and literature |
+| 2026-05-03 13:44 | /idea-discovery | idea-stage/THESIS_BLUEPRINT.md | idea-discovery | latest thesis writing blueprint |
+| 2026-05-03 14:36 | /idea-discovery | idea-stage/THESIS_BLUEPRINT_20260503_143611.md | idea-discovery | timestamped revised thesis blueprint removing deferred implementation boundaries and adding FlatStor/Lance/io references |
+| 2026-05-03 14:36 | /idea-discovery | idea-stage/THESIS_BLUEPRINT.md | idea-discovery | latest revised thesis blueprint |

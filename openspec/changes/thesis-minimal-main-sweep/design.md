@@ -100,6 +100,21 @@
 - 用户明确要求 task 内部继续细分。
 - 真正的实验阻塞点是 gate，而不是最终图表文件。
 
+### 5. Thesis main measurement 使用 warmup-then-measurement 协议
+
+所有 thesis full sweep 的正式记录必须和冷读、一次性初始化成本解耦。每个 dataset/system/nprobe operating point 严格串行执行：
+
+- warmup run：与正式 measurement 保持相同核心搜索参数，只用于预热 `cluster.clu` / `data.dat` / resident/full-preload 路径，不进入 thesis 主结论。
+- measurement run：使用同一 canonical artifact 与同一 operating point，`skip_gt=0` 并加载正式 GT，输出 recall 与 latency 后写入 tracker/summary。
+
+BoundFetch-Guarded 主线固定为 `crc=1` 与 `early-stop=0`。`crc=0` 只允许作为 debug/ablation 语义单独讨论；当前它会改变候选过滤阈值语义并可能导致大量候选进入 payload 读取路径，因此不得混入 thesis main conclusion。
+
+选择这个方案的原因：
+
+- MS MARCO 的 `data.dat` 与 cluster artifacts 足够大，单次 cold run 会把 I/O 冷读成本混入方法延迟。
+- `skip_gt=1` 会让外部 GT 标为 unused，无法产生正式 recall；正式 measurement 必须使用 strict recall 路径。
+- `crc=1, early-stop=0` 表示使用 BoundFetch/CRC 的候选过滤语义，但不允许 cluster early-stop 改变固定 `nprobe` 扫描深度，适合作为主线公平比较点。
+
 ## Risks / Trade-offs
 
 - [Active runner 仍在 `legacy/scripts/`] → Mitigation: 在实现阶段先恢复当前执行入口，至少要让 README、manifests 和实际 runner 路径一致。
@@ -107,6 +122,7 @@
 - [MS MARCO 的 qrels 可能延迟] → Mitigation: `T010-T015` 允许先以 `recall@10` 为主完成 first pass，同时将 `MRR@10/nDCG@10` 标记为 delayed 而不是阻塞 full sweep。
 - [Lance 运行链路可能晚于 FlatStor 稳定] → Mitigation: 规格中把 Lance 保持为 SHOULD-level 主实验分支；若 blocked，必须显式记录，不得静默跳过。
 - [清理 formal-study 后，README 对脚本位置的描述与实际磁盘状态不完全一致] → Mitigation: 把这视为实现阶段的 workspace repair 子任务，而不是在 proposal 中假装它已经正确。
+- [Warmup 与 measurement 参数不一致会重新引入不可解释差异] → Mitigation: warmup 与 measurement 必须共享 dataset、canonical index、system、nprobe、bits、storage backend、`crc`、`early-stop` 和 reuse provenance；只有输出目录与是否计入 tracker 可不同。
 
 ## Migration Plan
 
@@ -115,7 +131,8 @@
 3. 为 `bench_e2e` 增加或整理 canonical index build 输出规范。
 4. 为 BoundFetch、PQ、RaBitQ 的 runner 增加 external artifact consumption CLI，并实现 reuse validation gate。
 5. 在 `RUN_STATUS.csv` 与 `FAILURES.md` 中加入 asset/index/sanity/full-sweep 的细粒度记录。
-6. 依序执行 `T000-T015`，先 `coco_100k`，再 `msmarco_passage`。
+6. 将 warmup-then-measurement 协议纳入 full sweep runner，确保正式 measurement 使用 strict recall 并记录 warmup provenance。
+7. 依序执行 `T000-T015`，先 `coco_100k`，再 `msmarco_passage`。
 
 ## Open Questions
 

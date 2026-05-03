@@ -26,6 +26,20 @@ The thesis main-sweep SHALL extend the formal-study output layout with explicit 
 - **THEN** the validation metadata SHALL be written under `outputs/index_reuse_validation/{dataset}/{system}/{run_id}/`
 - **AND** the output SHALL make the consumed canonical artifact reconstructable
 
+### Requirement: Thesis main tracking SHALL distinguish warmup outputs from formal measurements
+The thesis main-sweep tracker SHALL keep warmup runs auditable without allowing them to become thesis main recall/latency results.
+
+#### Scenario: Warmup and measurement records are separate
+- **WHEN** a thesis full-sweep operating point is executed with the warmup-then-measurement protocol
+- **THEN** the warmup run SHALL receive a distinct record or artifact pointer from the measurement run
+- **AND** the measurement run SHALL be the only run eligible for dataset summary and matched-quality selection
+- **AND** both records SHALL preserve dataset, system, nprobe, canonical artifact, `crc`, `early-stop`, and `skip_gt` provenance
+
+#### Scenario: Non-mainline BoundFetch modes remain out of the main conclusion
+- **WHEN** a BoundFetch run uses parameters outside `crc=1, early-stop=0`
+- **THEN** the tracker SHALL mark it as debug, smoke, or ablation rather than thesis mainline
+- **AND** summary generation SHALL NOT use that run as a replacement for the required mainline measurement
+
 ### Requirement: Thesis main tracking SHALL emit dataset-level thesis summaries after each full sweep block
 The thesis main-sweep SHALL generate dataset-level thesis summaries as soon as the required full-sweep block for that dataset is complete.
 
