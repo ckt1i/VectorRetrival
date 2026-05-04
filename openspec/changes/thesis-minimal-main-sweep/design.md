@@ -27,7 +27,7 @@
 **Non-Goals:**
 
 - 不覆盖 `deep1m_synth` / `deep8m_synth`、appendix 数据集或 Amazon ESCI。
-- 不覆盖 `topk=20/50`、triage ablation、scheduling ablation。
+- 不覆盖 `topk=20/50/100` supplement、triage ablation、scheduling ablation；这些 post-main-sweep 实验由 `thesis-minimal-ablation-study` 单独定义和跟踪。
 - 不把 DiskANN、IVFRQ、IVFPQR 纳入这版 thesis 主表合同。
 - 不要求在这个 change 中一次性完成所有实验实现代码；本 change 只冻结后续实现和执行必须满足的合同。
 
@@ -107,7 +107,7 @@
 - warmup run：与正式 measurement 保持相同核心搜索参数，只用于预热 `cluster.clu` / `data.dat` / resident/full-preload 路径，不进入 thesis 主结论。
 - measurement run：使用同一 canonical artifact 与同一 operating point，`skip_gt=0` 并加载正式 GT，输出 recall 与 latency 后写入 tracker/summary。
 
-BoundFetch-Guarded 主线固定为 `crc=1` 与 `early-stop=0`。`crc=0` 只允许作为 debug/ablation 语义单独讨论；当前它会改变候选过滤阈值语义并可能导致大量候选进入 payload 读取路径，因此不得混入 thesis main conclusion。
+BoundFetch-Guarded 主线固定为 `crc=1` 与 `early-stop=0`。任何改变主线候选过滤语义的非主线参数组合不得混入 thesis main conclusion；如果后续用于机制解释或调参，应由 `thesis-minimal-ablation-study` 单独记录。
 
 选择这个方案的原因：
 

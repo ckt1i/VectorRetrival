@@ -37,3 +37,11 @@
 | 2026-05-03 13:44 | /idea-discovery | idea-stage/THESIS_BLUEPRINT.md | idea-discovery | latest thesis writing blueprint |
 | 2026-05-03 14:36 | /idea-discovery | idea-stage/THESIS_BLUEPRINT_20260503_143611.md | idea-discovery | timestamped revised thesis blueprint removing deferred implementation boundaries and adding FlatStor/Lance/io references |
 | 2026-05-03 14:36 | /idea-discovery | idea-stage/THESIS_BLUEPRINT.md | idea-discovery | latest revised thesis blueprint |
+| 2026-05-03 16:59 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/POST_MAIN_SWEEP_REFINEMENT_20260503_165930.md | implementation | timestamped post-main-sweep experiment refinement and ablation update recommendation |
+| 2026-05-03 16:59 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/POST_MAIN_SWEEP_REFINEMENT.md | implementation | latest post-main-sweep experiment refinement |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_PLAN_20260503_171523.md | implementation | timestamped experiment plan updated with post-main-sweep supplemental ablations |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_PLAN.md | implementation | latest experiment plan with post-main-sweep supplemental ablations |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_TRACKER_20260503_171523.md | implementation | timestamped experiment tracker updated with T028-T030 and T026 out-of-scope |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_TRACKER.md | implementation | latest experiment tracker updated with supplemental experiments |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/PIPELINE_SUMMARY_20260503_171523.md | implementation | timestamped post-main-sweep pipeline summary |
+| 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/PIPELINE_SUMMARY.md | implementation | latest post-main-sweep pipeline summary |

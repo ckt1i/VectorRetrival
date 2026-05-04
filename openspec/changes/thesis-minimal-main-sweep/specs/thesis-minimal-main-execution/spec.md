@@ -55,11 +55,11 @@ The thesis main-sweep SHALL freeze the BoundFetch-Guarded mainline parameters so
 - **AND** the run SHALL use `bits=4`
 - **AND** the run SHALL use strict recall for measurement with `skip_gt=0`
 
-#### Scenario: `crc=0` is not a thesis mainline result
-- **WHEN** a `crc=0` BoundFetch run is executed for debugging or ablation
+#### Scenario: Non-mainline BoundFetch parameters are not thesis mainline results
+- **WHEN** a BoundFetch run uses parameters outside the frozen thesis mainline settings
 - **THEN** the run SHALL NOT be mixed into the thesis main conclusion
 - **AND** the tracker SHALL distinguish it from the `crc=1, early-stop=0` mainline
-- **AND** any `crc=0` result SHALL be interpreted as a separate semantic mode rather than a replacement for BoundFetch-Guarded mainline execution
+- **AND** any such result SHALL be interpreted as a separate debug, tuning, or ablation mode rather than a replacement for BoundFetch-Guarded mainline execution
 
 ### Requirement: Thesis main execution SHALL separate warmup from formal measurement
 Each thesis main-sweep operating point SHALL run through a warmup step before the formal measurement step so that cold-read and initialization effects do not pollute the thesis latency metrics.

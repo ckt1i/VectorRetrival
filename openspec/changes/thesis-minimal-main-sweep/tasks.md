@@ -43,27 +43,27 @@
 ## 5. Execute the COCO full thesis main sweep `T005-T009`
 
 - [x] 5.1 Run `T005` COCO BoundFetch-Guarded full `nprobe` sweep with the frozen warmup-then-measurement protocol and `crc=1, early-stop=0`.
-- [ ] 5.2 Run `T006` COCO `IVF+PQ+FlatStor` full `nprobe` sweep.
-- [ ] 5.3 Run `T007` COCO `IVF+RaBitQ+FlatStor` full `nprobe` sweep.
-- [ ] 5.4 Run `T008` COCO `IVF+PQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
-- [ ] 5.5 Run `T009` COCO `IVF+RaBitQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
+- [x] 5.2 Run `T006` COCO `IVF+PQ+FlatStor` full `nprobe` sweep.
+- [x] 5.3 Run `T007` COCO `IVF+RaBitQ+FlatStor` full `nprobe` sweep.
+- [x] 5.4 Run `T008` COCO `IVF+PQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
+- [x] 5.5 Run `T009` COCO `IVF+RaBitQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
 - [x] 5.6 Aggregate the COCO vector-search and E2E outputs into a dataset-level thesis summary.
 
 ## 6. Run MS MARCO canonical-artifact validation and sanity gate
 
-- [ ] 6.1 Build the canonical `msmarco_passage` artifact after `T001` using `hierarchical_superkmeans` and record its provenance.
-- [ ] 6.2 Validate that BoundFetch-Guarded can execute on `msmarco_passage` from the canonical artifact path.
-- [ ] 6.3 Validate that `IVF+PQ` can execute on `msmarco_passage` from the canonical artifact path or deterministic no-retrain import path.
-- [ ] 6.4 Validate that `IVF+RaBitQ` can execute on `msmarco_passage` from the canonical artifact path or deterministic no-retrain import path.
+- [x] 6.1 Build the canonical `msmarco_passage` artifact after `T001` using `hierarchical_superkmeans` and record its provenance.
+- [x] 6.2 Validate that BoundFetch-Guarded can execute on `msmarco_passage` from the canonical artifact path.
+- [x] 6.3 Validate that `IVF+PQ` can execute on `msmarco_passage` from the canonical artifact path or deterministic no-retrain import path.
+- [x] 6.4 Validate that `IVF+RaBitQ` can execute on `msmarco_passage` from the canonical artifact path or deterministic no-retrain import path.
 - [x] 6.5 Run `T010` MS MARCO BoundFetch-Guarded sanity and verify recall, E2E, p99, and triage fields.
 
 ## 7. Execute the MS MARCO full thesis main sweep `T011-T015`
 
 - [x] 7.1 Run `T011` MS MARCO BoundFetch-Guarded full `nprobe` sweep with the frozen warmup-then-measurement protocol and `crc=1, early-stop=0`.
-- [ ] 7.2 Run `T012` MS MARCO `IVF+PQ+FlatStor` full `nprobe` sweep.
-- [ ] 7.3 Run `T013` MS MARCO `IVF+RaBitQ+FlatStor` full `nprobe` sweep.
-- [ ] 7.4 Run `T014` MS MARCO `IVF+PQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
-- [ ] 7.5 Run `T015` MS MARCO `IVF+RaBitQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
+- [x] 7.2 Run `T012` MS MARCO `IVF+PQ+FlatStor` full `nprobe` sweep.
+- [x] 7.3 Run `T013` MS MARCO `IVF+RaBitQ+FlatStor` full `nprobe` sweep.
+- [x] 7.4 Run `T014` MS MARCO `IVF+PQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
+- [x] 7.5 Run `T015` MS MARCO `IVF+RaBitQ+Lance` full `nprobe` sweep or record an explicit blocked rationale.
 - [x] 7.6 Aggregate the MS MARCO vector-search and E2E outputs into a dataset-level thesis summary, marking delayed qrels metrics explicitly if needed.
 
 ## 8. Close out thesis main tracking and summary generation

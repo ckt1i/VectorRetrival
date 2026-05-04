@@ -39,6 +39,7 @@ The thesis main-sweep tracker SHALL keep warmup runs auditable without allowing 
 - **WHEN** a BoundFetch run uses parameters outside `crc=1, early-stop=0`
 - **THEN** the tracker SHALL mark it as debug, smoke, or ablation rather than thesis mainline
 - **AND** summary generation SHALL NOT use that run as a replacement for the required mainline measurement
+- **AND** any ablation use of that run SHALL be tracked under the separate `thesis-minimal-ablation-study` contract
 
 ### Requirement: Thesis main tracking SHALL emit dataset-level thesis summaries after each full sweep block
 The thesis main-sweep SHALL generate dataset-level thesis summaries as soon as the required full-sweep block for that dataset is complete.

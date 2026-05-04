@@ -29,8 +29,8 @@
 - 复用现有 formal-study 的输出目录、per-run metrics、tracker 和 summary 口径，不另起一套 thesis-only 输出协议
 - 明确这版 change 不覆盖：
   - `deep1m_synth` / `deep8m_synth`
-  - `topk=20/50`
-  - triage ablation / scheduling ablation
+  - `topk=20/50/100` 补充实验
+  - triage ablation / scheduling ablation；这些由 `thesis-minimal-ablation-study` 单独承接
   - Amazon ESCI / appendix 数据集
   - DiskANN / IVFRQ / IVFPQR 主表比较
 - 明确 `tasks.md` 必须进一步细分子任务，不允许只保留粗粒度 milestone
