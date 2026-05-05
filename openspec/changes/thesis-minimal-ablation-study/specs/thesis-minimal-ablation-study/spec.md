@@ -22,6 +22,14 @@
 - **AND** warmup 输出 SHALL NOT 进入论文图表或 ablation summary 的正式数值
 - **AND** measurement 输出 SHALL 保留 recall、latency、canonical artifact、`crc`、`early-stop`、`skip_gt` 与 warmup provenance
 
+#### Scenario: BoundFetch 正式 measurement 前必须预热
+- **WHEN** 调度任意 BoundFetch result hygiene、triage ablation、scheduling ablation 或 top-k supplement 正式 measurement
+- **THEN** runner SHALL 先执行一次同数据集、同 canonical artifact、同 nlist、同 nprobe、同 topk、同 `crc`、同 `early-stop`、同 `bits`、同 `skip_gt`、同调度/triage 变体参数的 BoundFetch warmup run
+- **AND** 正式 measurement SHALL 在该 warmup run 完成后执行
+- **AND** tracker SHALL 保留 warmup run id 与 measurement run id 的关联
+- **AND** ablation summary 与论文图表 SHALL 只读取 warmup 后的 measurement run
+- **AND** 若缺少对应 warmup 或 warmup 失败，该 BoundFetch measurement SHALL NOT 被纳入正式消融证据
+
 #### Scenario: 非主线参数只作为消融或调试证据
 - **WHEN** BoundFetch 运行使用不同于 `crc=1, early-stop=0, bits=4` 的参数组合
 - **THEN** tracker SHALL 将其标记为 ablation、debug 或 tuning

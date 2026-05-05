@@ -56,6 +56,11 @@ struct SearchConfig {
     uint32_t submit_batch_min = 16;
     uint32_t submit_batch_max = 48;
 
+    // Ablation controls. Defaults preserve the BoundFetch-Guarded mainline.
+    bool enable_safeout_pruning = true;
+    bool enable_safein_payload_prefetch = true;
+    bool enable_uncertain_eager_payload = false;
+
     bool enable_address_decode_simd = true;
     bool enable_rerank_batched_distance_simd = true;
     bool enable_coarse_select_simd = true;

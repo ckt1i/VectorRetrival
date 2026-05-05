@@ -529,6 +529,8 @@ struct QueryResult {
 
 struct RoundMetrics {
     double recall_at[3] = {};          // recall@1, @5, @10
+    double recall_at_topk = 0;
+    double recall_at_20 = 0;
     bool recall_available = true;
     double avg_query_ms = 0;
     double p50 = 0, p95 = 0, p99 = 0;
@@ -798,14 +800,23 @@ static std::pair<std::vector<QueryResult>, RoundMetrics> RunQueryRound(
     m.recall_available = recall_available;
     uint32_t recall_K[3] = {1, 5, 10};
     double recall_sum[3] = {0, 0, 0};
+    double recall_topk_sum = 0;
+    double recall20_sum = 0;
     if (recall_available) {
         for (uint32_t qi = 0; qi < Q; ++qi) {
             for (int r = 0; r < 3; ++r) {
                 recall_sum[r] += ComputeRecallAtK(qresults[qi].predicted_ids,
                                                   gt_topk[qi], recall_K[r]);
             }
+            recall_topk_sum += ComputeRecallAtK(qresults[qi].predicted_ids,
+                                                gt_topk[qi],
+                                                static_cast<uint32_t>(qresults[qi].predicted_ids.size()));
+            recall20_sum += ComputeRecallAtK(qresults[qi].predicted_ids,
+                                             gt_topk[qi], 20);
         }
         for (int r = 0; r < 3; ++r) m.recall_at[r] = recall_sum[r] / Q;
+        m.recall_at_topk = recall_topk_sum / Q;
+        m.recall_at_20 = recall20_sum / Q;
     }
 
     std::vector<double> query_times(Q);
@@ -1205,6 +1216,13 @@ int main(int argc, char* argv[]) {
     int arg_submit_online = GetIntArg(argc, argv, "--submit-online", 0);
     float arg_submit_ema_alpha =
         GetFloatArg(argc, argv, "--submit-ema-alpha", 0.25f);
+    int arg_safeout_pruning = GetIntArg(argc, argv, "--safeout-pruning", 1);
+    int arg_safein_payload_prefetch =
+        GetIntArg(argc, argv, "--safein-payload-prefetch", 1);
+    int arg_uncertain_eager_payload =
+        GetIntArg(argc, argv, "--uncertain-eager-payload", 0);
+    int arg_safein_all_threshold =
+        GetIntArg(argc, argv, "--safein-all-threshold", 256 * 1024);
     int arg_address_decode_simd =
         GetIntArg(argc, argv, "--address-decode-simd", 1);
     int arg_rerank_batched_distance_simd =
@@ -1943,6 +1961,13 @@ int main(int argc, char* argv[]) {
         GetIntArg(argc, argv, "--submit-batch", 32));
     search_cfg.enable_online_submit_tuning = (arg_submit_online != 0);
     search_cfg.submit_ema_alpha = arg_submit_ema_alpha;
+    search_cfg.enable_safeout_pruning = (arg_safeout_pruning != 0);
+    search_cfg.enable_safein_payload_prefetch =
+        (arg_safein_payload_prefetch != 0);
+    search_cfg.enable_uncertain_eager_payload =
+        (arg_uncertain_eager_payload != 0);
+    search_cfg.safein_all_threshold =
+        static_cast<uint32_t>(std::max(arg_safein_all_threshold, 0));
     search_cfg.enable_address_decode_simd = (arg_address_decode_simd != 0);
     search_cfg.enable_rerank_batched_distance_simd =
         (arg_rerank_batched_distance_simd != 0);
@@ -2279,6 +2304,11 @@ int main(int argc, char* argv[]) {
         f << "    " << JBool("enable_coarse_select_phase2", search_cfg.enable_coarse_select_phase2) << ",\n";
         f << "    " << JBool("enable_online_submit_tuning", search_cfg.enable_online_submit_tuning) << ",\n";
         f << "    " << JNum("submit_ema_alpha", search_cfg.submit_ema_alpha) << ",\n";
+        f << "    " << JInt("submit_batch_size", search_cfg.submit_batch_size) << ",\n";
+        f << "    " << JBool("enable_safeout_pruning", search_cfg.enable_safeout_pruning) << ",\n";
+        f << "    " << JBool("enable_safein_payload_prefetch", search_cfg.enable_safein_payload_prefetch) << ",\n";
+        f << "    " << JBool("enable_uncertain_eager_payload", search_cfg.enable_uncertain_eager_payload) << ",\n";
+        f << "    " << JInt("safein_all_threshold", search_cfg.safein_all_threshold) << ",\n";
         f << "    " << JStr("timing_mode",
                              search_cfg.enable_fine_grained_timing
                                  ? "fine_grained_diagnostic"
@@ -2348,6 +2378,8 @@ int main(int argc, char* argv[]) {
         f << "    " << JNum("recall_at_1", metrics.recall_at[0]) << ",\n";
         f << "    " << JNum("recall_at_5", metrics.recall_at[1]) << ",\n";
         f << "    " << JNum("recall_at_10", metrics.recall_at[2]) << ",\n";
+        f << "    " << JNum("recall_at_topk", metrics.recall_at_topk) << ",\n";
+        f << "    " << JNum("recall_at_20", metrics.recall_at_20) << ",\n";
         f << "    " << JNum("avg_query_time_ms", metrics.avg_query_ms) << ",\n";
         f << "    " << JNum("p50_query_time_ms", metrics.p50) << ",\n";
         f << "    " << JNum("p95_query_time_ms", metrics.p95) << ",\n";

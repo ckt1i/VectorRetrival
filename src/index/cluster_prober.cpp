@@ -63,6 +63,7 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                            float dynamic_d_k,
                            bool enable_address_decode_simd,
                            bool enable_fine_grained_timing,
+                           bool enable_safeout_pruning,
                            bool enable_stage2_collect_block_first,
                            bool enable_stage2_scatter_batch_classify,
                            ProbeResultSink& sink,
@@ -108,6 +109,9 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                 dists, block_norms, count, dynamic_d_k, margin_factor);
         }
         stats.s1_safeout += static_cast<uint32_t>(__builtin_popcount(so_mask));
+        if (!enable_safeout_pruning) {
+            so_mask = 0;
+        }
 
         // Stage 1c/1d: compact survivors and classify them in mask batches.
         const uint32_t lane_valid = LaneMaskForCount(count);
@@ -415,7 +419,9 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                     stats.s2_safeout += static_cast<uint32_t>(__builtin_popcount(classify_masks.safeout));
                     stats.s2_uncertain += static_cast<uint32_t>(__builtin_popcount(classify_masks.uncertain));
 
-                    const uint32_t keep_mask = classify_masks.safein | classify_masks.uncertain;
+                    const uint32_t keep_mask = enable_safeout_pruning
+                        ? (classify_masks.safein | classify_masks.uncertain)
+                        : block.lane_mask;
                     for (uint32_t lane = 0; lane < kStage2BatchSize; ++lane) {
                         if ((keep_mask & (1u << lane)) == 0) continue;
                         const Stage2LaneEntry& entry = block.lanes[lane];
@@ -446,7 +452,9 @@ void ClusterProber::Probe(const query::ParsedCluster& pc,
                             ++stats.s2_safein;
                         } else if (rc_s2 == ResultClass::SafeOut) {
                             ++stats.s2_safeout;
-                            continue;
+                            if (enable_safeout_pruning) {
+                                continue;
+                            }
                         } else {
                             ++stats.s2_uncertain;
                         }

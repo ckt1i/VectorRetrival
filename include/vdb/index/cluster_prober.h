@@ -112,6 +112,7 @@ class ClusterProber {
                float dynamic_d_k,
                bool enable_address_decode_simd,
                bool enable_fine_grained_timing,
+               bool enable_safeout_pruning,
                bool enable_stage2_collect_block_first,
                bool enable_stage2_scatter_batch_classify,
                ProbeResultSink& sink,

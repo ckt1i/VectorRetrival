@@ -6,6 +6,8 @@
 **Reference Settings**: `formal-baseline-study-2026-04-16` + `/home/zcq/VDB/baselines/formal-study/manifests/main_experiment_controls.json`  
 **Post-Main-Sweep Status**: 主实验 T000-T015 已完成，后续计划正式切换为结果固化、机制消融和 top-k 补充验证。
 
+**Ablation Freeze Status (2026-05-04)**: 机制消融、调度消融和 top20 补充已冻结到 `RESULT_FREEZE_ABLATION.md`。论文写作时主实验与消融分开叙述：主实验只使用 top10 retained main sweep；消融小节使用 triage/scheduling/top20 summary，不回写主表。
+
 ## Claim Map
 
 | Claim | Why It Matters | Minimum Convincing Evidence | Linked Blocks |
@@ -56,7 +58,7 @@ BoundFetch-Guarded 作为主方法参与所有主表。DiskANN 只作为 appendi
 - `queries=1000`
 - `topk=10` 主矩阵
 - `topk=20` COCO + MS MARCO 补充 operating point
-- `topk=50` / `topk=100` COCO appendix stress
+- `topk=50` / `topk=100` COCO appendix stress（已 smoke 确认支持；完整矩阵 deferred）
 - `bits=4` for IVF/PQ/RaBitQ-side official comparison
 - `assignment-mode=single`
 - BoundFetch 主实验使用 formal retained result set 中的执行参数；CRC/early-stop 只作为运行参数记录，不作为本文方法贡献。
@@ -69,6 +71,14 @@ BoundFetch-Guarded 作为主方法参与所有主表。DiskANN 只作为 appendi
 - `refill-count=8`
 - `submit-batch=8` for BoundFetch primary run, matching current precheck script
 - `cluster-submit-reserve=8`
+
+### BoundFetch Warmup Requirement
+
+- Every formal BoundFetch measurement must be preceded by one same-configuration warmup run.
+- Same-configuration means same dataset, canonical artifact, nlist, nprobe, topk, `crc`, `early-stop`, `bits`, `skip_gt`, scheduler settings, and triage variant flags.
+- Warmup outputs are provenance only and must not enter paper tables, figures, matched-quality selection, or ablation summaries.
+- If the warmup run is missing or fails, the following BoundFetch measurement is invalid for formal reporting.
+- Track both run ids so the measurement can be traced to its warmup.
 
 ### Candidate Budget Policy
 
@@ -84,7 +94,9 @@ For this thesis plan:
 
 - `topk=10`: use `candidate_budget=100`.
 - `topk=20`: freeze `candidate_budget=150` for first pass; if no system reaches the common quality target, rerun with `candidate_budget=200` and record the change.
-- `topk=50`: use `candidate_budget=250`.
+- `topk=50`: use `candidate_budget=250` if the deferred appendix stress matrix is later resumed.
+
+Current freeze uses `topk=20` as the C4 sensitivity evidence. `topk=50/100` are not needed for the thesis-minimal main narrative.
 
 BoundFetch-Guarded does not use a fixed top-C as the method mechanism, but candidate budget is still used to align baseline rerank work and top-k operating points.
 

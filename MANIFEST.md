@@ -45,3 +45,5 @@
 | 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/EXPERIMENT_TRACKER.md | implementation | latest experiment tracker updated with supplemental experiments |
 | 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/PIPELINE_SUMMARY_20260503_171523.md | implementation | timestamped post-main-sweep pipeline summary |
 | 2026-05-03 17:15 | /research-refine-pipeline | refine-logs/thesis-minimal-experiment-2026-05-02/PIPELINE_SUMMARY.md | implementation | latest post-main-sweep pipeline summary |
+| 2026-05-04 10:10 | /analyze-results | refine-logs/thesis-minimal-experiment-2026-05-02/RESULT_ANALYSIS_20260504_101003.md | implementation | timestamped analysis of thesis main and ablation results |
+| 2026-05-04 10:10 | /analyze-results | refine-logs/thesis-minimal-experiment-2026-05-02/RESULT_ANALYSIS.md | implementation | latest thesis result analysis |

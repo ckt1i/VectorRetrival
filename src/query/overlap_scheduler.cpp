@@ -821,7 +821,10 @@ class OverlapScheduler::AsyncIOSink : public index::ProbeResultSink {
             }
 
             const bool use_vec_all =
-                batch.cls[i] == index::CandidateClass::SafeIn &&
+                ((batch.cls[i] == index::CandidateClass::SafeIn &&
+                  ctx_.config().enable_safein_payload_prefetch) ||
+                 (batch.cls[i] == index::CandidateClass::Uncertain &&
+                  ctx_.config().enable_uncertain_eager_payload)) &&
                 addr.size <= sched_.config_.safein_all_threshold;
             if (use_vec_all) {
                 scratch_.safein_all_indices[scratch_.safein_all_count++] = idx;
@@ -941,6 +944,7 @@ void OverlapScheduler::ProbeCluster(
     prober_.Probe(pc, prepared, prepared.margin_factor, dynamic_d_k,
                   config_.enable_address_decode_simd,
                   config_.enable_fine_grained_timing,
+                  config_.enable_safeout_pruning,
                   config_.enable_stage2_collect_block_first,
                   config_.enable_stage2_scatter_batch_classify,
                   sink, local_stats);
